@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import logging
 import os
 import re
@@ -10,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -199,6 +202,9 @@ def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
 
 
 def convert_doc(doc_path: str, out_dir: str) -> tuple[str | None, int]:
+    if zipfile.is_zipfile(doc_path):
+        return convert_docx(doc_path, out_dir)
+
     converted = _convert_via_soffice(doc_path, "docx")
     if converted:
         return convert_docx(converted, out_dir)
@@ -223,6 +229,9 @@ def convert_doc(doc_path: str, out_dir: str) -> tuple[str | None, int]:
 
 
 def convert_xls(xls_path: str, out_dir: str) -> tuple[str | None, int]:
+    if zipfile.is_zipfile(xls_path):
+        return convert_xlsx(xls_path, out_dir)
+
     converted = _convert_via_soffice(xls_path, "xlsx")
     if converted:
         return convert_xlsx(converted, out_dir)
@@ -247,6 +256,9 @@ def convert_xls(xls_path: str, out_dir: str) -> tuple[str | None, int]:
 
 
 def convert_ppt(ppt_path: str, out_dir: str) -> tuple[str | None, int]:
+    if zipfile.is_zipfile(ppt_path):
+        return convert_pptx(ppt_path, out_dir)
+
     converted = _convert_via_soffice(ppt_path, "pptx")
     if converted:
         return convert_pptx(converted, out_dir)
@@ -269,6 +281,82 @@ def convert_ppt(ppt_path: str, out_dir: str) -> tuple[str | None, int]:
     return None, 0
 
 
+def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
+    raw = Path(file_path).read_bytes()
+    for enc in ("utf-8-sig", "utf-8", "cp1251", "cp1252", "latin-1"):
+        try:
+            return raw.decode(enc), 0
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace"), 0
+
+
+def convert_csv(csv_path: str, out_dir: str) -> tuple[str | None, int]:
+    if zipfile.is_zipfile(csv_path):
+        try:
+            import openpyxl  # type: ignore
+            data = Path(csv_path).read_bytes()
+            workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+            lines: list[str] = []
+            for sheet in workbook.sheetnames:
+                lines.append(f"# Sheet: {sheet}\n")
+                rows = workbook[sheet].iter_rows(values_only=True)
+                header = next(rows, None)
+                if header is None:
+                    continue
+                header_cells = [str(cell) if cell is not None else "" for cell in header]
+                lines.append(f"| {' | '.join(header_cells)} |")
+                lines.append(f"| {' | '.join(['---'] * len(header_cells))} |")
+                for row in rows:
+                    if any(row):
+                        row_text = " | ".join(str(cell) if cell is not None else "" for cell in row)
+                        lines.append(f"| {row_text} |")
+                lines.append("\n")
+            workbook.close()
+            return "\n".join(lines), 0
+        except Exception:
+            pass
+
+    raw = Path(csv_path).read_bytes()
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "cp1251", "cp1252", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+
+    if text is None:
+        text = raw.decode("utf-8", errors="replace")
+
+    sample = text[:2048]
+    delimiter = ","
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        delimiter = dialect.delimiter
+    except Exception:
+        if ";" in sample and "," not in sample:
+            delimiter = ";"
+        elif "\t" in sample and "," not in sample:
+            delimiter = "\t"
+
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    rows = list(reader)
+    if not rows:
+        return "", 0
+
+    lines = []
+    header = [cell.strip() for cell in rows[0]]
+    lines.append(f"| {' | '.join(header)} |")
+    lines.append(f"| {' | '.join(['---'] * len(header))} |")
+    for row in rows[1:]:
+        if any(cell.strip() for cell in row):
+            cells = [cell.strip() for cell in row]
+            lines.append(f"| {' | '.join(cells)} |")
+
+    return "\n".join(lines), 0
+
+
 def convert_file(file_path: str | os.PathLike[str]) -> bool:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
@@ -278,14 +366,23 @@ def convert_file(file_path: str | os.PathLike[str]) -> bool:
 
     stem = source.stem
     extension = source.suffix.lower()
-    out_dir = source.parent / f"MD_{stem}"
+    ext_clean = extension.lstrip(".")
+
+    has_same_stem_siblings = False
+    if source.parent.exists():
+        for sibling in source.parent.iterdir():
+            if sibling.is_file() and sibling != source and sibling.stem.lower() == stem.lower():
+                has_same_stem_siblings = True
+                break
+
+    if has_same_stem_siblings and ext_clean:
+        folder_name = f"MD_{stem}_{ext_clean}"
+    else:
+        folder_name = f"MD_{stem}"
+
+    out_dir = source.parent / folder_name
     out_dir.mkdir(parents=True, exist_ok=True)
     out_md = out_dir / f"{stem}.md"
-
-    if extension in {".txt", ".md", ".log", ".csv"}:
-        shutil.copyfile(source, out_md)
-        logger.info("Copied plain-text file %s", source.name)
-        return True
 
     converters = {
         ".pdf": convert_pdf_or_ebook,
@@ -299,6 +396,10 @@ def convert_file(file_path: str | os.PathLike[str]) -> bool:
         ".xls": convert_xls,
         ".pptx": convert_pptx,
         ".ppt": convert_ppt,
+        ".csv": convert_csv,
+        ".txt": convert_txt_or_md,
+        ".md": convert_txt_or_md,
+        ".log": convert_txt_or_md,
     }
     converter = converters.get(extension)
     if converter is None:
@@ -314,7 +415,12 @@ def convert_file(file_path: str | os.PathLike[str]) -> bool:
             md_text, saved_images = converter(str(source), str(out_dir))
         if md_text is None:
             return False
-        out_md.write_text(md_text, encoding="utf-8")
+
+        # Trim trailing whitespace on each line and ensure a single final newline
+        normalized_text = md_text.replace("\r\n", "\n").replace("\r", "\n")
+        trimmed_lines = [line.rstrip() for line in normalized_text.split("\n")]
+        cleaned_md = "\n".join(trimmed_lines).rstrip() + "\n"
+        out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
         logger.info(
             "Completed %s in %.2fs (saved %d images)",
             source.name,

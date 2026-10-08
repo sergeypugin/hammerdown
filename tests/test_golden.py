@@ -10,19 +10,28 @@ def test_golden_conversion():
     golden_dir = Path("tests/golden")
 
     test_files = [
-        f for f in inputs_dir.glob("*.*") if f.suffix.lower() in [".pdf", ".docx", ".xlsx"]
+        f for f in inputs_dir.glob("*.*")
+        if f.suffix.lower() in [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".csv", ".txt", ".epub", ".fb2"]
     ]
     assert len(test_files) > 0, "No test input files found"
 
     for file_path in test_files:
         stem = file_path.stem
+        ext_clean = file_path.suffix.lower().lstrip(".")
         print(f"Testing golden output for: {file_path.name}")
 
         cmd = [sys.executable, "src/converter.py", str(file_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
 
-        out_md_path = inputs_dir / f"MD_{stem}" / f"{stem}.md"
+        has_siblings = False
+        for sibling in inputs_dir.iterdir():
+            if sibling.is_file() and sibling != file_path and sibling.stem.lower() == stem.lower():
+                has_siblings = True
+                break
+
+        folder_name = f"MD_{stem}_{ext_clean}" if has_siblings and ext_clean else f"MD_{stem}"
+        out_md_path = inputs_dir / folder_name / f"{stem}.md"
         assert out_md_path.is_file(), f"Expected output MD file not found: {out_md_path}"
 
         generated_content = out_md_path.read_text(encoding="utf-8")
