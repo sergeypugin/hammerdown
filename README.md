@@ -61,12 +61,11 @@ Run `--install` to register file manager integrations, or `--uninstall` to remov
 
 ```sh
 hammerdown --install
-hammerdown --uninstall
 ```
 
 What happens on each platform:
-- windows: moves binary or script into `%LOCALAPPDATA%\Programs\hammerdown\` and adds a "Convert to Markdown" context menu item for PDF files in Windows Explorer
-- linux: creates launcher in `~/.local/bin/hammerdown` and Nautilus script in `~/.local/share/nautilus/scripts/Convert to Markdown`
+- windows: moves binary or script into `%LOCALAPPDATA%\Programs\hammerdown\` and adds a "Hammer down file" context menu item for PDF files in Windows Explorer
+- linux: creates launcher in `~/.local/bin/hammerdown` and Nautilus script in `~/.local/share/nautilus/scripts/Hammer down file`
 - macOS: creates launcher in `~/.local/bin/hammerdown`
 
 Update hammerdown to the latest version at any time:
@@ -90,7 +89,9 @@ Files can also be dragged onto the executable. Running `hammerdown` without file
 
 ```sh
 hammerdown --quiet document.pdf
+hammerdown --force document.pdf
 hammerdown --version
+hammerdown --help
 ```
 
 ## Supported Formats

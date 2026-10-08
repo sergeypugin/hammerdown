@@ -23,7 +23,7 @@ When invoking `hammerdown`, the following execution scenarios are supported:
 - batch file processing: `hammerdown file1.pdf file2.docx`
 - drag-and-drop: passing files as arguments when dropped onto executable
 - interactive fallback: system file picker dialog (WPF dialog on Windows, Tkinter on Unix) when launched without arguments
-- file manager integration: context menu via Windows Registry for PDF files, Nautilus script on Linux
+- file manager integration: context menu via Windows Registry for PDF files ("Hammer down file"), Nautilus script on Linux
 - self-installation: `hammerdown --install`; Removal: `hammerdown --uninstall`
 - self-update: `hammerdown --update`
 
