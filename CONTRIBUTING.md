@@ -1,6 +1,6 @@
-# Contributing to md-maker
+# Contributing to hammerdown
 
-We welcome contributions to md-maker.
+We welcome contributions to hammerdown.
 
 Please follow these guidelines:
 

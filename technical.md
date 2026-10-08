@@ -1,8 +1,8 @@
-# md-maker Technical Specification
+# hammerdown Technical Specification
 
 ## Overview
 
-`md-maker` is a cross-platform command-line utility for converting documents (PDF, Word, Excel, PowerPoint, e-books, plain text, and CSV) into clean Markdown. For each processed document, an output directory `MD_<name>_<ext>` is created adjacent to the source file, containing the output Markdown file and an `images/` directory for extracted assets.
+`hammerdown` is a cross-platform command-line utility for converting documents (PDF, Word, Excel, PowerPoint, e-books, plain text, and CSV) into clean Markdown. For each processed document, an output directory `MD_<name>_<ext>` is created adjacent to the source file, containing the output Markdown file and an `images/` directory for extracted assets.
 
 ## Dependencies
 
@@ -18,16 +18,16 @@ Runtime dependencies are declared in `requirements.txt` and `pyproject.toml`.
 
 ## Execution Scenarios
 
-When invoking `md-maker`, the following execution scenarios are supported:
-- CLI terminal execution: `md-maker document.pdf`
-- batch file processing: `md-maker file1.pdf file2.docx`
+When invoking `hammerdown`, the following execution scenarios are supported:
+- CLI terminal execution: `hammerdown document.pdf`
+- batch file processing: `hammerdown file1.pdf file2.docx`
 - drag-and-drop: passing files as arguments when dropped onto executable
 - interactive fallback: system file picker dialog (WPF dialog on Windows, Tkinter on Unix) when launched without arguments
 - file manager integration: context menu via Windows Registry for PDF files, Nautilus script on Linux
-- self-installation: `md-maker --install`; Removal: `md-maker --uninstall`
-- self-update: `md-maker --update`
+- self-installation: `hammerdown --install`; Removal: `hammerdown --uninstall`
+- self-update: `hammerdown --update`
 
-The installation process is fully local and does not require administrator privileges or network requests. On Windows, `--install` copies the application to `%LOCALAPPDATA%\Programs\md-maker` and registers a user-level shell extension for `.pdf`. On Linux, it places a launcher in `~/.local/bin` and a Nautilus script in `~/.local/share/nautilus/scripts`. On macOS, it installs the launcher script in `~/.local/bin`.
+The installation process is fully local and does not require administrator privileges or network requests. On Windows, `--install` copies the application to `%LOCALAPPDATA%\Programs\hammerdown` and registers a user-level shell extension for `.pdf`. On Linux, it places a launcher in `~/.local/bin` and a Nautilus script in `~/.local/share/nautilus/scripts`. On macOS, it installs the launcher script in `~/.local/bin`.
 
 ## Processing Pipeline
 
