@@ -267,11 +267,6 @@ def convert_ppt(ppt_path: str, out_dir: str) -> tuple[str | None, int]:
 
     logger.error("Legacy .ppt format requires LibreOffice or Microsoft PowerPoint to be installed")
     return None, 0
-                    if text:
-                        lines.append(text)
-        lines.append("")
-
-    return "\n".join(lines), 0
 
 
 def convert_file(file_path: str | os.PathLike[str]) -> bool:
