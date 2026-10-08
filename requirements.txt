@@ -1,0 +1,6 @@
+pymupdf
+pymupdf4llm
+python-docx
+openpyxl
+python-pptx
+onnxruntime
