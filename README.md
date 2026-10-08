@@ -1,13 +1,15 @@
 # hammerdown
 
-![Logo](assets/logo.svg)
-
 [![Tests](https://img.shields.io/github/actions/workflow/status/sergeypugin/hammerdown/release.yaml?branch=main&label=tests&logo=github&style=flat-square)](https://github.com/sergeypugin/hammerdown/actions)
 [![PyPI](https://img.shields.io/pypi/v/hammerdown?style=flat-square&color=2ea44f&logo=pypi&logoColor=white)](https://pypi.org/project/hammerdown/)
 [![GitHub Release](https://img.shields.io/github/v/release/sergeypugin/hammerdown?style=flat-square&color=2ea44f&logo=github)](https://github.com/sergeypugin/hammerdown/releases)
 [![Python Version](https://img.shields.io/badge/Python-3.10+-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-blue?style=flat-square)](https://github.com/sergeypugin/hammerdown/releases)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-a1ffcb?style=flat-square&labelColor=191919)](CONTRIBUTING.md)
+
+<p align="center">
+  <img src="assets/logo.svg" alt="hammerdown logo" width="220" height="220">
+</p>
 
 `hammerdown` converts PDF, Word, Excel, PowerPoint, and plain-text documents to Markdown. PDF conversion uses PyMuPDF and PyMuPDF4LLM; source images are extracted into the output folder and Markdown image references are generated.
 
