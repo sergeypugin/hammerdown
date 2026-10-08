@@ -16,7 +16,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Sequence
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -368,18 +368,7 @@ def convert_file(file_path: str | os.PathLike[str]) -> bool:
     extension = source.suffix.lower()
     ext_clean = extension.lstrip(".")
 
-    has_same_stem_siblings = False
-    if source.parent.exists():
-        for sibling in source.parent.iterdir():
-            if sibling.is_file() and sibling != source and sibling.stem.lower() == stem.lower():
-                has_same_stem_siblings = True
-                break
-
-    if has_same_stem_siblings and ext_clean:
-        folder_name = f"MD_{stem}_{ext_clean}"
-    else:
-        folder_name = f"MD_{stem}"
-
+    folder_name = f"MD_{stem}_{ext_clean}" if ext_clean else f"MD_{stem}"
     out_dir = source.parent / folder_name
     out_dir.mkdir(parents=True, exist_ok=True)
     out_md = out_dir / f"{stem}.md"

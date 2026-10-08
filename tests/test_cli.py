@@ -16,7 +16,7 @@ def test_convert_plain_text_creates_markdown_output(tmp_path: Path):
     source.write_text("line one\nline two\n", encoding="utf-8")
 
     assert converter.convert_file(source)
-    assert (tmp_path / "MD_notes" / "notes.md").read_text(encoding="utf-8") == "line one\nline two\n"
+    assert (tmp_path / "MD_notes_txt" / "notes.md").read_text(encoding="utf-8") == "line one\nline two\n"
 
 
 def test_unsupported_file_returns_failure(tmp_path: Path):

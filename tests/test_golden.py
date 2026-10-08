@@ -24,13 +24,7 @@ def test_golden_conversion():
         result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
 
-        has_siblings = False
-        for sibling in inputs_dir.iterdir():
-            if sibling.is_file() and sibling != file_path and sibling.stem.lower() == stem.lower():
-                has_siblings = True
-                break
-
-        folder_name = f"MD_{stem}_{ext_clean}" if has_siblings and ext_clean else f"MD_{stem}"
+        folder_name = f"MD_{stem}_{ext_clean}" if ext_clean else f"MD_{stem}"
         out_md_path = inputs_dir / folder_name / f"{stem}.md"
         assert out_md_path.is_file(), f"Expected output MD file not found: {out_md_path}"
 
