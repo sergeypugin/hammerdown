@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Rounded Square Container -->
+  <rect width="512" height="512" rx="112" fill="#0e1117" />
+  
+  <!-- Outer Rune Ring Inscription -->
+  <path d="M 0 14 L 0 -14 M -8 -6 L 0 -14 M 8 -6 L 0 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(235.70, 51.00) rotate(-5.66)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 0 -6 M 6 -14 L 0 -6" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(252.52, 50.03) rotate(-0.97)" />
+  <path d="M -6 14 L -6 -14 M -6 0 L 6 -8 M -6 0 L 6 8" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(269.36, 50.43) rotate(3.72)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -5 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(286.12, 52.21) rotate(8.41)" />
+  <path d="M 0 14 L 0 -14 M -6 -5 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(302.67, 55.36) rotate(13.09)" />
+  <path d="M 0 -14 L 8 -4 M 8 -4 L 0 6 M 0 6 L -8 -4 M -8 -4 L 0 -14 M 0 6 L -8 14 M 0 6 L 8 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(318.91, 59.84) rotate(17.78)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -4" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(334.73, 65.64) rotate(22.47)" />
+  <path d="M 0 -14 L 8 -4 M 8 -4 L 0 6 M 0 6 L -8 -4 M -8 -4 L 0 -14 M 0 6 L -8 14 M 0 6 L 8 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(350.02, 72.71) rotate(27.16)" />
+  <path d="M -7 -10 L 7 10 M -7 10 L 7 -10" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(364.69, 81.01) rotate(31.84)" />
+  <path d="M -6 -12 L 0 -6 M 0 -6 L -6 0 M 6 0 L 0 6 M 0 6 L 6 12" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(378.62, 90.47) rotate(36.53)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -8 M -6 -4 L 6 2" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(410.80, 120.09) rotate(48.72)" />
+  <path d="M 0 -14 L 8 -4 M 8 -4 L 0 6 M 0 6 L -8 -4 M -8 -4 L 0 -14 M 0 6 L -8 14 M 0 6 L 8 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(421.39, 133.20) rotate(53.41)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L -6 0 M -6 0 L 6 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(430.88, 147.12) rotate(58.09)" />
+  <path d="M -6 14 L -6 -14 M -6 -8 L 6 0 M 6 0 L -8 8" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(449.92, 186.49) rotate(70.28)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 0 -6 M 6 -14 L 0 -6" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(454.95, 202.57) rotate(74.97)" />
+  <path d="M 6 -14 L -6 -5 M -6 -5 L 6 5 M 6 5 L -6 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(461.75, 245.78) rotate(87.16)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L 6 5 M 6 5 L -6 13" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(461.89, 262.63) rotate(91.84)" />
+  <path d="M -6 14 L -6 -14 M -6 -9 L 6 -3 M -6 -1 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(460.66, 279.43) rotate(96.53)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L -6 0 M -6 0 L 6 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(458.06, 296.08) rotate(101.22)" />
+  <path d="M -6 14 L -6 -14 M -6 0 L 6 -8 M -6 0 L 6 8" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(454.11, 312.46) rotate(105.91)" />
+  <path d="M 0 -14 L 8 -4 M 8 -4 L 0 6 M 0 6 L -8 -4 M -8 -4 L 0 -14 M 0 6 L -8 14 M 0 6 L 8 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(437.73, 353.01) rotate(118.09)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -8 M -6 -4 L 6 2" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(429.19, 367.54) rotate(122.78)" />
+  <path d="M -6 14 L -6 -14 M -6 -8 L 6 0 M 6 0 L -8 8" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(401.74, 401.58) rotate(134.97)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 0 -6 M 6 -14 L 0 -6" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(389.36, 413.01) rotate(139.66)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 6 14 M -6 14 L 6 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(353.21, 437.62) rotate(151.84)" />
+  <path d="M 0 14 L 0 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(338.04, 444.96) rotate(156.53)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L -6 0" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(322.32, 451.03) rotate(161.22)" />
+  <path d="M 0 14 L 0 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(306.16, 455.80) rotate(165.91)" />
+  <path d="M 0 14 L 0 -14 M -6 -5 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(289.67, 459.23) rotate(170.59)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 0 -6 M 6 -14 L 0 -6" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(272.95, 461.30) rotate(175.28)" />
+  <path d="M -6 14 L -6 -14 M -6 -8 L 6 0 M 6 0 L -8 8" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(229.22, 460.25) rotate(187.47)" />
+  <path d="M -6 14 L -6 -14 M -6 -9 L 6 -3 M -6 -1 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(212.62, 457.38) rotate(192.16)" />
+  <path d="M 0 14 L 0 -14 M -8 -6 L 0 -14 M 8 -6 L 0 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(196.31, 453.16) rotate(196.84)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L -6 0 M -6 0 L 6 7 M 6 7 L -6 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(156.03, 436.12) rotate(209.03)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L -6 0 M -6 0 L 6 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(141.65, 427.35) rotate(213.72)" />
+  <path d="M 0 -14 L 8 -4 M 8 -4 L 0 6 M 0 6 L -8 -4 M -8 -4 L 0 -14 M 0 6 L -8 14 M 0 6 L 8 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(128.03, 417.43) rotate(218.41)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 0 M 6 0 L 6 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(115.26, 406.43) rotate(223.09)" />
+  <path d="M -7 -10 L 7 10 M -7 10 L 7 -10" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(103.44, 394.42) rotate(227.78)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -5 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(92.64, 381.49) rotate(232.47)" />
+  <path d="M 0 14 L 0 -14 M -8 -6 L 0 -14 M 8 -6 L 0 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(82.93, 367.72) rotate(237.16)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -5 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(63.24, 328.67) rotate(249.34)" />
+  <path d="M -6 14 L -6 -14 M -6 -9 L 6 -3 M -6 -1 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(57.95, 312.67) rotate(254.03)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 6 14 M -6 14 L 6 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(53.98, 296.30) rotate(258.72)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 6 14 M -6 14 L 6 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(51.36, 279.65) rotate(263.41)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 0 -6 M 6 -14 L 0 -6" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(50.11, 262.85) rotate(268.09)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L -6 0 M -6 0 L 6 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(50.24, 246.00) rotate(272.78)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 6 14 M -6 14 L 6 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(56.99, 202.79) rotate(284.97)" />
+  <path d="M 0 -14 L 8 -4 M 8 -4 L 0 6 M 0 6 L -8 -4 M -8 -4 L 0 -14 M 0 6 L -8 14 M 0 6 L 8 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(62.00, 186.71) rotate(289.66)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L -6 0" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(68.32, 171.08) rotate(294.34)" />
+  <path d="M 0 14 L 0 -14 M -6 -5 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(75.88, 156.03) rotate(299.03)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 0 M 6 0 L 6 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(101.05, 120.26) rotate(311.22)" />
+  <path d="M -6 14 L -6 -14 M -6 -14 L 6 -7 M 6 -7 L 6 5 M 6 5 L -6 13" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(112.66, 108.05) rotate(315.91)" />
+  <path d="M 0 -14 L 8 -4 M 8 -4 L 0 6 M 0 6 L -8 -4 M -8 -4 L 0 -14 M 0 6 L -8 14 M 0 6 L 8 14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(125.23, 96.83) rotate(320.59)" />
+  <path d="M 0 14 L 0 -14 M -6 -5 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(138.67, 86.68) rotate(325.28)" />
+  <path d="M -6 14 L -6 -14 M -6 -8 L 6 0 M 6 0 L -8 8" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(177.06, 65.72) rotate(337.47)" />
+  <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 0 -6 M 6 -14 L 0 -6" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(192.88, 59.91) rotate(342.16)" />
+  
+  
+  <!-- Stencil Mjolnir (enlarged, rectangular, tilted left, no inner ring) -->
+  <g transform="translate(256, 252) rotate(-34)">
+    <!-- 1. Floating Top Accent Bar -->
+    <path d="M-28 -92 L28 -92" stroke="#ffffff" stroke-width="7.5" stroke-linecap="round" />
+
+    <!-- 2. Solid White Rectangular Hammer Head with Clean Corner Chamfers -->
+    <polygon points="-66,-80 66,-80 78,-68 78,-8 66,4 -66,4 -78,-8 -78,-68" fill="#ffffff" />
+
+    <!-- 3. Black Accent Grooves Separating Panels -->
+    <!-- Left Cap separator groove -->
+    <path d="M-52 -80 L-42 -38 L-52 4" fill="none" stroke="#0e1117" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Right Cap separator groove -->
+    <path d="M52 -80 L42 -38 L52 4" fill="none" stroke="#0e1117" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Central Plate Groove with Handle Notch -->
+    <path d="M-38 -72 L38 -72 L38 -6 L16 -6 L10 -16 L-10 -16 L-16 -6 L-38 -6 Z"
+          fill="none" stroke="#0e1117" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- 4. Handle Neck Connection -->
+    <polygon points="-18,4 18,4 14,16 -14,16" fill="#ffffff" />
+
+    <!-- 5. Handle Chevrons (stacked V-shaped bands from reference) -->
+    <g stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M-17 24 L0 39 L17 24" />
+      <path d="M-17 44 L0 59 L17 44" />
+      <path d="M-17 64 L0 79 L17 64" />
+      <path d="M-17 84 L0 99 L17 84" />
+      <path d="M-17 104 L0 119 L17 104" />
+      <path d="M-17 124 L0 139 L17 124" />
+    </g>
+  </g>
+
+</svg>

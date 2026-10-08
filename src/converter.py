@@ -16,7 +16,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Sequence
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 logging.basicConfig(
     level=logging.INFO,
