@@ -19,6 +19,20 @@ def test_convert_plain_text_creates_markdown_output(tmp_path: Path):
     assert (tmp_path / "MD_notes_txt" / "notes.md").read_text(encoding="utf-8") == "line one\nline two\n"
 
 
+def test_convert_file_existing_output_without_force(tmp_path: Path):
+    source = tmp_path / "notes.txt"
+    source.write_text("line one\n", encoding="utf-8")
+    assert converter.convert_file(source)
+
+    # Calling again without force should fail
+    assert not converter.convert_file(source)
+    assert converter.main([str(source)]) == 1
+
+    # Calling with force should succeed
+    assert converter.convert_file(source, force=True)
+    assert converter.main(["--force", str(source)]) == 0
+
+
 def test_unsupported_file_returns_failure(tmp_path: Path):
     source = tmp_path / "image.png"
     source.write_bytes(b"image")

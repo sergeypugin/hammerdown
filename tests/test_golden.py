@@ -20,7 +20,7 @@ def test_golden_conversion():
         ext_clean = file_path.suffix.lower().lstrip(".")
         print(f"Testing golden output for: {file_path.name}")
 
-        cmd = [sys.executable, "src/converter.py", str(file_path)]
+        cmd = [sys.executable, "src/converter.py", "--force", str(file_path)]
         result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
 

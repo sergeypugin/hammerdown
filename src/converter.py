@@ -357,7 +357,7 @@ def convert_csv(csv_path: str, out_dir: str) -> tuple[str | None, int]:
     return "\n".join(lines), 0
 
 
-def convert_file(file_path: str | os.PathLike[str]) -> bool:
+def convert_file(file_path: str | os.PathLike[str], force: bool = False) -> bool:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
     if not source.is_file():
@@ -370,8 +370,13 @@ def convert_file(file_path: str | os.PathLike[str]) -> bool:
 
     folder_name = f"MD_{stem}_{ext_clean}" if ext_clean else f"MD_{stem}"
     out_dir = source.parent / folder_name
-    out_dir.mkdir(parents=True, exist_ok=True)
     out_md = out_dir / f"{stem}.md"
+
+    if out_md.exists() and not force:
+        logger.error("Destination file already exists: %s. Use --force to overwrite.", out_md)
+        return False
+
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     converters = {
         ".pdf": convert_pdf_or_ebook,
@@ -444,9 +449,9 @@ def _installed_command() -> tuple[Path, str]:
 def _install_windows(command: str) -> None:
     import winreg
 
-    key_path = r"Software\Classes\SystemFileAssociations\.pdf\shell\Convert to Markdown"
+    key_path = r"Software\Classes\SystemFileAssociations\.pdf\shell\hammerdown"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Convert to Markdown")
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down file")
         winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, command.split('"')[1])
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
         winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --quiet "%1"')
@@ -462,7 +467,7 @@ def _install_unix(command: str) -> None:
     if sys.platform.startswith("linux"):
         nautilus_dir = Path.home() / ".local" / "share" / "nautilus" / "scripts"
         nautilus_dir.mkdir(parents=True, exist_ok=True)
-        script = nautilus_dir / "Convert to Markdown"
+        script = nautilus_dir / "Hammer down file"
         script.write_text('exec "$HOME/.local/bin/hammerdown" --quiet "$@"\n', encoding="utf-8")
         script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
@@ -504,11 +509,17 @@ def uninstall() -> bool:
 
             _remove_registry_tree(
                 winreg.HKEY_CURRENT_USER,
+                r"Software\Classes\SystemFileAssociations\.pdf\shell\hammerdown",
+            )
+            # Clean up legacy key as well if present
+            _remove_registry_tree(
+                winreg.HKEY_CURRENT_USER,
                 r"Software\Classes\SystemFileAssociations\.pdf\shell\Convert to Markdown",
             )
             install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
         else:
             (Path.home() / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)
+            (Path.home() / ".local" / "share" / "nautilus" / "scripts" / "Hammer down file").unlink(missing_ok=True)
             (Path.home() / ".local" / "share" / "nautilus" / "scripts" / "Convert to Markdown").unlink(missing_ok=True)
             install_dir = Path.home() / ".local" / "share" / "hammerdown"
 
@@ -631,7 +642,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--install", action="store_true", help="Install the file-manager integration")
     action.add_argument("--uninstall", action="store_true", help="Remove the file-manager integration")
-    action.add_argument("--update", action="store_true", help="Update md-maker to the latest version")
+    parser.add_argument("--update", action="store_true", help="Update hammerdown to the latest version")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing output directories/files")
     parser.add_argument("--quiet", action="store_true", help="Suppress routine conversion messages")
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(argv)
@@ -650,7 +662,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     started_at = time.monotonic()
-    results = [convert_file(file_path) for file_path in files]
+    results = [convert_file(file_path, force=args.force) for file_path in files]
     failed_count = results.count(False)
     if len(files) > 1 and not args.quiet:
         logger.info(
