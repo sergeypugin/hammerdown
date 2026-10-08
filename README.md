@@ -24,16 +24,10 @@
 
 ### Recommended: Python package (pip)
 
-If Python (3.10+) is installed on your system, installing via pip is the recommended method. It avoids SmartScreen or antivirus false-positive warnings associated with newly compiled binaries:
+If Python (3.10+) is installed on your system, installing via pip is the recommended method:
 
 ```sh
 pip install hammerdown
-```
-
-Or from GitHub repository:
-
-```sh
-python -m pip install "git+https://github.com/sergeypugin/hammerdown.git"
 ```
 
 Or after cloning the repository locally:
@@ -41,7 +35,7 @@ Or after cloning the repository locally:
 ```sh
 git clone https://github.com/sergeypugin/hammerdown.git
 cd hammerdown
-python -m pip install .
+pip install .
 ```
 
 ### Direct Download (Standalone binaries)
@@ -63,48 +57,17 @@ chmod +x ./hammerdown-linux-x64
 
 ### Context menu integration
 
-#### Windows Explorer
-
-Run the installer command in terminal:
-
-```cmd
-hammerdown --install
-```
-
-What happens on Windows:
-- the executable or script is copied into `%LOCALAPPDATA%\Programs\hammerdown\` (does not require Administrator rights)
-- a context menu action is added to current user Registry (`HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\.pdf\shell\Convert to Markdown`)
-- when you right-click any `.pdf` file in Windows Explorer, select **"Show more options"** (or press **Shift + Right Click**), and click **"Convert to Markdown"**, `hammerdown` runs silently with `--quiet` and generates the Markdown directory adjacent to the original file
-
-#### Linux
-
-Run the installer command in terminal:
+Run `--install` to register file manager integrations, or `--uninstall` to remove them:
 
 ```sh
 hammerdown --install
-```
-
-What happens on Linux:
-- creates a launcher script `~/.local/bin/hammerdown`
-- adds a context menu script into `~/.local/share/nautilus/scripts/Convert to Markdown`
-- in GNOME Files (Nautilus), right-click any file -> **Scripts** -> **"Convert to Markdown"**
-
-#### macOS
-
-Run the installer command in terminal:
-
-```sh
-hammerdown --install
-```
-
-What happens on macOS:
-- copies the launcher into `~/.local/bin/hammerdown` so the command is globally available from Terminal
-
-Remove the integration and installed files with:
-
-```sh
 hammerdown --uninstall
 ```
+
+What happens on each platform:
+- windows: moves binary or script into `%LOCALAPPDATA%\Programs\hammerdown\` and adds a "Convert to Markdown" context menu item for PDF files in Windows Explorer
+- linux: creates launcher in `~/.local/bin/hammerdown` and Nautilus script in `~/.local/share/nautilus/scripts/Convert to Markdown`
+- macOS: creates launcher in `~/.local/bin/hammerdown`
 
 Update hammerdown to the latest version at any time:
 
@@ -112,7 +75,7 @@ Update hammerdown to the latest version at any time:
 hammerdown --update
 ```
 
-This installer is local: run it on the downloaded binary or installed package. It does not require administrator privileges.
+This installer is local and does not require administrator privileges.
 
 ## Usage
 
@@ -157,4 +120,4 @@ Images embedded in PDF, Word, or PowerPoint documents are extracted into `MD_<na
 
 ## Contributing
 
-Contributions are welcome. Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines. For architectural details, processing pipelines, and internal specifications, see [technical.md](technical.md).
+Contributions are welcome. Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines. For architectural details, processing pipelines, and internal specifications, see [TECHNICAL.md](TECHNICAL.md).

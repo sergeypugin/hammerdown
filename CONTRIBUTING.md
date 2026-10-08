@@ -42,4 +42,4 @@ Checklist before submitting changes:
 - markdown outputs have clean line endings without trailing whitespace
 - no broken character encodings appear in generated markdown files
 
-For full technical specifications and processing pipeline architecture, refer to [technical.md](technical.md).
+For full technical specifications and processing pipeline architecture, refer to [TECHNICAL.md](TECHNICAL.md).
