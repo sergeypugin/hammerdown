@@ -499,12 +499,12 @@ def _select_files() -> Sequence[str]:
     if os.name == "nt":
         try:
             ps_script = (
-                "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
-                "$dialog = New-Object System.Windows.Forms.OpenFileDialog;"
+                "Add-Type -AssemblyName PresentationFramework | Out-Null;"
+                "$dialog = New-Object Microsoft.Win32.OpenFileDialog;"
                 "$dialog.Filter = 'Supported Documents|*.pdf;*.docx;*.doc;*.xlsx;*.xls;*.pptx;*.ppt;*.txt;*.md;*.log;*.csv|All Files (*.*)|*.*';"
                 "$dialog.Multiselect = $true;"
                 "$dialog.Title = 'Select documents to convert';"
-                "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dialog.FileNames }"
+                "if ($dialog.ShowDialog() -eq $true) { $dialog.FileNames }"
             )
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script]
             result = subprocess.run(cmd, capture_output=True, text=True)
