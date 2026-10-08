@@ -41,3 +41,5 @@ Checklist before submitting changes:
 - golden reference files in `tests/golden/` match outputs in `tests/inputs/`
 - markdown outputs have clean line endings without trailing whitespace
 - no broken character encodings appear in generated markdown files
+
+For full technical specifications and processing pipeline architecture, refer to [technical.md](technical.md).

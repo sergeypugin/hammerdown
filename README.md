@@ -134,20 +134,20 @@ Supported document extensions:
 
 ## Output Structure
 
-For each input file, an output folder `MD_<name>` is written next to the source document:
+For each input file, an output folder `MD_<name>_<ext>` is written next to the source document:
 
 ```text
 document.pdf
-MD_document/
+MD_document_pdf/
 ├── document.md
 └── images/
     └── extracted illustration and embedded document images
 ```
 
-If multiple input files share the same base name with different extensions (such as `report.doc` and `report.docx`), the extension is appended to the folder name (e.g. `MD_report_doc/` and `MD_report_docx/`) to prevent conflicts.
+Output folder names consistently include the file extension suffix (for example, `MD_report_doc/` and `MD_report_docx/`) to prevent conflicts between different document formats with the same base name.
 
-Images embedded in PDF, Word, or PowerPoint documents are extracted into `MD_<name>/images/`, and the generated Markdown contains relative image links. Conversion continues through a batch if an individual file fails; the process exits with status `1` if any input fails.
+Images embedded in PDF, Word, or PowerPoint documents are extracted into `MD_<name>_<ext>/images/`, and the generated Markdown contains relative image links. Conversion continues through a batch if an individual file fails; the process exits with status `1` if any input fails.
 
 ## Contributing
 
-Contributions are welcome. Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+Contributions are welcome. Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines. For architectural details, processing pipelines, and internal specifications, see [technical.md](technical.md).
