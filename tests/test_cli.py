@@ -35,4 +35,4 @@ def test_version_option(capsys):
         converter.main(["--version"])
     except SystemExit as error:
         assert error.code == 0
-    assert f"md-maker {converter.__version__}" in capsys.readouterr().out
+    assert f"hammerdown {converter.__version__}" in capsys.readouterr().out

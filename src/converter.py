@@ -433,7 +433,7 @@ def _installed_command() -> tuple[Path, str]:
         suffix = ".exe" if os.name == "nt" else ""
         target = app_dir / f"hammerdown{suffix}"
         if Path(sys.executable).resolve() != target.resolve():
-            shutil.copy2(sys.executable, target)
+            shutil.move(sys.executable, target)
         return app_dir, str(target)
 
     target = app_dir / "converter.py"
@@ -583,7 +583,7 @@ def update() -> bool:
             shutil.copy2(temp_exe, target)
             target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-        logger.info("md-maker successfully updated to version %s!", latest_tag)
+        logger.info("hammerdown successfully updated to version %s!", latest_tag)
         return True
     except Exception as exc:
         logger.error("Failed to update: %s", exc)
@@ -624,10 +624,10 @@ def _select_files() -> Sequence[str]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="md-maker",
+        prog="hammerdown",
         description="Convert PDF and office documents to Markdown",
     )
-    parser.add_argument("--version", action="version", version=f"md-maker {__version__}")
+    parser.add_argument("--version", action="version", version=f"hammerdown {__version__}")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--install", action="store_true", help="Install the file-manager integration")
     action.add_argument("--uninstall", action="store_true", help="Remove the file-manager integration")
