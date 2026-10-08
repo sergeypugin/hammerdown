@@ -3,9 +3,21 @@ name: CI and Release
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/**"
     tags: ["v*"]
   pull_request:
     branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/**"
 
 permissions:
   contents: read

@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 logging.basicConfig(
     level=logging.INFO,
