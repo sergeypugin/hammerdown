@@ -428,7 +428,91 @@ def uninstall() -> bool:
         return False
 
 
+def update() -> bool:
+    if not getattr(sys, "frozen", False):
+        logger.info("Updating Python package via pip...")
+        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/sergeypugin/md-maker.git"]
+        try:
+            subprocess.run(cmd, check=True)
+            logger.info("md-maker successfully updated!")
+            return True
+        except Exception as exc:
+            logger.error("Failed to update via pip: %s", exc)
+            return False
+
+    logger.info("Checking for latest release binary...")
+    import json
+    import urllib.request
+
+    url = "https://api.github.com/repos/sergeypugin/md-maker/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "md-maker"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        latest_tag = data.get("tag_name", "").lstrip("v")
+        if latest_tag and latest_tag <= __version__:
+            logger.info("md-maker is already at the latest version (%s)", __version__)
+            return True
+
+        logger.info("New version available: %s (current: %s)", latest_tag, __version__)
+        asset_name = "md-maker-windows-x64.exe" if os.name == "nt" else "md-maker-linux-x64"
+        if sys.platform == "darwin":
+            asset_name = "md-maker-macos-arm64" if "arm" in os.uname().machine.lower() else "md-maker-macos-x64"
+
+        download_url = None
+        for asset in data.get("assets", []):
+            if asset.get("name") == asset_name:
+                download_url = asset.get("browser_download_url")
+                break
+
+        if not download_url:
+            logger.error("No release asset found matching %s", asset_name)
+            return False
+
+        logger.info("Downloading %s...", download_url)
+        temp_exe = Path(tempfile.gettempdir()) / f"md-maker-update{'.exe' if os.name == 'nt' else ''}"
+        with urllib.request.urlopen(download_url, timeout=30) as resp, open(temp_exe, "wb") as f:
+            f.write(resp.read())
+
+        target = Path(sys.executable)
+        if os.name == "nt":
+            old_exe = target.with_suffix(".exe.old")
+            if old_exe.exists():
+                try:
+                    old_exe.unlink()
+                except OSError:
+                    pass
+            target.rename(old_exe)
+            shutil.copy2(temp_exe, target)
+        else:
+            shutil.copy2(temp_exe, target)
+            target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+        logger.info("md-maker successfully updated to version %s!", latest_tag)
+        return True
+    except Exception as exc:
+        logger.error("Failed to update: %s", exc)
+        return False
+
+
 def _select_files() -> Sequence[str]:
+    if os.name == "nt":
+        try:
+            ps_script = (
+                "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
+                "$dialog = New-Object System.Windows.Forms.OpenFileDialog;"
+                "$dialog.Filter = 'Supported Documents|*.pdf;*.docx;*.doc;*.xlsx;*.xls;*.pptx;*.ppt;*.txt;*.md;*.log;*.csv|All Files (*.*)|*.*';"
+                "$dialog.Multiselect = $true;"
+                "$dialog.Title = 'Select documents to convert';"
+                "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dialog.FileNames }"
+            )
+            cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                return [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+        except Exception:
+            pass
+
     try:
         from tkinter import Tk, filedialog
 
@@ -452,6 +536,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--install", action="store_true", help="Install the file-manager integration")
     action.add_argument("--uninstall", action="store_true", help="Remove the file-manager integration")
+    action.add_argument("--update", action="store_true", help="Update md-maker to the latest version")
     parser.add_argument("--quiet", action="store_true", help="Suppress routine conversion messages")
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(argv)
@@ -462,6 +547,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if install() else 1
     if args.uninstall:
         return 0 if uninstall() else 1
+    if args.update:
+        return 0 if update() else 1
 
     files = args.files or _select_files()
     if not files:

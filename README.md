@@ -36,6 +36,12 @@ Remove the integration and installed files with:
 md-maker --uninstall
 ```
 
+Update md-maker to the latest version at any time:
+
+```sh
+md-maker --update
+```
+
 This installer is local: download the release binary first. It does not fetch software from the network itself. The installation does not require administrator privileges.
 
 ### Python package
@@ -75,11 +81,10 @@ document.pdf
 MD_document/
 ├── document.md
 └── images/
-    ├── source images extracted from the PDF
-    └── images referenced by the generated Markdown
+    └── extracted illustration and embedded document images
 ```
 
-For PDF files, images are written to `MD_<name>/images/`, and the generated Markdown contains relative image links. Conversion continues through a batch if an individual file fails; the process exits with status `1` if any input fails.
+Images embedded in PDF, Word, or PowerPoint documents are extracted into `MD_<name>/images/`, and the generated Markdown contains relative image links. Conversion continues through a batch if an individual file fails; the process exits with status `1` if any input fails.
 
 ## Development
 
