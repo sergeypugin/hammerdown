@@ -54,17 +54,17 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset_name: md-maker-linux-x64
-            executable: md-maker-linux-x64
+            asset_name: hammerdown-linux-x64
+            executable: hammerdown-linux-x64
           - os: windows-latest
-            asset_name: md-maker-windows-x64.exe
-            executable: md-maker-windows-x64
+            asset_name: hammerdown-windows-x64.exe
+            executable: hammerdown-windows-x64
           - os: macos-15
-            asset_name: md-maker-macos-arm64
-            executable: md-maker-macos-arm64
+            asset_name: hammerdown-macos-arm64
+            executable: hammerdown-macos-arm64
           - os: macos-15-intel
-            asset_name: md-maker-macos-x64
-            executable: md-maker-macos-x64
+            asset_name: hammerdown-macos-x64
+            executable: hammerdown-macos-x64
 
     steps:
       - name: Checkout repository
@@ -124,3 +124,30 @@ jobs:
           files: ./artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  pypi-publish:
+    name: Publish to PyPI
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+
+      - name: Build wheel and source distribution
+        run: python -m build
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

@@ -23,7 +23,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
 )
-logger = logging.getLogger("md-maker")
+logger = logging.getLogger("hammerdown")
 
 
 def normalize_path(path_str: str | os.PathLike[str]) -> str:
@@ -424,14 +424,14 @@ def convert_file(file_path: str | os.PathLike[str]) -> bool:
 
 def _installed_command() -> tuple[Path, str]:
     if os.name == "nt":
-        app_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "md-maker"
+        app_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
     else:
-        app_dir = Path.home() / ".local" / "share" / "md-maker"
+        app_dir = Path.home() / ".local" / "share" / "hammerdown"
     app_dir.mkdir(parents=True, exist_ok=True)
 
     if getattr(sys, "frozen", False):
         suffix = ".exe" if os.name == "nt" else ""
-        target = app_dir / f"md-maker{suffix}"
+        target = app_dir / f"hammerdown{suffix}"
         if Path(sys.executable).resolve() != target.resolve():
             shutil.copy2(sys.executable, target)
         return app_dir, str(target)
@@ -455,7 +455,7 @@ def _install_windows(command: str) -> None:
 def _install_unix(command: str) -> None:
     bin_dir = Path.home() / ".local" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
-    launcher = bin_dir / "md-maker"
+    launcher = bin_dir / "hammerdown"
     launcher.write_text(f"#!/bin/sh\nexec {command} \"$@\"\n", encoding="utf-8")
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
@@ -463,7 +463,7 @@ def _install_unix(command: str) -> None:
         nautilus_dir = Path.home() / ".local" / "share" / "nautilus" / "scripts"
         nautilus_dir.mkdir(parents=True, exist_ok=True)
         script = nautilus_dir / "Convert to Markdown"
-        script.write_text('exec "$HOME/.local/bin/md-maker" --quiet "$@"\n', encoding="utf-8")
+        script.write_text('exec "$HOME/.local/bin/hammerdown" --quiet "$@"\n', encoding="utf-8")
         script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
@@ -474,7 +474,7 @@ def install() -> bool:
             _install_windows(command)
         else:
             _install_unix(command)
-        logger.info("md-maker installed. Restart the file manager if its menu does not update.")
+        logger.info("hammerdown installed. Restart the file manager if its menu does not update.")
         return True
     except (OSError, ImportError) as exc:
         logger.error("Installation failed: %s", exc)
@@ -506,17 +506,18 @@ def uninstall() -> bool:
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Classes\SystemFileAssociations\.pdf\shell\Convert to Markdown",
             )
-            install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "md-maker"
+            install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
         else:
-            (Path.home() / ".local" / "bin" / "md-maker").unlink(missing_ok=True)
+            (Path.home() / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)
             (Path.home() / ".local" / "share" / "nautilus" / "scripts" / "Convert to Markdown").unlink(missing_ok=True)
-            install_dir = Path.home() / ".local" / "share" / "md-maker"
+            install_dir = Path.home() / ".local" / "share" / "hammerdown"
 
         try:
-            shutil.rmtree(install_dir)
+            if install_dir.exists():
+                shutil.rmtree(install_dir)
         except OSError:
             logger.warning("Could not remove installed program files at %s", install_dir)
-        logger.info("md-maker integration uninstalled")
+        logger.info("hammerdown integration uninstalled")
         return True
     except (OSError, ImportError) as exc:
         logger.error("Uninstallation failed: %s", exc)
@@ -526,33 +527,32 @@ def uninstall() -> bool:
 def update() -> bool:
     if not getattr(sys, "frozen", False):
         logger.info("Updating Python package via pip...")
-        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/sergeypugin/md-maker.git"]
+        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/sergeypugin/hammerdown.git"]
         try:
-            subprocess.run(cmd, check=True)
-            logger.info("md-maker successfully updated!")
+            subprocess.check_call(cmd)
+            logger.info("Successfully updated hammerdown package.")
             return True
-        except Exception as exc:
+        except subprocess.CalledProcessError as exc:
             logger.error("Failed to update via pip: %s", exc)
             return False
 
-    logger.info("Checking for latest release binary...")
     import json
     import urllib.request
 
-    url = "https://api.github.com/repos/sergeypugin/md-maker/releases/latest"
-    req = urllib.request.Request(url, headers={"User-Agent": "md-maker"})
+    url = "https://api.github.com/repos/sergeypugin/hammerdown/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "hammerdown"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         latest_tag = data.get("tag_name", "").lstrip("v")
         if latest_tag and latest_tag <= __version__:
-            logger.info("md-maker is already at the latest version (%s)", __version__)
+            logger.info("hammerdown is already at the latest version (%s)", __version__)
             return True
 
         logger.info("New version available: %s (current: %s)", latest_tag, __version__)
-        asset_name = "md-maker-windows-x64.exe" if os.name == "nt" else "md-maker-linux-x64"
+        asset_name = "hammerdown-windows-x64.exe" if os.name == "nt" else "hammerdown-linux-x64"
         if sys.platform == "darwin":
-            asset_name = "md-maker-macos-arm64" if "arm" in os.uname().machine.lower() else "md-maker-macos-x64"
+            asset_name = "hammerdown-macos-arm64" if "arm" in os.uname().machine.lower() else "hammerdown-macos-x64"
 
         download_url = None
         for asset in data.get("assets", []):
@@ -565,7 +565,7 @@ def update() -> bool:
             return False
 
         logger.info("Downloading %s...", download_url)
-        temp_exe = Path(tempfile.gettempdir()) / f"md-maker-update{'.exe' if os.name == 'nt' else ''}"
+        temp_exe = Path(tempfile.gettempdir()) / f"hammerdown-update{'.exe' if os.name == 'nt' else ''}"
         with urllib.request.urlopen(download_url, timeout=30) as resp, open(temp_exe, "wb") as f:
             f.write(resp.read())
 
