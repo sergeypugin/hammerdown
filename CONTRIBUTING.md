@@ -32,7 +32,7 @@ python tests/test_golden.py
 4. Test direct document conversion manually:
 
 ```sh
-python src/converter.py document.pdf
+34	python -m hammerdown.cli document.pdf
 ```
 
 Checklist before submitting changes:
@@ -42,4 +42,4 @@ Checklist before submitting changes:
 - markdown outputs have clean line endings without trailing whitespace
 - no broken character encodings appear in generated markdown files
 
-For full technical specifications and processing pipeline architecture, refer to [TECHNICAL.md](TECHNICAL.md).
+For full technical specifications and processing pipeline architecture, refer to [docs/TECHNICAL.md](docs/TECHNICAL.md).

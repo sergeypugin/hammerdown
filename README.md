@@ -11,30 +11,34 @@
   <img src="assets/logo.svg" alt="hammerdown logo" width="220" height="220">
 </p>
 
-`hammerdown` converts PDF, Word, Excel, PowerPoint, and plain-text documents to Markdown. PDF conversion uses PyMuPDF and PyMuPDF4LLM; source images are extracted into the output folder and Markdown image references are generated.
+`hammerdown` is a cross-platform tool and Python library for converting PDF, Word, Excel, PowerPoint, OpenDocument, CSV, and plain-text documents into clean Markdown. Embedded images, SVG charts, and mathematical formulas are automatically extracted and formatted.
 
 ## Table of Contents
 
 - [Installation](#installation)
   - [Recommended: Python package (pip)](#recommended-python-package-pip)
   - [Direct Download (Standalone binaries)](#direct-download-standalone-binaries)
-  - [Context menu integration](#context-menu-integration)
+  - [File Manager Context Menu](#file-manager-context-menu)
 - [Usage](#usage)
+  - [Command Line Interface](#command-line-interface)
+  - [Extracting Base64 Images from Markdown](#extracting-base64-images-from-markdown)
+  - [Python Library Quickstart](#python-library-quickstart)
 - [Supported Formats](#supported-formats)
-- [Output Structure](#output-structure)
-- [Contributing](#contributing)
+- [Output Directory Layout](#output-directory-layout)
+- [Math Formulas and Symbol Normalization](#math-formulas-and-symbol-normalization)
+- [Documentation links](#documentation-links)
 
 ## Installation
 
 ### Recommended: Python package (pip)
 
-If Python (3.10+) is installed on your system, installing via pip is the recommended method:
+If Python (3.10+) is installed on your system, install via pip:
 
 ```sh
 pip install hammerdown
 ```
 
-Or after cloning the repository locally:
+Or install from local source:
 
 ```sh
 git clone https://github.com/sergeypugin/hammerdown.git
@@ -59,70 +63,111 @@ chmod +x ./hammerdown-linux-x64
 ./hammerdown-linux-x64 --version
 ```
 
-### Context menu integration
+### File Manager Context Menu
 
-Run `--install` to register file manager integrations, or `--uninstall` to remove them:
+Register system context menu integration using `--install`:
 
 ```sh
 hammerdown --install
 ```
 
-What happens on each platform:
-- windows: moves binary or script into `%LOCALAPPDATA%\Programs\hammerdown\` and adds a "Hammer down file" context menu item for PDF files in Windows Explorer
-- linux: creates launcher in `~/.local/bin/hammerdown` and Nautilus script in `~/.local/share/nautilus/scripts/Hammer down file`
-- macOS: creates launcher in `~/.local/bin/hammerdown`
+To remove integration:
 
-Update hammerdown to the latest version at any time:
+```sh
+hammerdown --uninstall
+```
+
+To update `hammerdown` to the latest version:
 
 ```sh
 hammerdown --update
 ```
 
-This installer is local and does not require administrator privileges.
-
 ## Usage
 
-Convert one or several supported files:
+### Command Line Interface
+
+Convert one or multiple files:
 
 ```sh
 hammerdown document.pdf
 hammerdown report.docx workbook.xlsx slides.pptx
 ```
 
-Files can also be dragged onto the executable. Running `hammerdown` without file arguments opens a file-selection dialog when a graphical desktop is available. `--quiet` suppresses routine status messages, which is used by file-manager integrations:
+Options:
+- `-i`, `--in-place` -- save output Markdown and extracted images in the same directory as the source file
+- `-f`, `--force` -- overwrite existing output Markdown files
+- `-q`, `--quiet` -- suppress routine status output
+- `-v`, `--version` -- display version information
 
 ```sh
-hammerdown --quiet document.pdf
-hammerdown --force document.pdf
-hammerdown --version
-hammerdown --help
+hammerdown -i document.pdf
+hammerdown -f report.docx
 ```
+
+### Extracting Base64 Images from Markdown
+
+If you have a Markdown file with embedded base64 images (such as `data:image/png;base64,...`), running `hammerdown` with `--in-place` will extract those raw image strings into PNG or JPEG files inside `hammerdown_images/` and replace inline base64 data URIs with clean relative links:
+
+```sh
+hammerdown document.md --in-place
+```
+
+### Python Library Quickstart
+
+Use `hammerdown` directly in your Python code:
+
+```python
+import hammerdown
+
+# Convert a file on disk
+hammerdown.convert_file("document.pdf", force=True)
+
+# Get Markdown text in memory
+text, image_count = hammerdown.to_markdown("report.docx")
+```
+
+For specialized format converters and low-level helpers, see [docs/PYTHON.md](docs/PYTHON.md).
 
 ## Supported Formats
 
-Supported document extensions:
-- **PDF & E-books**: `.pdf`, `.epub`, `.mobi`, `.fb2`, `.xps`
-- **Word**: `.docx`, `.doc` (legacy `.doc` via LibreOffice / MS Word)
-- **Excel**: `.xlsx`, `.xls` (legacy `.xls` via LibreOffice / MS Excel)
-- **PowerPoint**: `.pptx`, `.ppt` (legacy `.ppt` via LibreOffice / MS PowerPoint)
-- **Plain text & tabular**: `.txt`, `.md`, `.log`, `.csv`
+- **PDF and E-books**: `.pdf`, `.epub`, `.mobi`, `.fb2`, `.xps`
+- **Word and OpenDocument**: `.docx`, `.doc`, `.odt`
+- **Spreadsheets**: `.xlsx`, `.xls`, `.csv`
+- **Presentations**: `.pptx`, `.ppt`
+- **Text and Markdown**: `.txt`, `.md`, `.log`
 
-## Output Structure
+## Output Directory Layout
 
-For each input file, an output folder `MD_<name>_<ext>` is written next to the source document:
+Output Markdown files are saved using the template `<stem>_<ext>.md` to avoid conflicts when files of different formats share the same base name.
 
+**Before conversion:**
 ```text
-document.pdf
-MD_document_pdf/
-├── document.md
-└── images/
-    └── extracted illustration and embedded document images
+folder/
+└── document.pdf
 ```
 
-Output folder names consistently include the file extension suffix (for example, `MD_report_doc/` and `MD_report_docx/`) to prevent conflicts between different document formats with the same base name.
+**After conversion:**
+```text
+folder/
+├── document.pdf
+├── document_pdf.md
+└── hammerdown_images/
+    └── document_p001_xref105.png
+```
 
-Images embedded in PDF, Word, or PowerPoint documents are extracted into `MD_<name>_<ext>/images/`, and the generated Markdown contains relative image links. Conversion continues through a batch if an individual file fails; the process exits with status `1` if any input fails.
+## Math Formulas and Symbol Normalization
 
-## Contributing
+Equations inside Word and OpenDocument files are automatically translated into standard LaTeX syntax. Special math characters and Greek letters are mapped using a catalog aligned with official LaTeX references:
 
-Contributions are welcome. Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines. For architectural details, processing pipelines, and internal specifications, see [TECHNICAL.md](TECHNICAL.md).
+- Official Reference: [Rice University LaTeX Symbols Reference](https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf)
+- Bundled Copy: [symbols.pdf](symbols.pdf)
+
+## Documentation links
+
+For additional guides and specifications:
+
+- [Python API Reference](docs/PYTHON.md) -- complete guide to Python library methods
+- [Technical Reference](docs/TECHNICAL.md) -- internal format processing and parser details
+- [Architecture](docs/ARCHITECTURE.md) -- system layers and Mermaid pipeline diagram
+- [Contributing Guidelines](CONTRIBUTING.md) -- development setup and testing guidelines
