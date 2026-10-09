@@ -257,14 +257,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         prog="hammerdown",
         description="Convert PDF and office documents to Markdown",
     )
-    parser.add_argument("--version", action="version", version=f"hammerdown {__version__}")
+    parser.add_argument("-v", "--version", action="version", version=f"hammerdown {__version__}")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--install", action="store_true", help="Install the file-manager integration")
     action.add_argument("--uninstall", action="store_true", help="Remove the file-manager integration")
     parser.add_argument("--update", action="store_true", help="Update hammerdown to the latest version")
     parser.add_argument("-i", "--in-place", action="store_true", help="Save output Markdown and images in the same directory as the input file")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing output directories/files")
-    parser.add_argument("--quiet", action="store_true", help="Suppress routine conversion messages")
+    parser.add_argument("-f", "--force", action="store_true", help="Overwrite existing output directories/files")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress routine conversion messages")
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(argv)
 
