@@ -33,8 +33,9 @@ def test_golden_conversion(tmp_path: Path):
         target_input = run_dir / file_path.name
         shutil.copy2(file_path, target_input)
 
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(Path("src").resolve()), os.environ.get("PYTHONPATH", "")]))}
         cmd = [sys.executable, "-m", "hammerdown.cli", "--force", str(target_input)]
-        result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
 
         out_md_path = run_dir / f"{stem}_{ext_clean}.md" if ext_clean else run_dir / f"{stem}.md"

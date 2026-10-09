@@ -16,7 +16,6 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
 
     stem = Path(file_path).stem
     img_dir = Path(out_dir) / "hammerdown_images"
-    img_dir.mkdir(parents=True, exist_ok=True)
 
     saved_imgs = 0
     extracted_xrefs: set[int] = set()
@@ -33,6 +32,7 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
                     continue
 
                 img_name = f"{stem}_p{page_number:03d}_xref{xref}.{img_data['ext']}"
+                img_dir.mkdir(parents=True, exist_ok=True)
                 (img_dir / img_name).write_bytes(img_data["image"])
                 extracted_xrefs.add(xref)
                 saved_imgs += 1
