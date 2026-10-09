@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from hammerdown import SUPPORTED_EXTENSIONS
+
 
 def test_golden_conversion():
     inputs_dir = Path("tests/inputs")
@@ -11,7 +13,7 @@ def test_golden_conversion():
 
     test_files = [
         f for f in inputs_dir.glob("*.*")
-        if f.suffix.lower() in [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".csv", ".txt", ".epub", ".fb2", ".md"]
+        if f.suffix.lower() in SUPPORTED_EXTENSIONS
     ]
     assert len(test_files) > 0, "No test input files found"
 

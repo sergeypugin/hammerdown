@@ -4,40 +4,12 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Callable
-
-from hammerdown.parsers import (
-    convert_pdf_or_ebook,
-    convert_docx,
-    convert_doc,
-    convert_xlsx,
-    convert_xls,
-    convert_pptx,
-    convert_ppt,
-    convert_csv,
-    convert_txt_or_md,
-)
+from hammerdown.parsers import CONVERTERS
 from hammerdown.utils import normalize_path
 
 logger = logging.getLogger("hammerdown")
 
-CONVERTERS: dict[str, Callable[..., tuple[str | None, int]]] = {
-    ".pdf": convert_pdf_or_ebook,
-    ".epub": convert_pdf_or_ebook,
-    ".mobi": convert_pdf_or_ebook,
-    ".fb2": convert_pdf_or_ebook,
-    ".xps": convert_pdf_or_ebook,
-    ".docx": convert_docx,
-    ".doc": convert_doc,
-    ".xlsx": convert_xlsx,
-    ".xls": convert_xls,
-    ".pptx": convert_pptx,
-    ".ppt": convert_ppt,
-    ".csv": convert_csv,
-    ".txt": convert_txt_or_md,
-    ".md": convert_txt_or_md,
-    ".log": convert_txt_or_md,
-}
+SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(CONVERTERS)
 
 
 def to_markdown(

@@ -8,6 +8,11 @@ import subprocess
 import tempfile
 import zipfile
 
+from hammerdown.parsers.math import MATH_NS as _MATH_NS
+from hammerdown.parsers.math import omml_to_latex as _omml_to_latex
+from hammerdown.parsers.math import xml_name as _xml_name
+from hammerdown.parsers.odt import convert_odt
+
 logger = logging.getLogger("hammerdown")
 
 
@@ -46,28 +51,84 @@ def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
     return None
 
 
+def _render_word_node(node, relationships) -> str | tuple[str, str]:
+    tag = _xml_name(node)
+    if tag == "t":
+        return node.text or ""
+    if tag == "tab":
+        return "\t"
+    if tag in {"br", "cr"}:
+        return "\n"
+    if tag == "oMath":
+        return ("inline", _omml_to_latex(node).strip())
+    if tag == "oMathPara":
+        formula = " ".join(_omml_to_latex(math).strip() for math in node.findall(f".//{_MATH_NS}oMath"))
+        return ("display", formula.strip())
+    if tag == "hyperlink":
+        rendered = _render_word_children(node, relationships)
+        relation_id = node.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+        url = relationships[relation_id].target_ref if relation_id in relationships else ""
+        if url and rendered and isinstance(rendered, str):
+            return f"[{rendered}]({url})"
+        return rendered
+    if tag.endswith("Pr") or tag in {"pPr", "sectPr"}:
+        return ""
+    return _render_word_children(node, relationships)
+
+
+def _render_word_children(node, relationships) -> str | tuple[str, str]:
+    parts = [_render_word_node(child, relationships) for child in node]
+    formulas = [part for part in parts if isinstance(part, tuple)]
+    text = "".join(part for part in parts if isinstance(part, str))
+    if not formulas:
+        return text
+    has_text = bool(text.strip())
+    rendered = []
+    for part in parts:
+        if isinstance(part, tuple):
+            mode, latex = part
+            delimiter = "$$" if mode == "display" or not has_text else "$"
+            rendered.append(f"{delimiter}{latex}{delimiter}")
+        else:
+            rendered.append(part)
+    return "".join(rendered)
+
+
+def _render_word_paragraph(element, relationships) -> str:
+    rendered = _render_word_children(element, relationships)
+    return rendered.strip() if isinstance(rendered, str) else ""
+
+
 def convert_docx(docx_path: str, out_dir: str) -> tuple[str | None, int]:
     try:
         import docx  # type: ignore
+        from docx.table import Table
     except ImportError:
         logger.error("DOCX support requires python-docx")
         return None, 0
 
     doc = docx.Document(docx_path)
     lines: list[str] = []
-    for paragraph in doc.paragraphs:
-        if paragraph.text.strip():
-            lines.append(paragraph.text)
-
-    for table in doc.tables:
-        if not table.rows:
-            continue
-        header_cells = [cell.text.strip() for cell in table.rows[0].cells]
-        lines.append(f"| {' | '.join(header_cells)} |")
-        lines.append(f"| {' | '.join(['---'] * len(header_cells))} |")
-        for row in table.rows[1:]:
-            row_text = " | ".join(cell.text.strip() for cell in row.cells)
-            lines.append(f"| {row_text} |")
+    for element in doc.element.body:
+        tag = _xml_name(element)
+        if tag == "p":
+            text = _render_word_paragraph(element, doc.part.rels)
+            if text:
+                lines.append(text)
+        elif tag == "tbl":
+            table = Table(element, doc)
+            for row_index, row in enumerate(table.rows):
+                cells = []
+                for cell in row.cells:
+                    cell_paragraphs = [
+                        _render_word_paragraph(paragraph._p, doc.part.rels)
+                        for paragraph in cell.paragraphs
+                    ]
+                    cells.append(" ".join(text for text in cell_paragraphs if text).replace("|", "\\|"))
+                lines.append(f"| {' | '.join(cells)} |")
+                if row_index == 0:
+                    lines.append(f"| {' | '.join(['---'] * len(cells))} |")
+            lines.append("")
 
     return "\n\n".join(lines), 0
 
@@ -213,3 +274,14 @@ def convert_ppt(ppt_path: str, out_dir: str) -> tuple[str | None, int]:
 
     logger.error("Legacy .ppt format requires LibreOffice or Microsoft PowerPoint to be installed")
     return None, 0
+
+
+CONVERTERS = {
+    ".docx": convert_docx,
+    ".doc": convert_doc,
+    ".odt": convert_odt,
+    ".xlsx": convert_xlsx,
+    ".xls": convert_xls,
+    ".pptx": convert_pptx,
+    ".ppt": convert_ppt,
+}

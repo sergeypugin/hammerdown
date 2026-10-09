@@ -39,3 +39,12 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
 
     md_text = pymupdf4llm.to_markdown(file_path, write_images=False)
     return str(md_text), saved_imgs
+
+
+CONVERTERS = {
+    ".pdf": convert_pdf_or_ebook,
+    ".epub": convert_pdf_or_ebook,
+    ".mobi": convert_pdf_or_ebook,
+    ".fb2": convert_pdf_or_ebook,
+    ".xps": convert_pdf_or_ebook,
+}

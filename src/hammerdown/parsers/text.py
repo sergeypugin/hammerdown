@@ -113,3 +113,11 @@ def convert_csv(csv_path: str, out_dir: str) -> tuple[str | None, int]:
             lines.append(f"| {' | '.join(cells)} |")
 
     return "\n".join(lines), 0
+
+
+CONVERTERS = {
+    ".csv": convert_csv,
+    ".txt": convert_txt_or_md,
+    ".md": convert_txt_or_md,
+    ".log": convert_txt_or_md,
+}

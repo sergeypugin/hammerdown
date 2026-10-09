@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
-from hammerdown import __version__
+from hammerdown import SUPPORTED_EXTENSIONS, __version__
 from hammerdown.core import convert_file
 from hammerdown.utils import normalize_path
 
@@ -63,7 +63,7 @@ def _install_windows(command: str) -> None:
         if not icon_path:
             icon_path = command.split('"')[1]
 
-    extensions = [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".txt", ".md", ".log", ".csv"]
+    extensions = list(SUPPORTED_EXTENSIONS)
     for ext in extensions:
         key_path = rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown"
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
@@ -222,10 +222,11 @@ def update() -> bool:
 def _select_files() -> Sequence[str]:
     if os.name == "nt":
         try:
+            pattern = ";".join(f"*{ext}" for ext in SUPPORTED_EXTENSIONS)
             ps_script = (
                 "Add-Type -AssemblyName PresentationFramework | Out-Null;"
                 "$dialog = New-Object Microsoft.Win32.OpenFileDialog;"
-                "$dialog.Filter = 'Supported Documents|*.pdf;*.docx;*.doc;*.xlsx;*.xls;*.pptx;*.ppt;*.txt;*.md;*.log;*.csv|All Files (*.*)|*.*';"
+                f"$dialog.Filter = 'Supported Documents|{pattern}|All Files (*.*)|*.*';"
                 "$dialog.Multiselect = $true;"
                 "$dialog.Title = 'Select documents to convert';"
                 "if ($dialog.ShowDialog() -eq $true) { $dialog.FileNames }"

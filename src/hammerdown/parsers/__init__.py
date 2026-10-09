@@ -1,27 +1,11 @@
 from __future__ import annotations
 
-import logging
-from hammerdown.parsers.pdf import convert_pdf_or_ebook
-from hammerdown.parsers.office import (
-    convert_docx,
-    convert_doc,
-    convert_xlsx,
-    convert_xls,
-    convert_pptx,
-    convert_ppt,
-)
-from hammerdown.parsers.text import convert_csv, convert_txt_or_md
+from . import office, pdf, text
 
-logger = logging.getLogger("hammerdown")
+CONVERTERS = {
+    **pdf.CONVERTERS,
+    **office.CONVERTERS,
+    **text.CONVERTERS,
+}
 
-__all__ = [
-    "convert_pdf_or_ebook",
-    "convert_docx",
-    "convert_doc",
-    "convert_xlsx",
-    "convert_xls",
-    "convert_pptx",
-    "convert_ppt",
-    "convert_csv",
-    "convert_txt_or_md",
-]
+__all__ = ["CONVERTERS"]
