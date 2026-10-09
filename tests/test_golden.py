@@ -63,9 +63,12 @@ def test_golden_conversion(tmp_path: Path):
 
 
 if __name__ == "__main__":
-    try:
-        test_golden_conversion()
-        print("\nSUCCESS: All golden tests passed!")
-    except AssertionError as e:
-        print(f"\nFAILURE: {e}")
-        sys.exit(1)
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        try:
+            test_golden_conversion(Path(tmp_dir))
+            print("\nSUCCESS: All golden tests passed!")
+        except AssertionError as e:
+            print(f"\nFAILURE: {e}")
+            sys.exit(1)
