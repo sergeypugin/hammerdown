@@ -1,8 +1,22 @@
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
 from xml.etree.ElementTree import Element
 
 MATH_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+
+# Load math symbols from JSON
+_SYMBOLS_PATH = Path(__file__).parent / "symbols.json"
+with _SYMBOLS_PATH.open("r", encoding="utf-8") as _f:
+    _MATH_SYMBOLS = str.maketrans(json.load(_f))
+
+
+def _math_text(text: str) -> str:
+    rendered = text.translate(_MATH_SYMBOLS)
+    rendered = re.sub(r"(?<=\d),(?=\d)", r"{,}", rendered)
+    return re.sub(r"(?:(?<![A-Za-z\\])|(?<=\\cdot))exp(?![A-Za-z])", lambda _: r"\exp", rendered)
 
 
 def xml_name(elem: Element) -> str:
@@ -16,7 +30,7 @@ def _omml_text(elem: Element | None) -> str:
 def omml_to_latex(elem: Element) -> str:
     tag = xml_name(elem)
     if tag == "t":
-        return elem.text or ""
+        return _math_text(elem.text or "")
     if tag == "f":
         numerator = _omml_text(elem.find(f"{MATH_NS}num")).strip()
         denominator = _omml_text(elem.find(f"{MATH_NS}den")).strip()
@@ -78,9 +92,9 @@ def mathml_to_latex(elem: Element) -> str:
     text = (elem.text or "").strip()
     children = list(elem)
     if tag in {"mi", "mn", "mtext"}:
-        return text
+        return _math_text(text)
     if tag == "mo":
-        return r"\sum" if text == "∑" else text
+        return r"\sum" if text == "∑" else _math_text(text)
     if tag == "mfrac":
         numerator = mathml_to_latex(children[0]) if children else ""
         denominator = mathml_to_latex(children[1]) if len(children) > 1 else ""
@@ -109,5 +123,5 @@ def mathml_to_latex(elem: Element) -> str:
         closing = elem.attrib.get("close", ")")
         return opening + ", ".join(mathml_to_latex(child) for child in children) + closing
     if tag in {"math", "mrow", "mstyle", "mspace"}:
-        return "".join(mathml_to_latex(child) for child in children)
-    return text + "".join(mathml_to_latex(child) for child in children)
+        return _math_text("".join(mathml_to_latex(child) for child in children))
+    return _math_text(text + "".join(mathml_to_latex(child) for child in children))

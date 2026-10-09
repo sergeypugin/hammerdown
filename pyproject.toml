@@ -25,7 +25,7 @@ package-dir = {"" = "src"}
 packages = ["hammerdown", "hammerdown.parsers"]
 
 [tool.setuptools.package-data]
-hammerdown = ["icon.ico"]
+hammerdown = ["icon.ico", "parsers/symbols.json"]
 
 [tool.setuptools.dynamic]
 version = {attr = "hammerdown.__version__"}

@@ -4,7 +4,7 @@ from pathlib import Path
 import zipfile
 from xml.etree import ElementTree as ET
 
-from hammerdown.parsers.math import mathml_to_latex
+from hammerdown.parsers.math import mathml_to_latex, omml_to_latex
 from hammerdown.parsers.odt import convert_odt
 from hammerdown.parsers.office import convert_docx
 
@@ -17,8 +17,12 @@ def test_docx_preserves_formula_and_table_order(tmp_path: Path) -> None:
     assert images == 1
     assert r"\frac{1}{N}" in markdown
     assert r"\sum_{i=1}^{N}" in markdown
+    assert (
+        r"\rho(12) \approx \frac{1}{2{,}891\sqrt{2\pi}}\cdot\exp(-\frac{(12 - 12.66)^{2}}{2\cdot2{,}891^{2}})\approx0{,}13"
+        in markdown
+    )
 
-    assert "$$l=(12,66±0,51)" in markdown
+    assert r"$$l=(12{,}66\pm0{,}51)" in markdown
     assert markdown.index("8. Результаты прямых измерений") < markdown.index("| Actors |")
     assert markdown.index("| Actors |") < markdown.index("9. Расчет результатов")
     lines = markdown.splitlines()
@@ -33,6 +37,23 @@ def test_docx_preserves_formula_and_table_order(tmp_path: Path) -> None:
     chart_path = tmp_path / "images" / "chart_report_000.svg"
     assert ET.parse(chart_path).getroot().tag.endswith("svg")
 
+
+
+def test_omml_normalizes_greek_symbols_functions_and_decimal_commas() -> None:
+    omml = (
+        '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">'
+        "<m:r><m:t>ρ exp 2,891</m:t></m:r></m:oMath>"
+    )
+
+    assert omml_to_latex(ET.fromstring(omml)) == r"\rho \exp 2{,}891"
+
+
+def test_odt_normalizes_gaussian_math_from_adjacent_tokens(tmp_path: Path) -> None:
+    source = Path("tests/inputs/report.odt")
+    markdown, _ = convert_odt(str(source), str(tmp_path))
+
+    assert markdown is not None
+    assert r"\cdot\exp(-\frac{(12-12.66)^{2}}{2\cdot2{,}891^{2}})" in markdown
 
 
 def test_mathml_fraction_and_sum() -> None:
