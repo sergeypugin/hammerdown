@@ -5,6 +5,20 @@ import os
 from pathlib import Path
 import time
 from hammerdown.parsers import CONVERTERS
+from hammerdown.parsers.charts import render_chart_svg
+from hammerdown.parsers.math import mathml_to_latex, omml_to_latex
+from hammerdown.parsers.office import (
+    convert_doc,
+    convert_docx,
+    convert_odt,
+    convert_ppt,
+    convert_pptx,
+    convert_xls,
+    convert_xlsx,
+)
+from hammerdown.parsers.pdf import convert_pdf_or_ebook
+from hammerdown.parsers.tables import render_table_regions
+from hammerdown.parsers.text import convert_csv, convert_txt_or_md
 from hammerdown.utils import normalize_path
 
 logger = logging.getLogger("hammerdown")

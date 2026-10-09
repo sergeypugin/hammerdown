@@ -9,6 +9,21 @@ from hammerdown.utils import normalize_path
 def test_package_exports():
     assert hasattr(hammerdown, "to_markdown")
     assert hasattr(hammerdown, "convert_file")
+    assert hasattr(hammerdown, "convert_docx")
+    assert hasattr(hammerdown, "convert_doc")
+    assert hasattr(hammerdown, "convert_odt")
+    assert hasattr(hammerdown, "convert_xlsx")
+    assert hasattr(hammerdown, "convert_xls")
+    assert hasattr(hammerdown, "convert_pptx")
+    assert hasattr(hammerdown, "convert_ppt")
+    assert hasattr(hammerdown, "convert_pdf_or_ebook")
+    assert hasattr(hammerdown, "convert_csv")
+    assert hasattr(hammerdown, "convert_txt_or_md")
+    assert hasattr(hammerdown, "render_table_regions")
+    assert hasattr(hammerdown, "render_chart_svg")
+    assert hasattr(hammerdown, "omml_to_latex")
+    assert hasattr(hammerdown, "mathml_to_latex")
+    assert hasattr(hammerdown, "SUPPORTED_EXTENSIONS")
     assert hasattr(hammerdown, "__version__")
 
 
