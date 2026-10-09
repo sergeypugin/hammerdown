@@ -34,7 +34,7 @@ flowchart TD
     end
 
     subgraph S3 [3. Post-Processing & Output]
-        IMG --> ASSETS[hammerdown_images/]
+        IMG --> ASSETS[hammerdown_images_stem_ext/]
         SVG --> ASSETS
         B64 --> ASSETS
 
@@ -64,6 +64,6 @@ The conversion pipeline consists of three corresponding stages:
 
 ### 3. Post-Processing & Output
 
-- **Asset Storage (`hammerdown_images/`)**: writes raster images, SVG charts, and decoded pictures to disk
+- **Asset Storage (`hammerdown_images_<stem>_<ext>/`)**: writes raster images, SVG charts, and decoded pictures to disk
 - **Whitespace Trimming & Newline Normalization**: converts line endings to `\n`, strips trailing whitespace on every line, and guarantees a final newline
 - **File Output (`<stem>_<ext>.md`)**: writes the final Markdown document next to the source file

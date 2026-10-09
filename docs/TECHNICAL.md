@@ -17,14 +17,14 @@ folder/
 folder/
 ├── document.pdf
 ├── document_pdf.md
-└── hammerdown_images/
-    └── document_p001_xref105.png
+└── hammerdown_images_document_pdf/
+    └── img_p001_xref105.png
 ```
 
 Key naming rules:
 - the output Markdown file uses the template `<stem>_<ext>.md` (for example, `report_doc.md` or `report_docx.md`) to avoid name collisions between files with identical names but different extensions
-- images, charts, and extracted assets are stored in a folder named `hammerdown_images/` next to the Markdown file
-- relative image links in the Markdown point to `hammerdown_images/...`
+- images, charts, and extracted assets are stored in a dedicated folder named `hammerdown_images_<stem>_<ext>/` next to the Markdown file
+- relative image links in the Markdown point to `hammerdown_images_<stem>_<ext>/...`
 
 ## File Processing Details
 
@@ -32,7 +32,7 @@ Key naming rules:
 
 - text and layout structure are parsed using [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM)
 - raster images embedded in pages are extracted directly by their internal reference (XREF); images smaller than 50 x 50 pixels are skipped to filter out minor UI icons and decorative bullet points
-- extracted images are saved as PNG/JPEG files in `hammerdown_images/`
+- extracted images are saved as PNG/JPEG files in `hammerdown_images_<stem>_<ext>/` with names formatted as `img_p{page:03d}_xref{xref}.{ext}`
 
 ### Word Documents (.docx, .doc, .odt)
 
@@ -51,7 +51,7 @@ Key naming rules:
 ### Plain Text and Markdown (.txt, .md, .log)
 
 - text is decoded with automatic fallback across UTF-8, CP1251, and Latin-1 encodings
-- if a Markdown file contains embedded base64 image strings (like `data:image/png;base64,...`), `hammerdown` decodes them, saves them as PNG/JPEG files in `hammerdown_images/`, and replaces the inline base64 string with a clean relative link
+- if a Markdown file contains embedded base64 image strings (like `data:image/png;base64,...`), `hammerdown` decodes them, saves them as PNG/JPEG files in `hammerdown_images_<stem>_<ext>/`, and replaces the inline base64 string with a clean relative link
 
 ### PowerPoint Presentations (.pptx, .ppt)
 

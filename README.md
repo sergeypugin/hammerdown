@@ -107,7 +107,7 @@ hammerdown -f report.docx
 
 ### Extracting Base64 Images from Markdown
 
-If you have a Markdown file with embedded base64 images (such as `data:image/png;base64,...`), running `hammerdown` with `--in-place` will extract those raw image strings into PNG or JPEG files inside `hammerdown_images/` and replace inline base64 data URIs with clean relative links:
+If you have a Markdown file with embedded base64 images (such as `data:image/png;base64,...`), running `hammerdown` with `--in-place` will extract those raw image strings into PNG or JPEG files inside `hammerdown_images_<stem>_<ext>/` and replace inline base64 data URIs with clean relative links:
 
 ```sh
 hammerdown document.md --in-place
@@ -152,8 +152,8 @@ folder/
 folder/
 ├── document.pdf
 ├── document_pdf.md
-└── hammerdown_images/
-    └── document_p001_xref105.png
+└── hammerdown_images_document_pdf/
+    └── img_p001_xref105.png
 ```
 
 ## Math Formulas and Symbol Normalization
