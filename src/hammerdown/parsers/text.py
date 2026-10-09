@@ -24,7 +24,7 @@ def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
 
     # Extract base64 images from Markdown/text
     # Pattern: data:image/(png|jpeg|jpg|webp|gif);base64,[data]
-    img_dir = Path(out_dir) / "images"
+    img_dir = Path(out_dir) / "hammerdown_images"
     saved_imgs = 0
 
     def replacer(match: re.Match[str]) -> str:
@@ -39,7 +39,7 @@ def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
             img_name = f"embedded_img_{saved_imgs}.{ext}"
             (img_dir / img_name).write_bytes(img_bytes)
             saved_imgs += 1
-            return f"images/{img_name}"
+            return f"hammerdown_images/{img_name}"
         except Exception:
             return match.group(0)
 

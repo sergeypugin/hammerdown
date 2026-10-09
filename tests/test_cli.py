@@ -18,7 +18,7 @@ def test_convert_plain_text_creates_markdown_output(tmp_path: Path):
     source.write_text("line one\nline two\n", encoding="utf-8")
 
     assert hammerdown.core.convert_file(source)
-    assert (tmp_path / "MD_notes_txt" / "notes.md").read_text(encoding="utf-8") == "line one\nline two\n"
+    assert (tmp_path / "notes_txt.md").read_text(encoding="utf-8") == "line one\nline two\n"
 
 
 def test_convert_file_in_place(tmp_path: Path):
@@ -26,12 +26,12 @@ def test_convert_file_in_place(tmp_path: Path):
     source.write_text("line one\nline two\n", encoding="utf-8")
 
     assert hammerdown.core.convert_file(source, in_place=True)
-    assert (tmp_path / "notes.md").read_text(encoding="utf-8") == "line one\nline two\n"
+    assert (tmp_path / "notes_txt.md").read_text(encoding="utf-8") == "line one\nline two\n"
 
     source2 = tmp_path / "memo.txt"
     source2.write_text("memo text\n", encoding="utf-8")
     assert hammerdown.cli.main(["--in-place", str(source2)]) == 0
-    assert (tmp_path / "memo.md").read_text(encoding="utf-8") == "memo text\n"
+    assert (tmp_path / "memo_txt.md").read_text(encoding="utf-8") == "memo text\n"
 
 
 def test_convert_file_existing_output_without_force(tmp_path: Path):

@@ -30,11 +30,11 @@ def test_docx_preserves_formula_and_table_order(tmp_path: Path) -> None:
     assert lines[actors_header + 1].startswith("| --- |")
     assert lines[actors_header + 2].startswith("| surname |")
     assert lines[actors_header + 3].startswith("| Holland |")
-    chart_link = "![Гистограмма распределения длин имён и функция Гаусса](images/chart_report_000.svg)"
+    chart_link = "![Гистограмма распределения длин имён и функция Гаусса](hammerdown_images/chart_report_000.svg)"
     assert chart_link in markdown
     assert markdown.index("График 1 – Гистограмма и функция Гаусса") < markdown.index(chart_link)
     assert markdown.index(chart_link) < markdown.index("12. ")
-    chart_path = tmp_path / "images" / "chart_report_000.svg"
+    chart_path = tmp_path / "hammerdown_images" / "chart_report_000.svg"
     assert ET.parse(chart_path).getroot().tag.endswith("svg")
 
 
@@ -105,8 +105,8 @@ def test_odt_uses_inline_and_display_math_and_keeps_tables_ordered(tmp_path: Pat
 
     assert markdown is not None
     assert images == 1
-    assert (tmp_path / "images" / "img_sample_000.png").read_bytes() == b"image data"
-    assert "![Image](images/img_sample_000.png)" in markdown
+    assert (tmp_path / "hammerdown_images" / "img_sample_000.png").read_bytes() == b"image data"
+    assert "![Image](hammerdown_images/img_sample_000.png)" in markdown
     assert "Inline $\\frac{1}{N}$ formula" in markdown
     assert "$$\\frac{1}{N}$$" in markdown
     assert markdown.index("$$\\frac{1}{N}$$") < markdown.index("| Header |")

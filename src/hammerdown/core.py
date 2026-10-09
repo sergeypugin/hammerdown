@@ -35,7 +35,7 @@ def to_markdown(
 def convert_file(
     file_path: str | os.PathLike[str],
     force: bool = False,
-    in_place: bool = False,
+    in_place: bool = True,
 ) -> bool:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
@@ -47,12 +47,9 @@ def convert_file(
     extension = source.suffix.lower()
     ext_clean = extension.lstrip(".")
 
-    if in_place:
-        out_dir = source.parent
-    else:
-        folder_name = f"MD_{stem}_{ext_clean}" if ext_clean else f"MD_{stem}"
-        out_dir = source.parent / folder_name
-    out_md = out_dir / f"{stem}.md"
+    out_dir = source.parent
+    out_md_name = f"{stem}_{ext_clean}.md" if ext_clean else f"{stem}.md"
+    out_md = out_dir / out_md_name
 
     if out_md.exists() and not force:
         logger.error("Destination file already exists: %s. Use --force to overwrite.", out_md)

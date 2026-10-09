@@ -8,7 +8,9 @@ from pathlib import Path
 from hammerdown import SUPPORTED_EXTENSIONS
 
 
-def test_golden_conversion():
+import shutil
+
+def test_golden_conversion(tmp_path: Path):
     inputs_dir = Path("tests/inputs")
     golden_dir = Path("tests/golden")
 
@@ -26,12 +28,16 @@ def test_golden_conversion():
         ext_clean = file_path.suffix.lower().lstrip(".")
         print(f"Testing golden output for: {file_path.name}")
 
-        cmd = [sys.executable, "-m", "hammerdown.cli", "--force", str(file_path)]
+        run_dir = tmp_path / f"{stem}_{ext_clean}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        target_input = run_dir / file_path.name
+        shutil.copy2(file_path, target_input)
+
+        cmd = [sys.executable, "-m", "hammerdown.cli", "--force", str(target_input)]
         result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
 
-        folder_name = f"MD_{stem}_{ext_clean}" if ext_clean else f"MD_{stem}"
-        out_md_path = inputs_dir / folder_name / f"{stem}.md"
+        out_md_path = run_dir / f"{stem}_{ext_clean}.md" if ext_clean else run_dir / f"{stem}.md"
         assert out_md_path.is_file(), f"Expected output MD file not found: {out_md_path}"
 
         generated_content = out_md_path.read_text(encoding="utf-8")

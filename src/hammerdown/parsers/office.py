@@ -115,7 +115,7 @@ def convert_docx(docx_path: str, out_dir: str) -> tuple[str | None, int]:
     doc = docx.Document(docx_path)
     chart_links: dict[str, str] = {}
     saved_images = 0
-    image_dir = Path(out_dir) / "images"
+    image_dir = Path(out_dir) / "hammerdown_images"
     for relation_id, relation in doc.part.rels.items():
         if not relation.reltype.endswith("/chart"):
             continue
@@ -126,7 +126,7 @@ def convert_docx(docx_path: str, out_dir: str) -> tuple[str | None, int]:
         image_dir.mkdir(parents=True, exist_ok=True)
         image_name = f"chart_{Path(docx_path).stem}_{saved_images:03}.svg"
         (image_dir / image_name).write_text(svg, encoding="utf-8")
-        chart_links[relation_id] = f"![{title}](images/{image_name})"
+        chart_links[relation_id] = f"![{title}](hammerdown_images/{image_name})"
         saved_images += 1
 
     blocks: list[str] = []

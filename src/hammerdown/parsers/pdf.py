@@ -15,7 +15,7 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
         return None, 0
 
     stem = Path(file_path).stem
-    img_dir = Path(out_dir) / "images"
+    img_dir = Path(out_dir) / "hammerdown_images"
     img_dir.mkdir(parents=True, exist_ok=True)
 
     saved_imgs = 0

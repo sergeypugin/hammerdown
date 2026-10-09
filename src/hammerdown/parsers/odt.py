@@ -50,11 +50,11 @@ def _render_node(
             extension = Path(href).suffix.lower()
             if not extension:
                 return []
-            image_dir = output_dir / "images"
+            image_dir = output_dir / "hammerdown_images"
             image_dir.mkdir(parents=True, exist_ok=True)
             image_name = f"img_{stem}_{len(images):03d}{extension}"
             (image_dir / image_name).write_bytes(image_data)
-            images[href] = f"![Image](images/{image_name})"
+            images[href] = f"![Image](hammerdown_images/{image_name})"
         return [images[href]]
     if tag == "s":
         count = int(node.attrib.get(f"{{{ODF_NS['text']}}}c", "1"))
