@@ -1,4 +1,4 @@
-![Image](hammerdown_images/img_report_000.jpeg)
+![Image](hammerdown_images_report_odt/img_000.jpeg)
 
 | Группа | К работе допущен |
 

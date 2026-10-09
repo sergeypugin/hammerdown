@@ -8,6 +8,7 @@ from pathlib import Path
 import zipfile
 
 from hammerdown.parsers.tables import render_table_regions
+from hammerdown.utils import get_images_dir_name
 
 
 def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
@@ -24,7 +25,8 @@ def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
 
     # Extract base64 images from Markdown/text
     # Pattern: data:image/(png|jpeg|jpg|webp|gif);base64,[data]
-    img_dir = Path(out_dir) / "hammerdown_images"
+    img_dir_name = get_images_dir_name(file_path)
+    img_dir = Path(out_dir) / img_dir_name
     saved_imgs = 0
 
     def replacer(match: re.Match[str]) -> str:
@@ -39,7 +41,7 @@ def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
             img_name = f"embedded_img_{saved_imgs}.{ext}"
             (img_dir / img_name).write_bytes(img_bytes)
             saved_imgs += 1
-            return f"hammerdown_images/{img_name}"
+            return f"{img_dir_name}/{img_name}"
         except Exception:
             return match.group(0)
 

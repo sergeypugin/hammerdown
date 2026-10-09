@@ -14,6 +14,7 @@ from hammerdown.parsers.math import omml_to_latex as _omml_to_latex
 from hammerdown.parsers.math import xml_name as _xml_name
 from hammerdown.parsers.odt import convert_odt
 from hammerdown.parsers.tables import render_table_regions
+from hammerdown.utils import get_images_dir_name
 
 logger = logging.getLogger("hammerdown")
 
@@ -104,7 +105,7 @@ def _render_word_paragraph(element, relationships, chart_links=None) -> str:
     return rendered.strip() if isinstance(rendered, str) else ""
 
 
-def convert_docx(docx_path: str, out_dir: str) -> tuple[str | None, int]:
+def convert_docx(docx_path: str, out_dir: str, images_dir_name: str | None = None) -> tuple[str | None, int]:
     try:
         import docx  # type: ignore
         from docx.table import Table
@@ -115,7 +116,8 @@ def convert_docx(docx_path: str, out_dir: str) -> tuple[str | None, int]:
     doc = docx.Document(docx_path)
     chart_links: dict[str, str] = {}
     saved_images = 0
-    image_dir = Path(out_dir) / "hammerdown_images"
+    img_dir_name = images_dir_name or get_images_dir_name(docx_path)
+    image_dir = Path(out_dir) / img_dir_name
     for relation_id, relation in doc.part.rels.items():
         if not relation.reltype.endswith("/chart"):
             continue
@@ -124,9 +126,9 @@ def convert_docx(docx_path: str, out_dir: str) -> tuple[str | None, int]:
             continue
         title, svg = rendered_chart
         image_dir.mkdir(parents=True, exist_ok=True)
-        image_name = f"chart_{Path(docx_path).stem}_{saved_images:03}.svg"
+        image_name = f"chart_{saved_images:03d}.svg"
         (image_dir / image_name).write_text(svg, encoding="utf-8")
-        chart_links[relation_id] = f"![{title}](hammerdown_images/{image_name})"
+        chart_links[relation_id] = f"![{title}]({img_dir_name}/{image_name})"
         saved_images += 1
 
     blocks: list[str] = []
@@ -222,12 +224,13 @@ def convert_pptx(pptx_path: str, out_dir: str) -> tuple[str | None, int]:
 
 
 def convert_doc(doc_path: str, out_dir: str) -> tuple[str | None, int]:
+    img_dir_name = get_images_dir_name(doc_path)
     if zipfile.is_zipfile(doc_path):
-        return convert_docx(doc_path, out_dir)
+        return convert_docx(doc_path, out_dir, images_dir_name=img_dir_name)
 
     converted = _convert_via_soffice(doc_path, "docx")
     if converted:
-        return convert_docx(converted, out_dir)
+        return convert_docx(converted, out_dir, images_dir_name=img_dir_name)
 
     if os.name == "nt":
         try:
@@ -240,7 +243,7 @@ def convert_doc(doc_path: str, out_dir: str) -> tuple[str | None, int]:
             doc.Close()
             word.Quit()
             if temp_file.is_file():
-                return convert_docx(str(temp_file), out_dir)
+                return convert_docx(str(temp_file), out_dir, images_dir_name=img_dir_name)
         except Exception:
             pass
 

@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from urllib.parse import unquote
 
 from hammerdown.parsers.math import mathml_to_latex, xml_name
+from hammerdown.utils import get_images_dir_name
 
 logger = logging.getLogger("hammerdown")
 
@@ -23,7 +24,7 @@ def _render_node(
     node: ET.Element,
     archive: zipfile.ZipFile,
     output_dir: Path,
-    stem: str,
+    img_dir_name: str,
     images: dict[str, str],
 ) -> list[str | tuple[str, str]]:
     tag = xml_name(node)
@@ -50,11 +51,11 @@ def _render_node(
             extension = Path(href).suffix.lower()
             if not extension:
                 return []
-            image_dir = output_dir / "hammerdown_images"
+            image_dir = output_dir / img_dir_name
             image_dir.mkdir(parents=True, exist_ok=True)
-            image_name = f"img_{stem}_{len(images):03d}{extension}"
+            image_name = f"img_{len(images):03d}{extension}"
             (image_dir / image_name).write_bytes(image_data)
-            images[href] = f"![Image](hammerdown_images/{image_name})"
+            images[href] = f"![Image]({img_dir_name}/{image_name})"
         return [images[href]]
     if tag == "s":
         count = int(node.attrib.get(f"{{{ODF_NS['text']}}}c", "1"))
@@ -68,7 +69,7 @@ def _render_node(
     if node.text:
         parts.append(node.text)
     for child in node:
-        parts.extend(_render_node(child, archive, output_dir, stem, images))
+        parts.extend(_render_node(child, archive, output_dir, img_dir_name, images))
         if child.tail:
             parts.append(child.tail)
     return parts
@@ -78,10 +79,10 @@ def _render_paragraph(
     element: ET.Element,
     archive: zipfile.ZipFile,
     output_dir: Path,
-    stem: str,
+    img_dir_name: str,
     images: dict[str, str],
 ) -> str:
-    parts = _render_node(element, archive, output_dir, stem, images)
+    parts = _render_node(element, archive, output_dir, img_dir_name, images)
     has_text = any(isinstance(part, str) and part.strip() for part in parts)
     rendered = []
     display = xml_name(element) == "h"
@@ -102,7 +103,7 @@ def _render_table(
     table: ET.Element,
     archive: zipfile.ZipFile,
     output_dir: Path,
-    stem: str,
+    img_dir_name: str,
     images: dict[str, str],
 ) -> list[str]:
     rows = table.findall(".//table:table-row", ODF_NS)
@@ -112,7 +113,7 @@ def _render_table(
         rendered_cells = []
         for cell in cells:
             paragraphs = [
-                _render_paragraph(child, archive, output_dir, stem, images)
+                _render_paragraph(child, archive, output_dir, img_dir_name, images)
                 for child in cell
                 if xml_name(child) in {"p", "h"}
             ]
@@ -134,8 +135,8 @@ def convert_odt(odt_path: str, out_dir: str) -> tuple[str | None, int]:
                 logger.error("ODT document has no office:text body")
                 return None, 0
 
+            img_dir_name = get_images_dir_name(odt_path)
             output_dir = Path(out_dir)
-            stem = Path(odt_path).stem
             images: dict[str, str] = {}
             lines: list[str] = []
             try:
@@ -144,18 +145,18 @@ def convert_odt(odt_path: str, out_dir: str) -> tuple[str | None, int]:
                 styles = None
             if styles is not None:
                 for image in styles.findall(".//draw:image", ODF_NS):
-                    for part in _render_node(image, archive, output_dir, stem, images):
+                    for part in _render_node(image, archive, output_dir, img_dir_name, images):
                         if isinstance(part, str) and part not in lines:
                             lines.append(part)
 
             def render_block(element: ET.Element) -> None:
                 tag = xml_name(element)
                 if tag in {"p", "h"}:
-                    text = _render_paragraph(element, archive, output_dir, stem, images)
+                    text = _render_paragraph(element, archive, output_dir, img_dir_name, images)
                     if text:
                         lines.append(text)
                 elif tag == "table":
-                    lines.extend(_render_table(element, archive, output_dir, stem, images))
+                    lines.extend(_render_table(element, archive, output_dir, img_dir_name, images))
                 elif tag == "list-item":
                     start = len(lines)
                     for child in element:
