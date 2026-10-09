@@ -11,7 +11,7 @@ def test_golden_conversion():
 
     test_files = [
         f for f in inputs_dir.glob("*.*")
-        if f.suffix.lower() in [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".csv", ".txt", ".epub", ".fb2"]
+        if f.suffix.lower() in [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".csv", ".txt", ".epub", ".fb2", ".md"]
     ]
     assert len(test_files) > 0, "No test input files found"
 
@@ -20,7 +20,7 @@ def test_golden_conversion():
         ext_clean = file_path.suffix.lower().lstrip(".")
         print(f"Testing golden output for: {file_path.name}")
 
-        cmd = [sys.executable, "src/converter.py", "--force", str(file_path)]
+        cmd = [sys.executable, "-m", "hammerdown.cli", "--force", str(file_path)]
         result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
 

@@ -90,8 +90,9 @@ jobs:
           --collect-all pymupdf
           --collect-all pymupdf4llm
           --collect-all onnxruntime
+          --collect-all hammerdown
           ${{ matrix.target_arch && format('--target-arch {0}', matrix.target_arch) || '' }}
-          src/converter.py
+          src/hammerdown/cli.py
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
