@@ -66,6 +66,10 @@ The symbol catalog is maintained in `src/hammerdown/parsers/symbols.json` and is
 - Official reference: https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf
 - Local copy bundled in repository: [symbols.pdf](../symbols.pdf)
 
+## Release and PyPI Immutability
+
+An important detail about publishing `hammerdown` to PyPI: once a release (for example, version `1.3.0`) is published to PyPI, the index is strictly immutable. PyPI prohibits overwriting or re-uploading an existing version artifact under any circumstances. So even if you rewrite git history or attempt a force push (`git push --force`) on the release tag, PyPI will reject the re-upload with an HTTP error (`File already exists`). Any updates or post-release fixes must always be released under a new version number (such as `1.3.1` or higher).
+
 ## References and External Sources
 
 - **LaTeX Symbol Catalog**: based on the [Rice University LaTeX Symbols Reference](https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf) (local copy: [symbols.pdf](../symbols.pdf))

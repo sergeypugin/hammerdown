@@ -1,77 +1,69 @@
 # Architecture
 
-This document describes the high-level architecture and data flow of `hammerdown`.
+This document describes the high-level architecture and processing pipeline of `hammerdown`.
 
 ## Pipeline Overview
 
-When you pass one or multiple documents to `hammerdown`, the converter runs through a straightforward pipeline:
+When you convert a document with `hammerdown`, processing follows three stages:
 
 ```mermaid
 flowchart TD
-    subgraph L1 [Layer 1: Entrypoint & CLI]
-        A[Input Document] --> B[CLI / Python API]
+    subgraph S1 [1. Input Handling]
+        A[Input Document] --> B[CLI / File Dialog / Python API]
         B --> C[Path Normalization]
     end
 
-    subgraph L2 [Layer 2: Specialized Parsers]
-        C --> D{Format Selector}
-        D -->|PDF, EPUB, MOBI| E[PDF Engine]
-        D -->|DOCX, DOC, ODT| F[Word & ODF Engine]
-        D -->|XLSX, XLS, CSV| G[Spreadsheet Engine]
-        D -->|PPTX, PPT| H[Presentation Engine]
-        D -->|MD, TXT, LOG| I[Text Engine]
+    subgraph S2 [2. Content Parsing & Extraction]
+        C --> D{Format Router}
 
-        F --> F1[Math Parser: OMML & MathML to LaTeX]
-        F --> F2[Chart Parser: DrawingML to Vector SVG]
+        D -->|PDF, EPUB| P_PDF[PDF Engine<br>Text layout & XREF images]
+        D -->|DOCX, DOC, ODT| P_DOC[Word & ODF Engine<br>Math to LaTeX & Charts to SVG]
+        D -->|XLSX, XLS, CSV| P_SHEET[Spreadsheet Engine<br>Matrix segmentation to tables]
+        D -->|PPTX, PPT| P_PPT[Presentation Engine<br>Slides & text frames]
+        D -->|MD, TXT, LOG| P_TXT[Text Engine<br>Encoding & base64 images]
 
-        G --> G1[Table Engine: Matrix Segmentation]
+        P_PDF --> IMG[Extracted Images]
+        P_DOC --> SVG[Chart SVGs]
+        P_TXT --> B64[Decoded Images]
 
-        I --> I1[Base64 Image Decoder]
+        P_PDF --> MD_RAW[Raw Markdown Content]
+        P_DOC --> MD_RAW
+        P_SHEET --> MD_RAW
+        P_PPT --> MD_RAW
+        P_TXT --> MD_RAW
     end
 
-    subgraph L3 [Layer 3: Asset Storage]
-        E -->|XREF Images| J[hammerdown_images/]
-        F2 -->|Chart SVG| J
-        I1 -->|PNG / JPEG| J
-    end
+    subgraph S3 [3. Post-Processing & Output]
+        IMG --> ASSETS[hammerdown_images/]
+        SVG --> ASSETS
+        B64 --> ASSETS
 
-    subgraph L4 [Layer 4: Central Post-Processing in core.py]
-        E --> K[Raw Markdown Text]
-        F1 --> K
-        F --> K
-        G1 --> K
-        H --> K
-        I --> K
-
-        K --> M[Line Ending & Trailing Whitespace Cleanup]
-    end
-
-    subgraph L5 [Layer 5: Disk Output]
-        M --> N[Write Markdown File: stem_ext.md]
-        J --> O[Extracted Asset Files]
+        MD_RAW --> CLEAN[Whitespace Trimming & Newline Normalization]
+        CLEAN --> OUT_FILE[stem_ext.md]
     end
 ```
 
-## System Layers
+## Pipeline Stages
 
-The codebase is split into three main layers:
+The conversion pipeline consists of three corresponding stages:
 
-1. **CLI and entrypoint** (`hammerdown.cli`, `hammerdown.__main__`):
-   - parses command-line arguments (`--in-place`, `--force`, `--quiet`, etc.)
-   - triggers OS file pickers when run without arguments
-   - registers system file-manager context menu handlers
+### 1. Input Handling
 
-2. **Core orchestration** (`hammerdown.core`):
-   - manages output filenames (`<name>_<ext>.md`)
-   - creates output directories and manages collision protection
-   - exposes high-level functions `to_markdown()` and `convert_file()`
-   - re-exports specialized parser functions for Python developers
+- **Input Document**: source document path supplied by user or script
+- **CLI / File Dialog / Python API**: parses flags (`-i`, `-f`, `-q`, `-v`), opens graphical file picker if no files are passed, or accepts direct Python calls
+- **Path Normalization**: resolves Windows and WSL paths, strips quotes, and verifies file existence
 
-3. **Parsers** (`hammerdown.parsers`):
-   - `pdf.py`: PDF and e-book parsing via PyMuPDF and PyMuPDF4LLM, extracting raw images
-   - `office.py`: DOCX, XLSX, PPTX extraction, plus fallback runners for older formats (.doc, .xls, .ppt)
-   - `odt.py`: native OpenDocument Text reader with formula and image extraction
-   - `math.py`: conversion of equation XML trees (Word OMML and MathML) into standard LaTeX math formulas using symbol mappings in `symbols.json`
-   - `charts.py`: conversion of embedded office charts into standalone SVG vector images
-   - `tables.py`: intelligent detection, trimming, and segmentation of complex and sparse table matrices into clean Markdown tables
-   - `text.py`: encoding detection, CSV dialect sniffing, and base64 image extraction
+### 2. Content Parsing & Extraction
+
+- **Format Router**: detects file extension and delegates work to the corresponding parser
+- **PDF Engine**: extracts document layout via PyMuPDF4LLM and original raster images by XREF via PyMuPDF
+- **Word & ODF Engine**: extracts text and tables, translates equations (OMML and MathML) into LaTeX via `symbols.json`, and renders DrawingML charts as SVG
+- **Spreadsheet Engine**: segments cell matrices, trims empty borders, and builds clean Markdown tables
+- **Presentation Engine**: converts slides, headers, and text frames into structured sections
+- **Text Engine**: auto-detects encodings and decodes inline base64 images into standalone image files
+
+### 3. Post-Processing & Output
+
+- **Asset Storage (`hammerdown_images/`)**: writes raster images, SVG charts, and decoded pictures to disk
+- **Whitespace Trimming & Newline Normalization**: converts line endings to `\n`, strips trailing whitespace on every line, and guarantees a final newline
+- **File Output (`<stem>_<ext>.md`)**: writes the final Markdown document next to the source file
