@@ -18,7 +18,7 @@
 - [Installation](#installation)
   - [Recommended: Python package (pip)](#recommended-python-package-pip)
   - [Direct Download (Standalone binaries)](#direct-download-standalone-binaries)
-  - [File Manager Context Menu](#file-manager-context-menu)
+  - [File Manager Context Menu Integration](#file-manager-context-menu-integration)
 - [Usage](#usage)
   - [Command Line Interface](#command-line-interface)
   - [Extracting Base64 Images from Markdown](#extracting-base64-images-from-markdown)
@@ -63,15 +63,21 @@ chmod +x ./hammerdown-linux-x64
 ./hammerdown-linux-x64 --version
 ```
 
-### File Manager Context Menu
+### File Manager Context Menu Integration
 
-Register system context menu integration using `--install`:
+You can integrate `hammerdown` directly into your OS file manager to convert documents with a single right-click, without opening a terminal:
 
 ```sh
 hammerdown --install
 ```
 
-To remove integration:
+What this does:
+- on Windows: adds a **Hammer down file** action with an icon to the File Explorer context menu for all supported document formats (no administrator privileges required)
+- on Linux: installs the executable into `~/.local/bin` and adds a context script for GNOME Nautilus (`Scripts -> Hammer down file`)
+
+To convert a file, right-click any supported document (`.pdf`, `.docx`, etc.) and select **Hammer down file**. The Markdown output and extracted images are saved directly next to the original document.
+
+To remove file manager integration and clean up shortcuts:
 
 ```sh
 hammerdown --uninstall
