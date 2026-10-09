@@ -6,3 +6,4 @@ dist/
 *.spec
 *.egg-info/
 tests/inputs/MD_*
+~$*
