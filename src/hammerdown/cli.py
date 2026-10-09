@@ -262,6 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     action.add_argument("--install", action="store_true", help="Install the file-manager integration")
     action.add_argument("--uninstall", action="store_true", help="Remove the file-manager integration")
     parser.add_argument("--update", action="store_true", help="Update hammerdown to the latest version")
+    parser.add_argument("-i", "--in-place", action="store_true", help="Save output Markdown and images in the same directory as the input file")
     parser.add_argument("--force", action="store_true", help="Overwrite existing output directories/files")
     parser.add_argument("--quiet", action="store_true", help="Suppress routine conversion messages")
     parser.add_argument("files", nargs="*", help="Files to convert")
@@ -283,7 +284,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     started_at = time.monotonic()
-    results = [convert_file(file_path, force=args.force) for file_path in files]
+    results = [convert_file(file_path, force=args.force, in_place=args.in_place) for file_path in files]
     failed_count = results.count(False)
     if len(files) > 1 and not args.quiet:
         logger.info(

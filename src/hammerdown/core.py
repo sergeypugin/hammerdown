@@ -32,7 +32,11 @@ def to_markdown(
     return converter(str(source), target_dir)
 
 
-def convert_file(file_path: str | os.PathLike[str], force: bool = False) -> bool:
+def convert_file(
+    file_path: str | os.PathLike[str],
+    force: bool = False,
+    in_place: bool = False,
+) -> bool:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
     if not source.is_file():
@@ -43,8 +47,11 @@ def convert_file(file_path: str | os.PathLike[str], force: bool = False) -> bool
     extension = source.suffix.lower()
     ext_clean = extension.lstrip(".")
 
-    folder_name = f"MD_{stem}_{ext_clean}" if ext_clean else f"MD_{stem}"
-    out_dir = source.parent / folder_name
+    if in_place:
+        out_dir = source.parent
+    else:
+        folder_name = f"MD_{stem}_{ext_clean}" if ext_clean else f"MD_{stem}"
+        out_dir = source.parent / folder_name
     out_md = out_dir / f"{stem}.md"
 
     if out_md.exists() and not force:
