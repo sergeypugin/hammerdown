@@ -2,6 +2,7 @@ import glob
 import os
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 from hammerdown import SUPPORTED_EXTENSIONS
@@ -13,9 +14,12 @@ def test_golden_conversion():
 
     test_files = [
         f for f in inputs_dir.glob("*.*")
-        if f.suffix.lower() in SUPPORTED_EXTENSIONS
+        if f.suffix.lower() in SUPPORTED_EXTENSIONS and not f.name.startswith("~$")
     ]
     assert len(test_files) > 0, "No test input files found"
+
+    stems = Counter(f.stem for f in test_files)
+    duplicate_stems = {stem for stem, count in stems.items() if count > 1}
 
     for file_path in test_files:
         stem = file_path.stem
@@ -31,7 +35,14 @@ def test_golden_conversion():
         assert out_md_path.is_file(), f"Expected output MD file not found: {out_md_path}"
 
         generated_content = out_md_path.read_text(encoding="utf-8")
-        golden_file_path = golden_dir / f"{stem}.md"
+
+        specific_golden = golden_dir / f"{stem}_{ext_clean}.md"
+        if specific_golden.is_file():
+            golden_file_path = specific_golden
+        elif stem in duplicate_stems:
+            golden_file_path = specific_golden
+        else:
+            golden_file_path = golden_dir / f"{stem}.md"
 
         if not golden_file_path.is_file():
             golden_dir.mkdir(parents=True, exist_ok=True)
