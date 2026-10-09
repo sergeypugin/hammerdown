@@ -267,6 +267,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(argv)
 
+    if not logger.handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
     if args.quiet:
         logger.setLevel(logging.ERROR)
     if args.install:
@@ -291,3 +293,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             failed_count,
         )
     return 1 if failed_count else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
