@@ -8,10 +8,12 @@ import subprocess
 import tempfile
 import zipfile
 
+from hammerdown.parsers.charts import render_chart_svg
 from hammerdown.parsers.math import MATH_NS as _MATH_NS
 from hammerdown.parsers.math import omml_to_latex as _omml_to_latex
 from hammerdown.parsers.math import xml_name as _xml_name
 from hammerdown.parsers.odt import convert_odt
+from hammerdown.parsers.tables import render_table_regions
 
 logger = logging.getLogger("hammerdown")
 
@@ -51,8 +53,11 @@ def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
     return None
 
 
-def _render_word_node(node, relationships) -> str | tuple[str, str]:
+def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str, str]:
     tag = _xml_name(node)
+    if tag == "chart":
+        relation_id = node.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+        return chart_links.get(relation_id, "") if chart_links else ""
     if tag == "t":
         return node.text or ""
     if tag == "tab":
@@ -65,7 +70,7 @@ def _render_word_node(node, relationships) -> str | tuple[str, str]:
         formula = " ".join(_omml_to_latex(math).strip() for math in node.findall(f".//{_MATH_NS}oMath"))
         return ("display", formula.strip())
     if tag == "hyperlink":
-        rendered = _render_word_children(node, relationships)
+        rendered = _render_word_children(node, relationships, chart_links)
         relation_id = node.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
         url = relationships[relation_id].target_ref if relation_id in relationships else ""
         if url and rendered and isinstance(rendered, str):
@@ -73,11 +78,11 @@ def _render_word_node(node, relationships) -> str | tuple[str, str]:
         return rendered
     if tag.endswith("Pr") or tag in {"pPr", "sectPr"}:
         return ""
-    return _render_word_children(node, relationships)
+    return _render_word_children(node, relationships, chart_links)
 
 
-def _render_word_children(node, relationships) -> str | tuple[str, str]:
-    parts = [_render_word_node(child, relationships) for child in node]
+def _render_word_children(node, relationships, chart_links=None) -> str | tuple[str, str]:
+    parts = [_render_word_node(child, relationships, chart_links) for child in node]
     formulas = [part for part in parts if isinstance(part, tuple)]
     text = "".join(part for part in parts if isinstance(part, str))
     if not formulas:
@@ -94,8 +99,8 @@ def _render_word_children(node, relationships) -> str | tuple[str, str]:
     return "".join(rendered)
 
 
-def _render_word_paragraph(element, relationships) -> str:
-    rendered = _render_word_children(element, relationships)
+def _render_word_paragraph(element, relationships, chart_links=None) -> str:
+    rendered = _render_word_children(element, relationships, chart_links)
     return rendered.strip() if isinstance(rendered, str) else ""
 
 
@@ -108,29 +113,47 @@ def convert_docx(docx_path: str, out_dir: str) -> tuple[str | None, int]:
         return None, 0
 
     doc = docx.Document(docx_path)
-    lines: list[str] = []
+    chart_links: dict[str, str] = {}
+    saved_images = 0
+    image_dir = Path(out_dir) / "images"
+    for relation_id, relation in doc.part.rels.items():
+        if not relation.reltype.endswith("/chart"):
+            continue
+        rendered_chart = render_chart_svg(relation.target_part.blob)
+        if rendered_chart is None:
+            continue
+        title, svg = rendered_chart
+        image_dir.mkdir(parents=True, exist_ok=True)
+        image_name = f"chart_{Path(docx_path).stem}_{saved_images:03}.svg"
+        (image_dir / image_name).write_text(svg, encoding="utf-8")
+        chart_links[relation_id] = f"![{title}](images/{image_name})"
+        saved_images += 1
+
+    blocks: list[str] = []
     for element in doc.element.body:
         tag = _xml_name(element)
         if tag == "p":
-            text = _render_word_paragraph(element, doc.part.rels)
+            text = _render_word_paragraph(element, doc.part.rels, chart_links)
             if text:
-                lines.append(text)
+                blocks.append(text)
         elif tag == "tbl":
             table = Table(element, doc)
+            rows = []
             for row_index, row in enumerate(table.rows):
                 cells = []
                 for cell in row.cells:
                     cell_paragraphs = [
-                        _render_word_paragraph(paragraph._p, doc.part.rels)
+                        _render_word_paragraph(paragraph._p, doc.part.rels, chart_links)
                         for paragraph in cell.paragraphs
                     ]
                     cells.append(" ".join(text for text in cell_paragraphs if text).replace("|", "\\|"))
-                lines.append(f"| {' | '.join(cells)} |")
+                rows.append(f"| {' | '.join(cells)} |")
                 if row_index == 0:
-                    lines.append(f"| {' | '.join(['---'] * len(cells))} |")
-            lines.append("")
+                    rows.append(f"| {' | '.join(['---'] * len(cells))} |")
+            if rows:
+                blocks.append("\n".join(rows))
 
-    return "\n\n".join(lines), 0
+    return "\n\n".join(blocks), saved_images
 
 
 def convert_xlsx(xlsx_path: str, out_dir: str) -> tuple[str | None, int]:
@@ -141,23 +164,25 @@ def convert_xlsx(xlsx_path: str, out_dir: str) -> tuple[str | None, int]:
         return None, 0
 
     workbook = openpyxl.load_workbook(xlsx_path, data_only=True, read_only=True)
-    lines: list[str] = []
+    formula_workbook = openpyxl.load_workbook(xlsx_path, data_only=False, read_only=True)
+    blocks: list[str] = []
     for sheet in workbook.sheetnames:
-        lines.append(f"# Sheet: {sheet}\n")
-        rows = workbook[sheet].iter_rows(values_only=True)
-        header = next(rows, None)
-        if header is None:
-            continue
-        header_cells = [str(cell) if cell is not None else "" for cell in header]
-        lines.append(f"| {' | '.join(header_cells)} |")
-        lines.append(f"| {' | '.join(['---'] * len(header_cells))} |")
-        for row in rows:
-            if any(row):
-                row_text = " | ".join(str(cell) if cell is not None else "" for cell in row)
-                lines.append(f"| {row_text} |")
-        lines.append("\n")
+        blocks.append(f"# Sheet: {sheet}")
+        data_sheet = workbook[sheet]
+        formula_sheet = formula_workbook[sheet]
+        rows = []
+        for data_row, formula_row in zip(data_sheet.iter_rows(), formula_sheet.iter_rows()):
+            row = []
+            for data_cell, formula_cell in zip(data_row, formula_row):
+                value = data_cell.value
+                if value is None and formula_cell.data_type == "f":
+                    value = formula_cell.value
+                row.append(value)
+            rows.append(row)
+        blocks.extend(render_table_regions(rows))
     workbook.close()
-    return "\n".join(lines), 0
+    formula_workbook.close()
+    return "\n\n".join(blocks), 0
 
 
 def convert_pptx(pptx_path: str, out_dir: str) -> tuple[str | None, int]:

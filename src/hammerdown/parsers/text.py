@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 import zipfile
 
+from hammerdown.parsers.tables import render_table_regions
+
 
 def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
     raw = Path(file_path).read_bytes()
@@ -55,23 +57,25 @@ def convert_csv(csv_path: str, out_dir: str) -> tuple[str | None, int]:
             import openpyxl  # type: ignore
             data = Path(csv_path).read_bytes()
             workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
-            lines: list[str] = []
+            formula_workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=False, read_only=True)
+            blocks: list[str] = []
             for sheet in workbook.sheetnames:
-                lines.append(f"# Sheet: {sheet}\n")
-                rows = workbook[sheet].iter_rows(values_only=True)
-                header = next(rows, None)
-                if header is None:
-                    continue
-                header_cells = [str(cell) if cell is not None else "" for cell in header]
-                lines.append(f"| {' | '.join(header_cells)} |")
-                lines.append(f"| {' | '.join(['---'] * len(header_cells))} |")
-                for row in rows:
-                    if any(row):
-                        row_text = " | ".join(str(cell) if cell is not None else "" for cell in row)
-                        lines.append(f"| {row_text} |")
-                lines.append("\n")
+                blocks.append(f"# Sheet: {sheet}")
+                data_sheet = workbook[sheet]
+                formula_sheet = formula_workbook[sheet]
+                rows = []
+                for data_row, formula_row in zip(data_sheet.iter_rows(), formula_sheet.iter_rows()):
+                    row = []
+                    for data_cell, formula_cell in zip(data_row, formula_row):
+                        value = data_cell.value
+                        if value is None and formula_cell.data_type == "f":
+                            value = formula_cell.value
+                        row.append(value)
+                    rows.append(row)
+                blocks.extend(render_table_regions(rows))
             workbook.close()
-            return "\n".join(lines), 0
+            formula_workbook.close()
+            return "\n\n".join(blocks), 0
         except Exception:
             pass
 
@@ -103,16 +107,7 @@ def convert_csv(csv_path: str, out_dir: str) -> tuple[str | None, int]:
     if not rows:
         return "", 0
 
-    lines = []
-    header = [cell.strip() for cell in rows[0]]
-    lines.append(f"| {' | '.join(header)} |")
-    lines.append(f"| {' | '.join(['---'] * len(header))} |")
-    for row in rows[1:]:
-        if any(cell.strip() for cell in row):
-            cells = [cell.strip() for cell in row]
-            lines.append(f"| {' | '.join(cells)} |")
-
-    return "\n".join(lines), 0
+    return "\n\n".join(render_table_regions(rows)), 0
 
 
 CONVERTERS = {

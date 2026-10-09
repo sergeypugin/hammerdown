@@ -14,12 +14,25 @@ def test_docx_preserves_formula_and_table_order(tmp_path: Path) -> None:
     markdown, images = convert_docx(str(source), str(tmp_path))
 
     assert markdown is not None
-    assert images == 0
+    assert images == 1
     assert r"\frac{1}{N}" in markdown
     assert r"\sum_{i=1}^{N}" in markdown
+
     assert "$$l=(12,66±0,51)" in markdown
     assert markdown.index("8. Результаты прямых измерений") < markdown.index("| Actors |")
     assert markdown.index("| Actors |") < markdown.index("9. Расчет результатов")
+    lines = markdown.splitlines()
+    actors_header = next(index for index, line in enumerate(lines) if line.startswith("| Actors |"))
+    assert lines[actors_header + 1].startswith("| --- |")
+    assert lines[actors_header + 2].startswith("| surname |")
+    assert lines[actors_header + 3].startswith("| Holland |")
+    chart_link = "![Гистограмма распределения длин имён и функция Гаусса](images/chart_report_000.svg)"
+    assert chart_link in markdown
+    assert markdown.index("График 1 – Гистограмма и функция Гаусса") < markdown.index(chart_link)
+    assert markdown.index(chart_link) < markdown.index("12. ")
+    chart_path = tmp_path / "images" / "chart_report_000.svg"
+    assert ET.parse(chart_path).getroot().tag.endswith("svg")
+
 
 
 def test_mathml_fraction_and_sum() -> None:

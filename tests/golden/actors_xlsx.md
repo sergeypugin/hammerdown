@@ -127,3 +127,15 @@
 | 123 | Kasa | Sara | 8 |
 | 124 | Katika | Kikz | 10 |
 | 125 | Kyriakou | Elena | 13 |
+
+| Тестовые | формулы |  |  |
+| --- | --- | --- | --- |
+| #VALUE! | Di Sebastiani |  |  |
+| Galano | surname | name | len(name+surname) |
+
+# Sheet: Лист2
+
+| Тестовые | формулы |
+| --- | --- |
+| #VALUE! | Di Sebastiani |
+| Galano | surname |
