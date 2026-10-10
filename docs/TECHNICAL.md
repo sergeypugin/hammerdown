@@ -70,6 +70,16 @@ The symbol catalog is maintained in `src/hammerdown/parsers/symbols.json` and is
 
 An important detail about publishing `hammerdown` to PyPI: once a release (for example, version `1.3.0`) is published to PyPI, the index is strictly immutable. PyPI prohibits overwriting or re-uploading an existing version artifact under any circumstances. So even if you rewrite git history or attempt a force push (`git push --force`) on the release tag, PyPI will reject the re-upload with an HTTP error (`File already exists`). Any updates or post-release fixes must always be released under a new version number (such as `1.3.1` or higher).
 
+## Performance Optimizations
+
+To deliver maximum speed when processing large documents and batch conversions, `hammerdown` employs multi-level parallelism and lazy loading:
+
+1. **Batch Parallel File Processing (`ProcessPoolExecutor`)**: when passing multiple documents via CLI (`hammerdown doc1.pdf doc2.docx doc3.pdf`), conversion tasks are executed in parallel using multi-process CPU workers.
+2. **Page-Level PDF Parallel Chunking (`ThreadPoolExecutor`)**: PDF files with more than 4 pages are divided into page chunks and rendered concurrently in parallel threads before joining the resulting Markdown output.
+3. **PyMuPDF4LLM Conversion Flags (`use_ocr=False`)**: OCR verification is bypassed during text extraction since embedded raster graphics are extracted directly via PyMuPDF XREF in milliseconds.
+4. **Lazy Dependency Loading**: heavy third-party libraries (`pymupdf`, `python-docx`, `openpyxl`, `python-pptx`, `win32com`) are imported lazily on demand inside format-specific converter routines, allowing quick commands (`--version`, `--install`, `--help`) and plain text/CSV files to process instantly (<0.04s startup).
+5. **Concurrent Extracted Image Disk I/O (`ThreadPoolExecutor`)**: saving extracted images, vector charts, and base64 assets to disk is performed concurrently in background thread pools, keeping disk I/O from blocking the main parsing logic.
+
 ## References and External Sources
 
 - **LaTeX Symbol Catalog**: based on the [Rice University LaTeX Symbols Reference](https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf) (local copy: [symbols.pdf](../symbols.pdf))
