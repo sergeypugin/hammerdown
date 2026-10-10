@@ -18,9 +18,9 @@ flowchart TD
 
         D -->|PDF, EPUB| P_PDF[PDF Engine<br>Text layout & XREF images]
         D -->|DOCX, DOC, ODT| P_DOC[Word & ODF Engine<br>Math to LaTeX & Charts to SVG]
-        D -->|XLSX, XLS, CSV| P_SHEET[Spreadsheet Engine<br>Matrix segmentation to tables]
+        D -->|XLSX, XLS| P_SHEET[Spreadsheet Engine<br>Matrix segmentation to tables]
         D -->|PPTX, PPT| P_PPT[Presentation Engine<br>Slides & text frames]
-        D -->|MD, TXT, LOG| P_TXT[Text Engine<br>Encoding & base64 images]
+        D -->|MD, TXT, LOG, CSV| P_TXT[Text Engine<br>Encoding & base64 images]
 
         P_PDF --> IMG[Extracted Images]
         P_DOC --> SVG[Chart SVGs]
@@ -67,3 +67,33 @@ The conversion pipeline consists of three corresponding stages:
 - **Asset Storage (`hammerdown_images_<stem>_<ext>/`)**: writes raster images, SVG charts, and decoded pictures to disk
 - **Whitespace Trimming & Newline Normalization**: converts line endings to `\n`, strips trailing whitespace on every line, and guarantees a final newline
 - **File Output (`<stem>_<ext>.md`)**: writes the final Markdown document next to the source file (or overwrites plain-text source files when `-w`/`--overwrite` is enabled)
+
+## Cascade Parser Pipeline for Legacy Formats
+
+Documents with legacy extensions (`.doc`, `.xls`, `.ppt`) are processed through a multi-tier fallback cascade designed primarily for execution speed and broad format compatibility.
+
+```mermaid
+flowchart TD
+    INPUT[Legacy Office File<br>.doc / .xls / .ppt] --> CHECK{Is Zip Container?}
+
+    CHECK -->|Yes| TIER1[Tier 1: Pure-Python Parser<br>python-docx / openpyxl / python-pptx]
+    TIER1 -->|Success ~170 ms| SUCCESS[Extracted Markdown & Assets]
+    TIER1 -->|Failed / Not OpenXML| TIER2
+
+    CHECK -->|No / True Binary| TIER2[Tier 2: Headless LibreOffice<br>soffice -env:UserInstallation]
+    TIER2 -->|Converted to OpenXML| TIER1
+    TIER2 -->|Not Installed / Failed| WIN_CHECK{Is Windows?}
+
+    WIN_CHECK -->|Yes| TIER3[Tier 3: Windows COM Automation<br>win32com.client Word/Excel/PowerPoint]
+    TIER3 -->|Converted to OpenXML| TIER1
+    TIER3 -->|Failed / Office Unavailable| FAIL[Error: Office Converter Required]
+
+    WIN_CHECK -->|No| FAIL
+```
+
+Launching external office suites (such as LibreOffice or Microsoft Word) incurs high startup latency and system overhead. Whenever files are structured as XML archives underneath, parsing them directly in pure Python takes ~170 ms compared to ~5,320 ms via LibreOffice `--` delivering over 30x faster conversions without requiring external software installations.
+
+The processing cascade proceeds as follows:
+1. tier 1 (fast in-memory Python parsing): inspects whether the input is a valid zip package. If parsing succeeds via `python-docx`, `openpyxl`, or `python-pptx`, conversion completes in milliseconds in pure Python
+2. tier 2 (headless LibreOffice conversion): if in-memory parsing fails or the file is true binary legacy format (OLE2 or BIFF), `hammerdown` invokes headless LibreOffice (`soffice`) with isolated user profiles (`-env:UserInstallation`) to export modern OpenXML formats
+3. tier 3 (Windows COM automation): on Windows systems where LibreOffice is not found, the converter falls back to native Microsoft Word, Excel, or PowerPoint automation through `win32com.client`

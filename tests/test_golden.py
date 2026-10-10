@@ -35,7 +35,7 @@ def _has_legacy_office_converter() -> bool:
         if any(p.is_file() for p in common_paths):
             return True
         try:
-            import win32com.client
+            import win32com.client  # type: ignore
             return True
         except Exception:
             pass

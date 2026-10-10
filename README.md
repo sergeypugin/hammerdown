@@ -90,6 +90,17 @@ To update `hammerdown` to the latest version:
 hammerdown --update
 ```
 
+> [!warning]
+> Note for users upgrading from version 1.5.1 or earlier: run `hammerdown --install` immediately after updating, or perform a clean reinstall to refresh context menu launcher scripts:
+>
+> ```sh
+> pip uninstall hammerdown -y
+> pip install --no-cache-dir hammerdown
+> hammerdown --install
+> ```
+>
+> Starting from version 1.5.2, `hammerdown --update` automatically refreshes all launcher scripts and file manager integrations without manual reinstallation.
+
 ## Usage
 
 ### Command Line Interface
