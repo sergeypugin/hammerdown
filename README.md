@@ -176,4 +176,5 @@ For additional guides and specifications:
 - [Python API Reference](docs/PYTHON.md) -- complete guide to Python library methods
 - [Technical Reference](docs/TECHNICAL.md) -- internal format processing and parser details
 - [Architecture](docs/ARCHITECTURE.md) -- system layers and Mermaid pipeline diagram
+- [Conversion Benchmarks & Estimations](docs/PREDICTIONS.md) -- empirical performance tables and ETA model
 - [Contributing Guidelines](CONTRIBUTING.md) -- development setup and testing guidelines
