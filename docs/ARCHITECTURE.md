@@ -66,4 +66,4 @@ The conversion pipeline consists of three corresponding stages:
 
 - **Asset Storage (`hammerdown_images_<stem>_<ext>/`)**: writes raster images, SVG charts, and decoded pictures to disk
 - **Whitespace Trimming & Newline Normalization**: converts line endings to `\n`, strips trailing whitespace on every line, and guarantees a final newline
-- **File Output (`<stem>_<ext>.md`)**: writes the final Markdown document next to the source file
+- **File Output (`<stem>_<ext>.md`)**: writes the final Markdown document next to the source file (or overwrites plain-text source files when `-w`/`--overwrite` is enabled)

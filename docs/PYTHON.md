@@ -35,21 +35,22 @@ def log_progress(current: int, total: int, unit: str):
 text, images = to_markdown("data/report.docx", out_dir="output", progress_callback=log_progress)
 ```
 
-### `convert_file(file_path, force=False, in_place=True, progress_callback=None)`
+### `convert_file(file_path, force=False, in_place=True, overwrite=False, progress_callback=None)`
 
-Converts the document and writes the output file `<stem>_<ext>.md` to disk.
+Converts the document and writes the output file (`<stem>_<ext>.md` or source file if `overwrite=True` for plain-text formats) to disk.
 
 - `file_path` (`str | Path`): path to the source document
 - `force` (`bool`, default `False`): if `True`, overwrites existing output Markdown files
 - `in_place` (`bool`, default `True`): saves output files next to the source file
+- `overwrite` (`bool`, default `False`): if `True`, overwrites plain-text input files (`.txt`, `.md`, `.log`, `.csv`) in-place directly (ignored with a warning for binary files like PDF/DOCX)
 - `progress_callback` (`Callable[[int, int, str], None] | None`, optional): custom progress callback
 - Returns: `bool` -- `True` if conversion succeeded, `False` otherwise
 
 ```python
 from hammerdown import convert_file
 
-if convert_file("notes.pdf", force=True):
-    print("Conversion finished!")
+if convert_file("notes.txt", overwrite=True):
+    print("Text file converted and updated in-place!")
 ```
 
 ## Format-Specific Converters

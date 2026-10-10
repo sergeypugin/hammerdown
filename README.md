@@ -103,12 +103,14 @@ hammerdown report.docx workbook.xlsx slides.pptx
 
 Options:
 - `-i`, `--in-place` -- save output Markdown and extracted images in the same directory as the source file
+- `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`, `.log`, `.csv`) in-place instead of creating a copy
 - `-f`, `--force` -- overwrite existing output Markdown files
 - `-q`, `--quiet` -- suppress routine status output
 - `-v`, `--version` -- display version information
 
 ```sh
 hammerdown -i document.pdf
+hammerdown -w notes.txt
 hammerdown -f report.docx
 ```
 
@@ -121,13 +123,13 @@ Processing document.pdf: [████████████░░░░░░
 Completed document.pdf in 1.4s (3 images extracted)
 ```
 
-In non-interactive environments (CI/CD pipelines, redirected log files, or non-TTY outputs), progress is logged as periodic milestone entries without terminal control characters:
+In non-interactive environments (CI/CD pipelines, redirected log files, or non-TTY outputs), progress is logged as periodic status lines starting from 0% without terminal control characters:
 
 ```text
 [hammerdown] Processing document.pdf (50 pages, est. ~45s)...
-[hammerdown] Processing document.pdf: 13/50 pages (26%)...
-[hammerdown] Processing document.pdf: 25/50 pages (50%)...
-[hammerdown] Processing document.pdf: 38/50 pages (76%)...
+[hammerdown] Processing document.pdf: 0/50 pages (0%)...
+[hammerdown] Processing document.pdf: 1/50 pages (2%)...
+...
 [hammerdown] Processing document.pdf: 50/50 pages (100%)...
 [hammerdown] Completed document.pdf in 1.4s (3 images extracted)
 ```

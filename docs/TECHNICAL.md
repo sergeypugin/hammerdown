@@ -22,7 +22,7 @@ folder/
 ```
 
 Key naming rules:
-- the output Markdown file uses the template `<stem>_<ext>.md` (for example, `report_doc.md` or `report_docx.md`) to avoid name collisions between files with identical names but different extensions
+- the output Markdown file uses the template `<stem>_<ext>.md` (for example, `report_doc.md` or `report_docx.md`) to avoid name collisions between files with identical names but different extensions (or overwrites the source file directly when `-w`/`--overwrite` is specified for plain text formats)
 - images, charts, and extracted assets are stored in a dedicated folder named `hammerdown_images_<stem>_<ext>/` next to the Markdown file
 - relative image links in the Markdown point to `hammerdown_images_<stem>_<ext>/...`
 
