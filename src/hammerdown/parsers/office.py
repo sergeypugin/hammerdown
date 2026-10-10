@@ -384,7 +384,7 @@ def convert_doc(
         except Exception:
             pass
 
-    logger.error("Legacy .doc format requires LibreOffice or Microsoft Word to be installed")
+    logger.error("Legacy .doc format requires LibreOffice or Microsoft Word to be installed for conversion. Tip: use modern .docx for native support without external software.")
     return None, 0
 
 
@@ -420,7 +420,7 @@ def convert_xls(
         except Exception:
             pass
 
-    logger.error("Legacy .xls format requires LibreOffice or Microsoft Excel to be installed")
+    logger.error("Legacy .xls format requires LibreOffice or Microsoft Excel to be installed for conversion. Tip: use modern .xlsx for native support without external software.")
     return None, 0
 
 
@@ -455,7 +455,7 @@ def convert_ppt(
         except Exception:
             pass
 
-    logger.error("Legacy .ppt format requires LibreOffice or Microsoft PowerPoint to be installed")
+    logger.error("Legacy .ppt format requires LibreOffice or Microsoft PowerPoint to be installed for conversion. Tip: use modern .pptx for native support without external software.")
     return None, 0
 
 
