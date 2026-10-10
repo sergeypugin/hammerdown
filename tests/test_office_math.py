@@ -107,6 +107,6 @@ def test_odt_uses_inline_and_display_math_and_keeps_tables_ordered(tmp_path: Pat
     assert images == 1
     assert (tmp_path / "hammerdown_images_sample_odt" / "img_000.png").read_bytes() == b"image data"
     assert "![Image](hammerdown_images_sample_odt/img_000.png)" in markdown
-    assert "inline $\\frac{1}{N}$ formula" in markdown
+    assert "contains an inline $\\frac{1}{N}$ formula" in markdown
     assert "$$\\frac{1}{N}$$" in markdown
     assert markdown.index("$$\\frac{1}{N}$$") < markdown.index("| Header |")

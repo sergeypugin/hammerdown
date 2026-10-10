@@ -57,7 +57,7 @@
 
 | --- | --- | --- | --- | --- |
 
-| 1 | Персональный компьютер | Цифровое вычислительное устройство | В пределах объема оперативной памяти | $\Delta _{\text{\text{\text{п}}}\text{\text{\text{р}}}}=0$ |
+| 1 | Персональный компьютер | Цифровое вычислительное устройство | В пределах объема оперативной памяти | $\Delta _{\text{п}\text{р}}=0$ |
 
 
 
@@ -69,7 +69,7 @@
 
 8. Результаты прямых измерений и их обработки.
 
-| Actors |  | $l_{i}$, симв. | $l_{i}-\langle l\rangle _{N}$, симв. | $(l_{i}-\langle l\rangle _{N})^{2}$, симв.2 |
+| Actors |  | $l_{i}, \text{симв.}$ | $l_{i}-\langle l\rangle _{N}, \text{симв.}$ | $(l_{i}-\langle l\rangle _{N})^{2}, \text{симв.}2$ |
 
 | --- | --- | --- | --- | --- |
 
@@ -329,17 +329,17 @@
 
 9. Расчет результатов косвенных измерений.
 
-- $$\langle l\rangle\text{N} = \frac{1}{125}   \sum_{i=1}^{125}l_{i}   ≈   12 .66\text{симв.}$$
+- $$\langle l\rangleN = \frac{1}{125} \sum_{i=1}^{125}l_{i} \approx 12.66 \text{симв.}$$
 
-- $$\sigma_{N} =     \sqrt{\frac{1}{125-1}\sum_{i=1}^{125}(l_{i}-\langle l\rangle _{N})^{2}}   ≈   2.89\text{симв.}$$
+- $$\sigma_{N}=  \sqrt{\frac{1}{125-1}\sum_{i=1}^{125}(l_{i}-\langle l\rangle _{N})^{2}} \approx 2.89 \text{симв.}$$
 
-- $$\rho\text{max} =  \frac{1}{\sigma_{N}\sqrt{2\pi}} ≈   0,1 4\text{симв.}-1$$
+- $$\rho max =  \frac{1}{\sigma_{N}\sqrt{2\pi}}\approx 0{,}14 \text{симв.}-1$$
 
-- $$\sigma_{\langle l\rangle }=\sqrt{\frac{1}{125\cdot124}\sum_{i=1}^{125}(l_{i}-\langle l\rangle _{N})^{2}}   ≈   0.2 6\text{симв.}$$
+- $$\sigma_{\langle l\rangle }=\sqrt{\frac{1}{125\cdot124}\sum_{i=1}^{125}(l_{i}-\langle l\rangle _{N})^{2}} \approx 0.26 \text{симв.}$$
 
-- $$\Delta l\approx1.979\cdot0.26=0.513\text{симв.}$$
+- $$\Delta l\approx1.979\cdot0.26=0.513 \text{симв.}$$
 
-$l_{min}=7\text{\text{с}}\text{\text{и}}\text{\text{м}}\text{\text{в}}.,l_{max}=23\text{\text{с}}\text{\text{и}}\text{\text{м}}\text{\text{в}}.,\sqrt{N}\approx11{,}2 –$для построения гистограммы возьмем 9 интервалов шириной $\Delta l=$2 симв.
+$l_{min}=7\text{с}\text{и}\text{м}\text{в}.,l_{max}=23\text{с}\text{и}\text{м}\text{в}.,\sqrt{N}\approx11{,}2--$для построения гистограммы возьмем 9 интервалов шириной $\Delta l=2 \text{симв.}$
 
 Таблица 2. Данные для построения гистограммы.
 
@@ -367,9 +367,9 @@ $l_{min}=7\text{\text{с}}\text{\text{и}}\text{\text{м}}\text{\text{в}}.,l_{m
 
 
 
-Опытное значение плотности вероятности (в 3 интервале): $\frac{\Delta N}{N\cdot\Delta l}=\frac{38}{125\cdot2}=0{,}152$симв.−1
+Опытное значение плотности вероятности (в 3 интервале): $\frac{\Delta N}{N\cdot\Delta l}=\frac{38}{125\cdot2}=0{,}152 \text{симв.}$−1
 
-Нормальное распределение, описываемое функцией Гаусса$:\rho(12)\approx\frac{1}{2{,}891\sqrt{2\pi}}\cdot\exp(-\frac{(12-12.66)^{2}}{2\cdot2{,}891^{2}})\approx0{,}13$симв.-1
+Нормальное распределение, описываемое функцией Гаусса$:\rho(12)\approx\frac{1}{2{,}891\sqrt{2\pi}}\cdot\exp(-\frac{(12-12.66)^{2}}{2\cdot2{,}891^{2}})\approx0{,}13 \text{симв.}-1$
 
 Таблица 3. Стандартные доверительные интервалы
 
@@ -379,23 +379,23 @@ $l_{min}=7\text{\text{с}}\text{\text{и}}\text{\text{м}}\text{\text{в}}.,l_{m
 
 |  | от (симв.) | до (симв.) |  |  |  |
 
-| $\langle l\rangle$N ± $\sigma$ | 9,77 | 15,55 | 91 | 0,728 | 0,683 |
+| $\langle l\rangleN \pm \sigma$ | 9,77 | 15,55 | 91 | 0,728 | 0,683 |
 
-| $\langle l\rangle$N ± 2$\sigma$ | 6,87 | 18,44 | 120 | 0,960 | 0,954 |
+| $\langle l\rangleN \pm 2\sigma$ | 6,87 | 18,44 | 120 | 0,960 | 0,954 |
 
-| $\langle l\rangle$N ± 3$\sigma$ | 3,98 | 21,33 | 123 | 0,984 | 0,997 |
+| $\langle l\rangleN \pm 3\sigma$ | 3,98 | 21,33 | 123 | 0,984 | 0,997 |
 
 
 
 10. Расчет погрешностей измерений (для прямых и косвенных измерений).
 
-$$t_{\alpha,N}=1{,}979\approx1{,}98;\Delta _{\text{\text{\text{п}}}\text{\text{\text{р}}}}=0;\Delta l^{-}=t_{\alpha,N}\cdot\sigma_{\langle l\rangle }\approx1.98\cdot0.26=0{,}5148\approx0{,}51\text{симв}.$$
+$$t_{\alpha,N}=1{,}979\approx1{,}98;\Delta _{\text{п}\text{р}}=0;\Delta l^{-}=t_{\alpha,N}\cdot\sigma_{\langle l\rangle }\approx1.98\cdot0.26=0{,}5148\approx0{,}51 \text{симв.}$$
 
 Абсолютная погрешность с учетом погрешности прибора:
 
-$$\Delta l=\sqrt{(\Delta l^{-})^{2}+(\frac{2}{3}\Delta _{\text{\text{\text{\text{п}}}}\text{\text{\text{\text{р}}}}})^{2}}\approx0{,}51\text{симв.}$$
+$$\Delta l=\sqrt{(\Delta l^{-})^{2}+(\frac{2}{3}\Delta _{\text{п}\text{р}})^{2}}\approx0{,}51 \text{симв.}$$
 
-Относительная погрешность измерения: $\epsilon_{l}=\frac{\Delta l}{\langle l\rangle _{N}}\cdot100\text{\text{%}}\approx4{,}1\text{\text{%}}$
+Относительная погрешность измерения: $\epsilon_{l}=\frac{\Delta l}{\langle l\rangle _{N}}\cdot100\text{%}\approx4{,}1\text{%}$
 
 - Графики.
 
@@ -403,7 +403,7 @@ $$\Delta l=\sqrt{(\Delta l^{-})^{2}+(\frac{2}{3}\Delta _{\text{\text{\text{\text
 
 12. Окончательные результаты.
 
-$$l=(12{,}66\pm0{,}51)\text{\text{симв.}}(\alpha=0{,}95,\epsilon=4{,}1\text{\text{\text{%}}})$$
+$$l=(12{,}66\pm0{,}51)\text{симв.}(\alpha=0{,}95,\epsilon=4{,}1\text{%})$$
 
 13. Выводы и анализ результатов работы.
 

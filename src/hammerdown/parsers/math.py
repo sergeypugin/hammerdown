@@ -13,18 +13,36 @@ with _SYMBOLS_PATH.open("r", encoding="utf-8") as _f:
     _MATH_SYMBOLS = str.maketrans(json.load(_f))
 
 
-def _math_text(text: str) -> str:
+def math_text(text: str) -> str:
+    if not text:
+        return ""
+
+    # Symbol translation and basic normalization
     rendered = text.translate(_MATH_SYMBOLS)
     rendered = re.sub(r"(?<=\d),(?=\d)", r"{,}", rendered)
     rendered = re.sub(r"(?:(?<![A-Za-z\\])|(?<=\\cdot))exp(?![A-Za-z])", lambda _: r"\exp", rendered)
-    # Replace unescaped % with \text{%} in LaTeX math so GitHub Markdown/KaTeX renders it cleanly
-    parts = []
-    for idx, segment in enumerate(rendered.split(r"\%")):
-        parts.append(segment.replace("%", r"\text{%}"))
-    rendered = r"\text{%}".join(parts)
     rendered = rendered.replace("\u2003", r"\quad ").replace("\u2004", " ").replace("\xa0", " ")
-    # Wrap Cyrillic text in \text{...} so KaTeX/MathJax can render it inside math mode
-    rendered = re.sub(r"([а-яА-ЯёЁ]+(?:\.[а-яА-ЯёЁ]+|\.)?)", r"\\text{\1}", rendered)
+
+    # Safe wrapping: match existing \text{...} OR Cyrillic OR unescaped %
+    # This prevents double-wrapping like \text{\text{...}} which breaks KaTeX
+    def wrapper(m):
+        full = m.group(0)
+        # If it's already a \text{...} block, return it as is
+        if full.startswith("\\text{"):
+            return full
+
+        # If it's a percent sign (raw % or escaped \%), wrap it as \text{%}
+        if "%" in full:
+            return r"\text{%}"
+
+        # Cyrillic words/abbreviations
+        return rf"\text{{{full}}}"
+
+    # Group 1: already wrapped \text{...}
+    # Group 2: Cyrillic words/abbreviations or Percent signs
+    pattern = r"(\\text\{[^\}]+\})|([а-яА-ЯёЁ]+(?:\.[а-яА-ЯёЁ]+|\.)?|\\?%)"
+    rendered = re.sub(pattern, wrapper, rendered)
+
     return rendered
 
 
@@ -39,7 +57,7 @@ def _omml_text(elem: Element | None) -> str:
 def omml_to_latex(elem: Element) -> str:
     tag = xml_name(elem)
     if tag == "t":
-        return _math_text(elem.text or "")
+        return math_text(elem.text or "")
     if tag == "f":
         numerator = _omml_text(elem.find(f"{MATH_NS}num")).strip()
         denominator = _omml_text(elem.find(f"{MATH_NS}den")).strip()
@@ -63,9 +81,9 @@ def omml_to_latex(elem: Element) -> str:
             begin_elem = props.find(f"{MATH_NS}begChr")
             end_elem = props.find(f"{MATH_NS}endChr")
             if begin_elem is not None:
-                begin = _math_text(begin_elem.attrib.get(f"{MATH_NS}val", begin))
+                begin = math_text(begin_elem.attrib.get(f"{MATH_NS}val", begin))
             if end_elem is not None:
-                end = _math_text(end_elem.attrib.get(f"{MATH_NS}val", end))
+                end = math_text(end_elem.attrib.get(f"{MATH_NS}val", end))
         body = " ".join(_omml_text(child) for child in elem.findall(f"{MATH_NS}e"))
         return f"{begin}{body}{end}"
     if tag == "nary":
@@ -101,9 +119,9 @@ def mathml_to_latex(elem: Element) -> str:
     text = (elem.text or "").strip()
     children = list(elem)
     if tag in {"mi", "mn", "mtext"}:
-        return _math_text(text)
+        return math_text(text)
     if tag == "mo":
-        return r"\sum" if text == "∑" else _math_text(text)
+        return r"\sum" if text == "∑" else math_text(text)
     if tag == "mfrac":
         numerator = mathml_to_latex(children[0]) if children else ""
         denominator = mathml_to_latex(children[1]) if len(children) > 1 else ""
@@ -132,5 +150,5 @@ def mathml_to_latex(elem: Element) -> str:
         closing = elem.attrib.get("close", ")")
         return opening + ", ".join(mathml_to_latex(child) for child in children) + closing
     if tag in {"math", "mrow", "mstyle", "mspace"}:
-        return _math_text("".join(mathml_to_latex(child) for child in children))
-    return _math_text(text + "".join(mathml_to_latex(child) for child in children))
+        return math_text("".join(mathml_to_latex(child) for child in children))
+    return math_text(text + "".join(mathml_to_latex(child) for child in children))

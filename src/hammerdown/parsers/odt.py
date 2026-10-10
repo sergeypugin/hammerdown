@@ -7,7 +7,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from urllib.parse import unquote
 
-from hammerdown.parsers.math import mathml_to_latex, xml_name
+from hammerdown.parsers.math import mathml_to_latex, xml_name, math_text as _math_text
 from hammerdown.utils import get_images_dir_name
 
 logger = logging.getLogger("hammerdown")
@@ -91,14 +91,28 @@ def _render_paragraph(
 
     def flush_math() -> None:
         if curr_math:
-            parts.append(("math", " ".join(curr_math).strip()))
+            combined = "".join(curr_math)
+            parts.append(("math", _math_text(combined).strip()))
             curr_math.clear()
 
     for part in raw_parts:
         if isinstance(part, tuple):
             curr_math.append(part[1])
         else:
-            is_glue = not part.strip() or re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–]+$", part)
+            # Strictly math symbols, numbers, and whitespace, or very short words/abbreviations.
+            stripped = part.strip()
+            if not stripped:
+                is_glue = True
+            elif not re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–\w\.]+$", stripped):
+                is_glue = False
+            else:
+                # Check that no individual word in the glue exceeds 4 characters (unless it's a known function)
+                words = re.findall(r"\w+", stripped)
+                is_glue = all(
+                    len(w) <= 4 or w.lower() in {"max", "min", "sin", "cos", "tan", "log", "ln", "exp", "lim", "det", "arg"}
+                    for w in words
+                )
+
             if curr_math and is_glue:
                 curr_math.append(part)
             else:
@@ -128,8 +142,7 @@ def _render_paragraph(
                     if re.match(r"^[0-9\s.,=≈\+\-\*\/±]+$", part):
                         rendered_parts.append(part)
                     else:
-                        val = part.replace("{", "\\{").replace("}", "\\}")
-                        rendered_parts.append(rf"\text{{{val}}}")
+                        rendered_parts.append(_math_text(part))
                 else:
                     rendered_parts.append(part)
         res = f"$${''.join(rendered_parts).strip()}$$"

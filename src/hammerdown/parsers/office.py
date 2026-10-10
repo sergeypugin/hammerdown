@@ -11,6 +11,7 @@ import zipfile
 
 from hammerdown.parsers.charts import render_chart_svg
 from hammerdown.parsers.math import MATH_NS as _MATH_NS
+from hammerdown.parsers.math import math_text as _math_text
 from hammerdown.parsers.math import omml_to_latex as _omml_to_latex
 from hammerdown.parsers.math import xml_name as _xml_name
 from hammerdown.parsers.odt import convert_odt
@@ -73,6 +74,7 @@ def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str,
             # Must contain at least one letter or digit to be a valid index.
             if latex.strip() and re.search(r"[\w\d]", latex) and re.match(r"^[ \w\d\.]+$", latex.strip()):
                 prefix = "_" if vert == "subscript" else "^"
+                # Use plain content as math_text will handle wrapping later
                 return ("inline", f"{prefix}{{{latex.strip()}}}")
         return res
 
@@ -110,7 +112,9 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
 
     def flush_math() -> None:
         if curr_math:
-            parts.append(("inline", " ".join(curr_math).strip()))
+            # Join parts directly (preserving Word's own spacing) and normalize via math_text
+            combined = "".join(curr_math)
+            parts.append(("inline", _math_text(combined).strip()))
             curr_math.clear()
 
     # Merge math fragments and "glue" text (numbers, operators, short units/abbreviations)
@@ -123,8 +127,20 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
             else:
                 curr_math.append(latex)
         elif isinstance(part, str):
-            # Strictly math symbols, numbers, and whitespace. No words/letters allowed in glue.
-            is_glue = not part.strip() or re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–]+$", part)
+            # Strictly math symbols, numbers, and whitespace, or very short words/abbreviations.
+            stripped = part.strip()
+            if not stripped:
+                is_glue = True
+            elif not re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–\w\.]+$", stripped):
+                is_glue = False
+            else:
+                # Check that no individual word in the glue exceeds 4 characters (unless it's a known function)
+                words = re.findall(r"\w+", stripped)
+                is_glue = all(
+                    len(w) <= 4 or w.lower() in {"max", "min", "sin", "cos", "tan", "log", "ln", "exp", "lim", "det", "arg"}
+                    for w in words
+                )
+
             if curr_math and is_glue:
                 curr_math.append(part)
             else:
@@ -149,12 +165,11 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
                 rendered_parts.append(part[1])
             else:
                 if part.strip():
-                    # Preserve numbers and math symbols in math mode font, wrap text in \text{}
+                    # Keep math-friendly chars out of \text{}, wrap the rest
                     if re.match(r"^[0-9\s.,=≈\+\-\*\/±]+$", part):
                         rendered_parts.append(part)
                     else:
-                        val = part.replace("{", "\\{").replace("}", "\\}")
-                        rendered_parts.append(rf"\text{{{val}}}")
+                        rendered_parts.append(_math_text(part))
                 else:
                     rendered_parts.append(part)
         return f"$${''.join(rendered_parts).strip()}$$"
@@ -164,8 +179,7 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
         if isinstance(part, tuple):
             mode, latex = part
             delimiter = "$$" if mode == "display" else "$"
-            prefix = " " if rendered and isinstance(rendered[-1], str) and rendered[-1] and not rendered[-1].endswith((" ", "\n", "\t", "(")) else ""
-            rendered.append(f"{prefix}{delimiter}{latex}{delimiter}")
+            rendered.append(f"{delimiter}{latex}{delimiter}")
         else:
             rendered.append(part)
     return "".join(rendered)

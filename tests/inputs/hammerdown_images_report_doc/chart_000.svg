@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520">
+<rect width="100%" height="100%" fill="white"/>
+<text x="480.0" y="30" text-anchor="middle" font-family="sans-serif" font-size="18">Гистограмма распределения длин имён и функция Гаусса</text>
+<line x1="78" y1="72.0" x2="930" y2="72.0" stroke="#dddddd"/>
+<text x="68" y="76.0" text-anchor="end" font-family="sans-serif" font-size="11">0.152</text>
+<line x1="78" y1="140.6" x2="930" y2="140.6" stroke="#dddddd"/>
+<text x="68" y="144.6" text-anchor="end" font-family="sans-serif" font-size="11">0.122</text>
+<line x1="78" y1="209.2" x2="930" y2="209.2" stroke="#dddddd"/>
+<text x="68" y="213.2" text-anchor="end" font-family="sans-serif" font-size="11">0.0912</text>
+<line x1="78" y1="277.8" x2="930" y2="277.8" stroke="#dddddd"/>
+<text x="68" y="281.8" text-anchor="end" font-family="sans-serif" font-size="11">0.0608</text>
+<line x1="78" y1="346.4" x2="930" y2="346.4" stroke="#dddddd"/>
+<text x="68" y="350.4" text-anchor="end" font-family="sans-serif" font-size="11">0.0304</text>
+<line x1="78" y1="415.0" x2="930" y2="415.0" stroke="#dddddd"/>
+<text x="68" y="419.0" text-anchor="end" font-family="sans-serif" font-size="11">0</text>
+<line x1="78" y1="72" x2="78" y2="415" stroke="#555"/>
+<line x1="78" y1="415" x2="930" y2="415" stroke="#555"/>
+<rect x="91.3" y="360.8" width="68.2" height="54.2" fill="#4472C4"/>
+<rect x="185.9" y="216.4" width="68.2" height="198.6" fill="#4472C4"/>
+<rect x="280.6" y="72.0" width="68.2" height="343.0" fill="#4472C4"/>
+<rect x="375.3" y="135.2" width="68.2" height="279.8" fill="#4472C4"/>
+<rect x="469.9" y="288.6" width="68.2" height="126.4" fill="#4472C4"/>
+<rect x="564.6" y="324.7" width="68.2" height="90.3" fill="#4472C4"/>
+<rect x="659.3" y="396.9" width="68.2" height="18.1" fill="#4472C4"/>
+<rect x="753.9" y="406.0" width="68.2" height="9.0" fill="#4472C4"/>
+<rect x="848.6" y="406.0" width="68.2" height="9.0" fill="#4472C4"/>
+<polyline points="125.3,329.9 220.0,210.8 314.7,111.5 409.3,135.5 504.0,255.5 598.7,358.6 693.3,402.6 788.0,413.3 882.7,414.9" fill="none" stroke="#ED7D31" stroke-width="3"/>
+<text x="125.3" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">8</text>
+<text x="220.0" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">10</text>
+<text x="314.7" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">12</text>
+<text x="409.3" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">14</text>
+<text x="504.0" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">16</text>
+<text x="598.7" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">18</text>
+<text x="693.3" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">20</text>
+<text x="788.0" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">22</text>
+<text x="882.7" y="437" text-anchor="middle" font-family="sans-serif" font-size="11">24</text>
+<rect x="78" y="485" width="12" height="12" fill="#4472C4"/>
+<text x="95" y="496" font-family="sans-serif" font-size="12">Series 1</text>
+<rect x="256" y="485" width="12" height="12" fill="#ED7D31"/>
+<text x="273" y="496" font-family="sans-serif" font-size="12">Теория Гаусса</text>
+</svg>
