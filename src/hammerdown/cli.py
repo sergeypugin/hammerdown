@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import logging
 import os
 import shutil
@@ -272,6 +273,15 @@ def _select_files() -> Sequence[str]:
         return ()
 
 
+def _process_single_file(args_tuple: tuple[str, bool, bool, bool]) -> bool:
+    file_path, force, in_place, quiet = args_tuple
+    if not logger.handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+    if quiet:
+        logger.setLevel(logging.ERROR)
+    return convert_file(file_path, force=force, in_place=in_place)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="hammerdown",
@@ -304,12 +314,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     started_at = time.monotonic()
-    total_extracted_images = 0
     results: list[bool] = []
-    for file_path in files:
-        # convert_file logs individual progress and returns success boolean
-        success = convert_file(file_path, force=args.force, in_place=args.in_place)
-        results.append(success)
+    if len(files) == 1:
+        results.append(convert_file(files[0], force=args.force, in_place=args.in_place))
+    else:
+        max_workers = min(len(files), os.cpu_count() or 4)
+        worker_args = [(f, args.force, args.in_place, args.quiet) for f in files]
+        try:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                results = list(executor.map(_process_single_file, worker_args))
+        except Exception:
+            results = [convert_file(f, force=args.force, in_place=args.in_place) for f in files]
 
     failed_count = results.count(False)
     if len(files) > 1 and not args.quiet:
