@@ -91,7 +91,7 @@ hammerdown --update
 ```
 
 > [!warning]
-> Note for users upgrading from version 1.5.1 or earlier: run `hammerdown --install` immediately after updating, or perform a clean reinstall to refresh context menu launcher scripts:
+> **Note for users upgrading from version 1.5.1 or earlier:** run `hammerdown --install` immediately after updating, or perform a clean reinstall to refresh context menu launcher scripts:
 >
 > ```sh
 > pip uninstall hammerdown -y
