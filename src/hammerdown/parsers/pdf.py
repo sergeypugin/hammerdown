@@ -23,6 +23,8 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
 
     saved_imgs = 0
     extracted_xrefs: set[int] = set()
+    image_tasks: list[tuple[Path, bytes]] = []
+
     with pymupdf.open(file_path) as doc:
         page_count = len(doc)
         for page_number in range(page_count):
@@ -37,29 +39,38 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
                     continue
 
                 img_name = f"img_p{page_number:03d}_xref{xref}.{img_data['ext']}"
-                img_dir.mkdir(parents=True, exist_ok=True)
-                (img_dir / img_name).write_bytes(img_data["image"])
+                image_tasks.append((img_dir / img_name, img_data["image"]))
                 extracted_xrefs.add(xref)
                 saved_imgs += 1
 
-        if page_count > 4:
-            cpu_cnt = os.cpu_count() or 4
-            chunk_size = max(2, (page_count + cpu_cnt - 1) // cpu_cnt)
-            page_chunks = [
-                list(range(i, min(i + chunk_size, page_count)))
-                for i in range(0, page_count, chunk_size)
-            ]
+    if image_tasks:
+        img_dir.mkdir(parents=True, exist_ok=True)
 
-            def _convert_chunk(pages: list[int]) -> str:
-                return pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
+        def _write_image(task: tuple[Path, bytes]) -> None:
+            target_path, img_bytes = task
+            target_path.write_bytes(img_bytes)
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(page_chunks), cpu_cnt)) as executor:
-                chunk_results = list(executor.map(_convert_chunk, page_chunks))
-            md_text = "".join(chunk_results)
-        else:
-            md_text = pymupdf4llm.to_markdown(file_path, write_images=False, use_ocr=False)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(image_tasks), 8)) as executor:
+            list(executor.map(_write_image, image_tasks))
 
-        return str(md_text), saved_imgs
+    if page_count > 4:
+        cpu_cnt = os.cpu_count() or 4
+        chunk_size = max(2, (page_count + cpu_cnt - 1) // cpu_cnt)
+        page_chunks = [
+            list(range(i, min(i + chunk_size, page_count)))
+            for i in range(0, page_count, chunk_size)
+        ]
+
+        def _convert_chunk(pages: list[int]) -> str:
+            return pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(page_chunks), cpu_cnt)) as executor:
+            chunk_results = list(executor.map(_convert_chunk, page_chunks))
+        md_text = "".join(chunk_results)
+    else:
+        md_text = pymupdf4llm.to_markdown(file_path, write_images=False, use_ocr=False)
+
+    return str(md_text), saved_imgs
 
 
 CONVERTERS = {
