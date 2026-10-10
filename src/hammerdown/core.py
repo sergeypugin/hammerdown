@@ -58,6 +58,7 @@ def convert_file(
     file_path: str | os.PathLike[str],
     force: bool = False,
     in_place: bool = True,
+    overwrite: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> bool:
     normalized_path = normalize_path(file_path)
@@ -74,7 +75,15 @@ def convert_file(
     out_md_name = f"{stem}_{ext_clean}.md" if ext_clean else f"{stem}.md"
     out_md = out_dir / out_md_name
 
-    if out_md.exists() and not force:
+    # Handle explicit source overwrite for text-like files
+    is_text = extension in {".txt", ".md", ".log", ".csv"}
+    if overwrite:
+        if is_text:
+            out_md = source
+        else:
+            logger.warning("Overwrite flag ignored for binary format: %s", extension)
+
+    if out_md.exists() and not force and out_md != source:
         logger.error("Destination file already exists: %s. Use --force to overwrite.", out_md)
         return False
 
@@ -111,7 +120,7 @@ def convert_file(
     active_callback = progress_callback
     is_tty = sys.stdout.isatty() and logger.isEnabledFor(logging.INFO)
     last_len = 0
-    last_pct = -25
+    last_pct = -1
 
     if active_callback is None:
         def default_progress_handler(current: int, total: int, unit: str = "pages") -> None:
@@ -126,7 +135,7 @@ def convert_file(
                 sys.stdout.flush()
                 last_len = max(last_len, len(line))
             else:
-                if pct == 100 or pct >= last_pct + 25:
+                if pct > last_pct:
                     last_pct = pct
                     logger.info("Processing %s: %d/%d %s (%d%%)...", source.name, current, total, unit, pct)
 

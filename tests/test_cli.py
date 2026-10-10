@@ -65,3 +65,53 @@ def test_version_option(capsys):
     except SystemExit as error:
         assert error.code == 0
     assert f"hammerdown {hammerdown.__version__}" in capsys.readouterr().out
+
+
+def test_overwrite_flag_plain_text(tmp_path: Path):
+    source_txt = tmp_path / "notes.txt"
+    source_txt.write_text("initial text\n", encoding="utf-8")
+
+    assert hammerdown.cli.main(["-w", str(source_txt)]) == 0
+    assert not (tmp_path / "notes_txt.md").exists()
+    assert source_txt.read_text(encoding="utf-8") == "initial text\n"
+
+    source_md = tmp_path / "doc.md"
+    source_md.write_text("# Heading\n\nSome text   \n", encoding="utf-8")
+    assert hammerdown.cli.main(["--overwrite", str(source_md)]) == 0
+    assert not (tmp_path / "doc_md.md").exists()
+    assert source_md.read_text(encoding="utf-8") == "# Heading\n\nSome text\n"
+
+
+def test_overwrite_flag_ignored_for_binary_format(tmp_path: Path):
+    import docx
+
+    source_docx = tmp_path / "test.docx"
+    doc = docx.Document()
+    doc.add_paragraph("Sample content")
+    doc.save(str(source_docx))
+
+    orig_bytes = source_docx.read_bytes()
+    assert hammerdown.cli.main(["-w", str(source_docx)]) == 0
+
+    # Binary source file must remain untouched
+    assert source_docx.read_bytes() == orig_bytes
+    out_md = tmp_path / "test_docx.md"
+    assert out_md.is_file()
+    assert "Sample content" in out_md.read_text(encoding="utf-8")
+
+
+def test_logging_progress_from_zero(tmp_path: Path, caplog):
+    import logging
+    import docx
+
+    source_docx = tmp_path / "doc.docx"
+    doc = docx.Document()
+    for i in range(5):
+        doc.add_paragraph(f"Paragraph {i}")
+    doc.save(str(source_docx))
+
+    with caplog.at_level(logging.INFO, logger="hammerdown"):
+        assert hammerdown.core.convert_file(source_docx)
+
+    progress_messages = [record.message for record in caplog.records if "(0%)" in record.message]
+    assert len(progress_messages) > 0, "Expected a log message starting at 0%"
