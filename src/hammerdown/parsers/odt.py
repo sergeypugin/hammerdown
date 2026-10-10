@@ -10,7 +10,11 @@ from urllib.parse import unquote
 from hammerdown.parsers.math import mathml_to_latex, xml_name, math_text as _math_text
 from hammerdown.utils import get_images_dir_name
 
+from typing import Callable
+
 logger = logging.getLogger("hammerdown")
+
+ProgressCallback = Callable[[int, int, str], None]
 
 ODF_NS = {
     "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
@@ -188,7 +192,11 @@ def _render_table(
     return lines
 
 
-def convert_odt(odt_path: str, out_dir: str) -> tuple[str | None, int]:
+def convert_odt(
+    odt_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     try:
         with zipfile.ZipFile(odt_path) as archive:
             root = ET.fromstring(archive.read("content.xml"))
@@ -229,8 +237,15 @@ def convert_odt(odt_path: str, out_dir: str) -> tuple[str | None, int]:
                     for child in element:
                         render_block(child)
 
-            for element in body:
+            body_elements = list(body)
+            total_elements = len(body_elements)
+            if progress_callback:
+                progress_callback(0, total_elements, "elements")
+
+            for elem_idx, element in enumerate(body_elements, start=1):
                 render_block(element)
+                if progress_callback:
+                    progress_callback(elem_idx, total_elements, "elements")
             return "\n\n".join(lines), len(images)
     except (OSError, KeyError, zipfile.BadZipFile, ET.ParseError) as exc:
         logger.error("ODT conversion failed: %s", exc)

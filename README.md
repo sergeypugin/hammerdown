@@ -21,6 +21,7 @@
   - [File Manager Context Menu Integration](#file-manager-context-menu-integration)
 - [Usage](#usage)
   - [Command Line Interface](#command-line-interface)
+  - [Logging and Progress Tracking](#logging-and-progress-tracking)
   - [Extracting Base64 Images from Markdown](#extracting-base64-images-from-markdown)
   - [Python Library Quickstart](#python-library-quickstart)
 - [Supported Formats](#supported-formats)
@@ -109,6 +110,35 @@ Options:
 ```sh
 hammerdown -i document.pdf
 hammerdown -f report.docx
+```
+
+### Logging and Progress Tracking
+
+When converting documents from the terminal, `hammerdown` displays an interactive real-time progress bar indicating the exact progress (e.g., page, slide, or sheet counts):
+
+```text
+Processing document.pdf: [████████████░░░░░░░░] 60% (30/50 pages)
+Completed document.pdf in 1.4s (3 images extracted)
+```
+
+In non-interactive environments (CI/CD pipelines, redirected log files, or non-TTY outputs), progress is logged as periodic milestone entries without terminal control characters:
+
+```text
+[hammerdown] Processing document.pdf (50 pages, est. ~45s)...
+[hammerdown] Processing document.pdf: 13/50 pages (26%)...
+[hammerdown] Processing document.pdf: 25/50 pages (50%)...
+[hammerdown] Processing document.pdf: 38/50 pages (76%)...
+[hammerdown] Processing document.pdf: 50/50 pages (100%)...
+[hammerdown] Completed document.pdf in 1.4s (3 images extracted)
+```
+
+When using `hammerdown` as a Python library, custom progress callbacks can be passed to `to_markdown()` or `convert_file()`:
+
+```python
+def on_progress(current: int, total: int, unit: str):
+    print(f"Processed {current}/{total} {unit}")
+
+hammerdown.convert_file("document.pdf", progress_callback=on_progress)
 ```
 
 ### Extracting Base64 Images from Markdown

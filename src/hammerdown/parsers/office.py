@@ -18,7 +18,11 @@ from hammerdown.parsers.odt import convert_odt
 from hammerdown.parsers.tables import render_table_regions
 from hammerdown.utils import get_images_dir_name
 
+from typing import Callable
+
 logger = logging.getLogger("hammerdown")
+
+ProgressCallback = Callable[[int, int, str], None]
 
 
 def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
@@ -194,7 +198,12 @@ def _render_word_paragraph(element, relationships, chart_links=None, force_inlin
     return rendered.strip() if isinstance(rendered, str) else ""
 
 
-def convert_docx(docx_path: str, out_dir: str, images_dir_name: str | None = None) -> tuple[str | None, int]:
+def convert_docx(
+    docx_path: str,
+    out_dir: str,
+    images_dir_name: str | None = None,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     try:
         import docx  # type: ignore
         from docx.table import Table
@@ -221,7 +230,12 @@ def convert_docx(docx_path: str, out_dir: str, images_dir_name: str | None = Non
         saved_images += 1
 
     blocks: list[str] = []
-    for element in doc.element.body:
+    body_elements = list(doc.element.body)
+    total_elements = len(body_elements)
+    if progress_callback:
+        progress_callback(0, total_elements, "elements")
+
+    for elem_idx, element in enumerate(body_elements, start=1):
         tag = _xml_name(element)
         if tag == "p":
             text = _render_word_paragraph(element, doc.part.rels, chart_links)
@@ -243,11 +257,17 @@ def convert_docx(docx_path: str, out_dir: str, images_dir_name: str | None = Non
                     rows.append(f"| {' | '.join(['---'] * len(cells))} |")
             if rows:
                 blocks.append("\n".join(rows))
+        if progress_callback:
+            progress_callback(elem_idx, total_elements, "elements")
 
     return "\n\n".join(blocks), saved_images
 
 
-def convert_xlsx(xlsx_path: str, out_dir: str) -> tuple[str | None, int]:
+def convert_xlsx(
+    xlsx_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     try:
         import openpyxl  # type: ignore
     except ImportError:
@@ -257,7 +277,11 @@ def convert_xlsx(xlsx_path: str, out_dir: str) -> tuple[str | None, int]:
     workbook = openpyxl.load_workbook(xlsx_path, data_only=True, read_only=True)
     formula_workbook = openpyxl.load_workbook(xlsx_path, data_only=False, read_only=True)
     blocks: list[str] = []
-    for sheet in workbook.sheetnames:
+    total_sheets = len(workbook.sheetnames)
+    if progress_callback:
+        progress_callback(0, total_sheets, "sheets")
+
+    for sheet_idx, sheet in enumerate(workbook.sheetnames, start=1):
         blocks.append(f"# Sheet: {sheet}")
         data_sheet = workbook[sheet]
         formula_sheet = formula_workbook[sheet]
@@ -271,12 +295,18 @@ def convert_xlsx(xlsx_path: str, out_dir: str) -> tuple[str | None, int]:
                 row.append(value)
             rows.append(row)
         blocks.extend(render_table_regions(rows))
+        if progress_callback:
+            progress_callback(sheet_idx, total_sheets, "sheets")
     workbook.close()
     formula_workbook.close()
     return "\n\n".join(blocks), 0
 
 
-def convert_pptx(pptx_path: str, out_dir: str) -> tuple[str | None, int]:
+def convert_pptx(
+    pptx_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     try:
         from pptx import Presentation  # type: ignore
     except ImportError:
@@ -285,7 +315,12 @@ def convert_pptx(pptx_path: str, out_dir: str) -> tuple[str | None, int]:
 
     presentation = Presentation(pptx_path)
     lines: list[str] = []
-    for slide_idx, slide in enumerate(list(presentation.slides), start=1):
+    slides_list = list(presentation.slides)
+    total_slides = len(slides_list)
+    if progress_callback:
+        progress_callback(0, total_slides, "slides")
+
+    for slide_idx, slide in enumerate(slides_list, start=1):
         lines.append(f"## Slide {slide_idx}\n")
         for shape in slide.shapes:
             if getattr(shape, "has_table", False):
@@ -308,18 +343,24 @@ def convert_pptx(pptx_path: str, out_dir: str) -> tuple[str | None, int]:
                     if text:
                         lines.append(text)
         lines.append("")
+        if progress_callback:
+            progress_callback(slide_idx, total_slides, "slides")
 
     return "\n".join(lines), 0
 
 
-def convert_doc(doc_path: str, out_dir: str) -> tuple[str | None, int]:
+def convert_doc(
+    doc_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     img_dir_name = get_images_dir_name(doc_path)
     if zipfile.is_zipfile(doc_path):
-        return convert_docx(doc_path, out_dir, images_dir_name=img_dir_name)
+        return convert_docx(doc_path, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
 
     converted = _convert_via_soffice(doc_path, "docx")
     if converted:
-        return convert_docx(converted, out_dir, images_dir_name=img_dir_name)
+        return convert_docx(converted, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
 
     if os.name == "nt":
         try:
@@ -332,7 +373,7 @@ def convert_doc(doc_path: str, out_dir: str) -> tuple[str | None, int]:
             doc.Close()
             word.Quit()
             if temp_file.is_file():
-                return convert_docx(str(temp_file), out_dir, images_dir_name=img_dir_name)
+                return convert_docx(str(temp_file), out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
         except Exception:
             pass
 
@@ -340,13 +381,17 @@ def convert_doc(doc_path: str, out_dir: str) -> tuple[str | None, int]:
     return None, 0
 
 
-def convert_xls(xls_path: str, out_dir: str) -> tuple[str | None, int]:
+def convert_xls(
+    xls_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     if zipfile.is_zipfile(xls_path):
-        return convert_xlsx(xls_path, out_dir)
+        return convert_xlsx(xls_path, out_dir, progress_callback=progress_callback)
 
     converted = _convert_via_soffice(xls_path, "xlsx")
     if converted:
-        return convert_xlsx(converted, out_dir)
+        return convert_xlsx(converted, out_dir, progress_callback=progress_callback)
 
     if os.name == "nt":
         try:
@@ -359,7 +404,7 @@ def convert_xls(xls_path: str, out_dir: str) -> tuple[str | None, int]:
             wb.Close()
             excel.Quit()
             if temp_file.is_file():
-                return convert_xlsx(str(temp_file), out_dir)
+                return convert_xlsx(str(temp_file), out_dir, progress_callback=progress_callback)
         except Exception:
             pass
 
@@ -367,13 +412,17 @@ def convert_xls(xls_path: str, out_dir: str) -> tuple[str | None, int]:
     return None, 0
 
 
-def convert_ppt(ppt_path: str, out_dir: str) -> tuple[str | None, int]:
+def convert_ppt(
+    ppt_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     if zipfile.is_zipfile(ppt_path):
-        return convert_pptx(ppt_path, out_dir)
+        return convert_pptx(ppt_path, out_dir, progress_callback=progress_callback)
 
     converted = _convert_via_soffice(ppt_path, "pptx")
     if converted:
-        return convert_pptx(converted, out_dir)
+        return convert_pptx(converted, out_dir, progress_callback=progress_callback)
 
     if os.name == "nt":
         try:
@@ -385,7 +434,7 @@ def convert_ppt(ppt_path: str, out_dir: str) -> tuple[str | None, int]:
             ppt.Close()
             powerpoint.Quit()
             if temp_file.is_file():
-                return convert_pptx(str(temp_file), out_dir)
+                return convert_pptx(str(temp_file), out_dir, progress_callback=progress_callback)
         except Exception:
             pass
 

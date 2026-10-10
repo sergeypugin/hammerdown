@@ -7,10 +7,18 @@ from pathlib import Path
 
 from hammerdown.utils import get_images_dir_name
 
+from typing import Callable
+
 logger = logging.getLogger("hammerdown")
 
+ProgressCallback = Callable[[int, int, str], None]
 
-def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]:
+
+def convert_pdf_or_ebook(
+    file_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     try:
         import pymupdf  # type: ignore
         import pymupdf4llm  # type: ignore
@@ -61,15 +69,28 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
             for i in range(0, page_count, chunk_size)
         ]
 
+        completed_pages = 0
+
         def _convert_chunk(pages: list[int]) -> str:
+            nonlocal completed_pages
             res = pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
+            completed_pages += len(pages)
+            if progress_callback:
+                progress_callback(completed_pages, page_count, "pages")
             return str(res)
+
+        if progress_callback:
+            progress_callback(0, page_count, "pages")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(page_chunks), cpu_cnt)) as executor:
             chunk_results = list(executor.map(_convert_chunk, page_chunks))
         md_text = "".join(chunk_results)
     else:
+        if progress_callback:
+            progress_callback(0, page_count, "pages")
         md_text = pymupdf4llm.to_markdown(file_path, write_images=False, use_ocr=False)
+        if progress_callback:
+            progress_callback(page_count, page_count, "pages")
 
     return str(md_text), saved_imgs
 

@@ -17,27 +17,32 @@ print(markdown_text)
 
 ## High-Level Functions
 
-### `to_markdown(file_path, out_dir=None)`
+### `to_markdown(file_path, out_dir=None, progress_callback=None)`
 
 Converts any supported document to Markdown and extracts any embedded images.
 
 - `file_path` (`str | Path`): path to the source document
 - `out_dir` (`str | Path | None`, optional): directory where extracted images should be saved; defaults to the directory of the source file
+- `progress_callback` (`Callable[[int, int, str], None] | None`, optional): callback invoked as units (pages, slides, sheets, elements) are converted, taking `(current, total, unit)`
 - Returns: `tuple[str | None, int]` -- the generated Markdown string (or `None` on error) and the number of saved images
 
 ```python
 from hammerdown import to_markdown
 
-text, images = to_markdown("data/report.docx", out_dir="output")
+def log_progress(current: int, total: int, unit: str):
+    print(f"Progress: {current}/{total} {unit}")
+
+text, images = to_markdown("data/report.docx", out_dir="output", progress_callback=log_progress)
 ```
 
-### `convert_file(file_path, force=False, in_place=True)`
+### `convert_file(file_path, force=False, in_place=True, progress_callback=None)`
 
 Converts the document and writes the output file `<stem>_<ext>.md` to disk.
 
 - `file_path` (`str | Path`): path to the source document
 - `force` (`bool`, default `False`): if `True`, overwrites existing output Markdown files
 - `in_place` (`bool`, default `True`): saves output files next to the source file
+- `progress_callback` (`Callable[[int, int, str], None] | None`, optional): custom progress callback
 - Returns: `bool` -- `True` if conversion succeeded, `False` otherwise
 
 ```python

@@ -11,7 +11,16 @@ from hammerdown.parsers.tables import render_table_regions
 from hammerdown.utils import get_images_dir_name
 
 
-def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
+from typing import Callable
+
+ProgressCallback = Callable[[int, int, str], None]
+
+
+def convert_txt_or_md(
+    file_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     raw = Path(file_path).read_bytes()
     text = None
     for enc in ("utf-8-sig", "utf-8", "cp1251", "cp1252", "latin-1"):
@@ -50,10 +59,17 @@ def convert_txt_or_md(file_path: str, out_dir: str) -> tuple[str | None, int]:
     pattern = r"data:image/([a-zA-Z]+);base64,([a-zA-Z0-9+/=]+)"
     processed_text = re.sub(pattern, replacer, text)
 
+    if progress_callback:
+        progress_callback(1, 1, "file")
+
     return processed_text, saved_imgs
 
 
-def convert_csv(csv_path: str, out_dir: str) -> tuple[str | None, int]:
+def convert_csv(
+    csv_path: str,
+    out_dir: str,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str | None, int]:
     if zipfile.is_zipfile(csv_path):
         try:
             import openpyxl  # type: ignore
@@ -106,6 +122,8 @@ def convert_csv(csv_path: str, out_dir: str) -> tuple[str | None, int]:
 
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     rows = list(reader)
+    if progress_callback:
+        progress_callback(1, 1, "rows" if not rows else f"{len(rows)} rows")
     if not rows:
         return "", 0
 

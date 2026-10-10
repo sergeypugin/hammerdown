@@ -44,3 +44,27 @@ def test_convert_file_package(tmp_path: Path):
     out_file = tmp_path / "doc_txt.md"
     assert out_file.is_file()
     assert out_file.read_text(encoding="utf-8") == "package test\n"
+
+
+def test_progress_callback(tmp_path: Path):
+    from hammerdown.utils import format_progress_bar
+
+    bar = format_progress_bar(5, 10, unit="pages", bar_length=10)
+    assert "[█████░░░░░] 50% (5/10 pages)" == bar
+
+    source = tmp_path / "report.docx"
+    import docx
+    doc = docx.Document()
+    doc.add_paragraph("Paragraph 1")
+    doc.add_paragraph("Paragraph 2")
+    doc.save(str(source))
+
+    calls: list[tuple[int, int, str]] = []
+
+    def on_progress(current: int, total: int, unit: str):
+        calls.append((current, total, unit))
+
+    text, images = to_markdown(source, progress_callback=on_progress)
+    assert text is not None
+    assert len(calls) > 0
+    assert calls[-1][0] == calls[-1][1]  # final call reaches 100%

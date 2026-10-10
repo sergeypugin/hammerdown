@@ -46,3 +46,12 @@ def format_duration(seconds: float) -> str:
     hours = total_seconds // 3600
     rem_minutes = int(round((total_seconds % 3600) / 60))
     return f"{hours}h{rem_minutes}m" if rem_minutes else f"{hours}h"
+
+
+def format_progress_bar(current: int, total: int, unit: str = "pages", bar_length: int = 20) -> str:
+    if total <= 0:
+        return f"{current} {unit}"
+    percent = min(100.0, max(0.0, (current / total) * 100))
+    filled_len = int(round(bar_length * current / float(total)))
+    bar = "█" * filled_len + "░" * (bar_length - filled_len)
+    return f"[{bar}] {percent:.0f}% ({current}/{total} {unit})"

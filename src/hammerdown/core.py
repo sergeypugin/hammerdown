@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+import sys
 import time
+from typing import Callable
 from hammerdown.parsers import CONVERTERS
 from hammerdown.parsers.charts import render_chart_svg
 from hammerdown.parsers.math import mathml_to_latex, omml_to_latex
@@ -19,9 +21,11 @@ from hammerdown.parsers.office import (
 from hammerdown.parsers.pdf import convert_pdf_or_ebook
 from hammerdown.parsers.tables import render_table_regions
 from hammerdown.parsers.text import convert_csv, convert_txt_or_md
-from hammerdown.utils import format_duration, normalize_path
+from hammerdown.utils import format_duration, format_progress_bar, normalize_path
 
 logger = logging.getLogger("hammerdown")
+
+ProgressCallback = Callable[[int, int, str], None]
 
 SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(CONVERTERS)
 
@@ -29,6 +33,7 @@ SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(CONVERTERS)
 def to_markdown(
     file_path: str | os.PathLike[str],
     out_dir: str | os.PathLike[str] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[str | None, int]:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
@@ -43,13 +48,17 @@ def to_markdown(
         return None, 0
 
     target_dir = str(out_dir) if out_dir is not None else str(source.parent)
-    return converter(str(source), target_dir)
+    try:
+        return converter(str(source), target_dir, progress_callback=progress_callback)
+    except TypeError:
+        return converter(str(source), target_dir)
 
 
 def convert_file(
     file_path: str | os.PathLike[str],
     force: bool = False,
     in_place: bool = True,
+    progress_callback: ProgressCallback | None = None,
 ) -> bool:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
@@ -98,8 +107,41 @@ def convert_file(
 
     logger.info("Processing %s%s...", source.name, est_hint)
     started_at = time.monotonic()
+
+    active_callback = progress_callback
+    is_tty = sys.stdout.isatty() and logger.isEnabledFor(logging.INFO)
+    last_len = 0
+    last_pct = -25
+
+    if active_callback is None:
+        def default_progress_handler(current: int, total: int, unit: str = "pages") -> None:
+            nonlocal last_len, last_pct
+            if total <= 0:
+                return
+            pct = int((current / total) * 100)
+            if is_tty:
+                bar_str = format_progress_bar(current, total, unit=unit)
+                line = f"\rProcessing {source.name}: {bar_str}"
+                sys.stdout.write(line.ljust(last_len))
+                sys.stdout.flush()
+                last_len = max(last_len, len(line))
+            else:
+                if pct == 100 or pct >= last_pct + 25:
+                    last_pct = pct
+                    logger.info("Processing %s: %d/%d %s (%d%%)...", source.name, current, total, unit, pct)
+
+        active_callback = default_progress_handler
+
     try:
-        md_text, saved_images = converter(str(source), str(out_dir))
+        try:
+            md_text, saved_images = converter(str(source), str(out_dir), progress_callback=active_callback)
+        except TypeError:
+            md_text, saved_images = converter(str(source), str(out_dir))
+
+        if is_tty and last_len > 0:
+            sys.stdout.write(f"\r{' ' * last_len}\r")
+            sys.stdout.flush()
+
         if md_text is None:
             return False
 
