@@ -78,22 +78,22 @@ flowchart TD
 
     CHECK -->|Yes| TIER1[Tier 1: Pure-Python Parser<br>python-docx / openpyxl / python-pptx]
     TIER1 -->|Success ~170 ms| SUCCESS[Extracted Markdown & Assets]
-    TIER1 -->|Failed / Not OpenXML| TIER2
+    TIER1 -->|Failed / Not OpenXML| WIN_CHECK{Is Windows?}
 
-    CHECK -->|No / True Binary| TIER2[Tier 2: Headless LibreOffice<br>soffice -env:UserInstallation]
+    CHECK -->|No / True Binary| WIN_CHECK
+
+    WIN_CHECK -->|Yes| TIER2[Tier 2: Microsoft Office via PowerShell<br>Word / Excel / PowerPoint COM]
     TIER2 -->|Converted to OpenXML| TIER1
-    TIER2 -->|Not Installed / Failed| WIN_CHECK{Is Windows?}
+    TIER2 -->|Failed / Not Installed| TIER3
 
-    WIN_CHECK -->|Yes| TIER3[Tier 3: Windows COM Automation<br>win32com.client Word/Excel/PowerPoint]
+    WIN_CHECK -->|No| TIER3[Tier 3: Headless LibreOffice<br>soffice -env:UserInstallation]
     TIER3 -->|Converted to OpenXML| TIER1
-    TIER3 -->|Failed / Office Unavailable| FAIL[Error: Office Converter Required]
-
-    WIN_CHECK -->|No| FAIL
+    TIER3 -->|Failed / Not Installed| FAIL[Error: Office Converter Required]
 ```
 
 Launching external office suites (such as LibreOffice or Microsoft Word) incurs high startup latency and system overhead. Whenever files are structured as XML archives underneath, parsing them directly in pure Python takes ~170 ms compared to ~5,320 ms via LibreOffice `--` delivering over 30x faster conversions without requiring external software installations.
 
 The processing cascade proceeds as follows:
 1. tier 1 (fast in-memory Python parsing): inspects whether the input is a valid zip package. If parsing succeeds via `python-docx`, `openpyxl`, or `python-pptx`, conversion completes in milliseconds in pure Python
-2. tier 2 (headless LibreOffice conversion): if in-memory parsing fails or the file is true binary legacy format (OLE2 or BIFF), `hammerdown` invokes headless LibreOffice (`soffice`) with isolated user profiles (`-env:UserInstallation`) to export modern OpenXML formats
-3. tier 3 (Windows COM automation): on Windows systems where LibreOffice is not found, the converter falls back to native Microsoft Word, Excel, or PowerPoint automation through `win32com.client`
+2. tier 2 (Microsoft Office automation on Windows): on Windows systems, `hammerdown` first attempts conversion using native desktop Microsoft Office (Word, Excel, or PowerPoint) via PowerShell COM automation
+3. tier 3 (headless LibreOffice conversion): if Microsoft Office is unavailable or the platform is Linux/macOS, `hammerdown` invokes headless LibreOffice (`soffice`) with isolated user profiles (`-env:UserInstallation`) to export modern OpenXML formats
