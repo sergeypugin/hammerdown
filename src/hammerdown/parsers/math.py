@@ -22,7 +22,9 @@ def _math_text(text: str) -> str:
     for idx, segment in enumerate(rendered.split(r"\%")):
         parts.append(segment.replace("%", r"\%"))
     rendered = r"\%".join(parts)
-    rendered = rendered.replace("\u2003", r"\quad ").replace("\u2004", r"\; ")
+    rendered = rendered.replace("\u2003", r"\quad ").replace("\u2004", r"\; ").replace("\xa0", " ")
+    # Wrap Cyrillic text in \text{...} so KaTeX/MathJax can render it inside math mode
+    rendered = re.sub(r"([а-яА-ЯёЁ]+(?:\.[а-яА-ЯёЁ]+|\.)?)", r"\\text{\1}", rendered)
     return rendered
 
 
