@@ -27,6 +27,10 @@ from hammerdown import SUPPORTED_EXTENSIONS
 def _has_legacy_office_converter() -> bool:
     if shutil.which("soffice") or shutil.which("libreoffice"):
         return True
+    if sys.platform == "darwin":
+        mac_path = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
+        if mac_path.is_file():
+            return True
     if os.name == "nt":
         common_paths = [
             Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "LibreOffice" / "program" / "soffice.exe",
@@ -35,9 +39,15 @@ def _has_legacy_office_converter() -> bool:
         if any(p.is_file() for p in common_paths):
             return True
         try:
-            import win32com.client  # type: ignore
-            return True
-        except Exception:
+            import winreg
+            for app in ("WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE"):
+                key_path = rf"Software\Microsoft\Windows\CurrentVersion\App Paths\{app}"
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path):
+                        return True
+                except OSError:
+                    continue
+        except ImportError:
             pass
     return False
 

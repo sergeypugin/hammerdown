@@ -186,6 +186,14 @@ For specialized format converters and low-level helpers, see [docs/PYTHON.md](do
 - **Presentations**: `.pptx`, `.ppt`
 - **Text and Markdown**: `.txt`, `.md`, `.log`
 
+> [!important]
+> Legacy binary formats (`.doc`, `.xls`, `.ppt`) require a compatible desktop office suite installed on the same computer as `hammerdown`. These applications are not bundled with `hammerdown`.
+>
+> - on Windows, the matching desktop Microsoft Office application is tried first, then LibreOffice
+> - on Linux and macOS, LibreOffice is required
+>
+> Modern formats (`.docx`, `.xlsx`, `.pptx`) are processed without an external office suite.
+
 ## Output Directory Layout
 
 Output Markdown files are saved using the template `<stem>_<ext>.md` to avoid conflicts when files of different formats share the same base name.

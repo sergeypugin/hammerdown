@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from typing import Callable
 
 from hammerdown.parsers.charts import render_chart_svg
 from hammerdown.parsers.math import MATH_NS as _MATH_NS
@@ -18,30 +19,41 @@ from hammerdown.parsers.odt import convert_odt
 from hammerdown.parsers.tables import render_table_regions
 from hammerdown.utils import get_images_dir_name
 
-from typing import Callable
-
 logger = logging.getLogger("hammerdown")
 
 ProgressCallback = Callable[[int, int, str], None]
 
 
-def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
-    soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice_bin:
-        if os.name == "nt":
-            common_paths = [
-                Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "LibreOffice" / "program" / "soffice.exe",
-                Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "LibreOffice" / "program" / "soffice.exe",
-            ]
-            for p in common_paths:
-                if p.is_file():
-                    soffice_bin = str(p)
-                    break
-        elif sys.platform == "darwin":
-            mac_path = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
-            if mac_path.is_file():
-                soffice_bin = str(mac_path)
+def _find_soffice() -> str | None:
+    """Find LibreOffice executable path across different operating systems."""
+    # 1. Check PATH
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if soffice:
+        return soffice
 
+    # 2. Windows specific search
+    if os.name == "nt":
+        prog_files = [
+            os.environ.get("PROGRAMFILES", "C:\\Program Files"),
+            os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"),
+        ]
+        for base in prog_files:
+            path = Path(base) / "LibreOffice" / "program" / "soffice.exe"
+            if path.is_file():
+                return str(path)
+
+    # 3. macOS specific search
+    if os.name == "posix" and os.uname().sysname == "Darwin":
+        path = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
+        if path.is_file():
+            return str(path)
+
+    return None
+
+
+def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
+    """Convert document using LibreOffice headless mode."""
+    soffice_bin = _find_soffice()
     if not soffice_bin:
         return None
 
@@ -67,10 +79,83 @@ def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
     return None
 
 
+def _convert_via_ms_office_nt(file_path: str, out_ext: str) -> str | None:
+    app_map = {
+        "docx": (
+            "Word.Application",
+            "SaveAs2",
+            16,
+            "$app.Documents.Open($source, $false, $true, $false)",
+            True,
+        ),
+        "xlsx": (
+            "Excel.Application",
+            "SaveAs",
+            51,
+            "$app.Workbooks.Open($source, 0, $true)",
+            True,
+        ),
+        "pptx": (
+            "PowerPoint.Application",
+            "SaveAs",
+            24,
+            "$app.Presentations.Open($source, $true, $false, $false)",
+            False,
+        ),
+    }
+    app_id, save_method, file_format, open_expression, hide_app = app_map[out_ext]
+
+    def quote_ps(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    temp_dir = tempfile.mkdtemp()
+    temp_file = Path(temp_dir) / f"{Path(file_path).stem}.{out_ext}"
+    source = quote_ps(str(Path(file_path).resolve()))
+    destination = quote_ps(str(temp_file.resolve()))
+    ps_cmd = f"""
+    $ErrorActionPreference = 'Stop'
+    $app = $null
+    $document = $null
+    try {{
+        $app = New-Object -ComObject {app_id}
+        if ({str(hide_app).lower()}) {{ $app.Visible = $false }}
+        $source = {source}
+        $destination = {destination}
+        $document = {open_expression}
+        $document.{save_method}($destination, {file_format})
+        $document.Close()
+    }} finally {{
+        if ($null -ne $document) {{ try {{ $document.Close() }} catch {{ }} }}
+        if ($null -ne $app) {{ try {{ $app.Quit() }} catch {{ }} }}
+    }}
+    """
+
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+            capture_output=True,
+            check=True,
+            timeout=120,
+        )
+        if temp_file.is_file():
+            return str(temp_file)
+    except Exception as exc:
+        logger.debug("MS Office conversion via PowerShell failed: %s", exc)
+
+    return None
+
+
+def _convert_legacy_office(file_path: str, out_ext: str) -> str | None:
+    if os.name == "nt":
+        converted = _convert_via_ms_office_nt(file_path, out_ext)
+        if converted:
+            return converted
+    return _convert_via_soffice(file_path, out_ext)
+
+
 def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str, str]:
     tag = _xml_name(node)
     if tag == "r":
-        # Handle subscripts/superscripts in regular text runs (common in legacy or mixed documents)
         rPr = node.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr")
         vert = None
         if rPr is not None:
@@ -81,11 +166,8 @@ def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str,
         res = _render_word_children(node, relationships, chart_links)
         if vert in {"subscript", "superscript"}:
             latex = res[1] if isinstance(res, tuple) else res
-            # Allow letters (Unicode), digits, dots and internal spaces.
-            # Must contain at least one letter or digit to be a valid index.
             if latex.strip() and re.search(r"[\w\d]", latex) and re.match(r"^[ \w\d\.]+$", latex.strip()):
                 prefix = "_" if vert == "subscript" else "^"
-                # Use plain content as math_text will handle wrapping later
                 return ("inline", f"{prefix}{{{latex.strip()}}}")
         return res
 
@@ -123,12 +205,10 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
 
     def flush_math() -> None:
         if curr_math:
-            # Join parts directly (preserving Word's own spacing) and normalize via math_text
             combined = "".join(curr_math)
             parts.append(("inline", _math_text(combined).strip()))
             curr_math.clear()
 
-    # Merge math fragments and "glue" text (numbers, operators, short units/abbreviations)
     for part in raw_parts:
         if isinstance(part, tuple):
             mode, latex = part
@@ -138,14 +218,12 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
             else:
                 curr_math.append(latex)
         elif isinstance(part, str):
-            # Strictly math symbols, numbers, and whitespace, or very short words/abbreviations.
             stripped = part.strip()
             if not stripped:
                 is_glue = True
             elif not re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–\w\.]+$", stripped):
                 is_glue = False
             else:
-                # Check that no individual word in the glue exceeds 4 characters (unless it's a known function)
                 words = re.findall(r"\w+", stripped)
                 is_glue = all(
                     len(w) <= 4 or w.lower() in {"max", "min", "sin", "cos", "tan", "log", "ln", "exp", "lim", "det", "arg"}
@@ -164,9 +242,6 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
     if not formulas:
         return text_content
 
-    # A paragraph is standalone if the remaining text is very short (e.g. units, labels, or empty)
-    # This prevents regular sentences from being swallowed into $$ blocks.
-    # In table cells, we always prefer inline math.
     is_standalone = not force_inline and len(re.findall(r"[\w\d]", text_content)) < 10
 
     if is_standalone:
@@ -176,7 +251,6 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
                 rendered_parts.append(part[1])
             else:
                 if part.strip():
-                    # Keep math-friendly chars out of \text{}, wrap the rest
                     if re.match(r"^[0-9\s.,=≈\+\-\*\/±]+$", part):
                         rendered_parts.append(part)
                     else:
@@ -191,8 +265,6 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
             mode, latex = part
             delimiter = "$$" if mode == "display" else "$"
             if delimiter == "$":
-                # Escape underscores in inline math so GitHub Flavored Markdown (GFM)
-                # does not parse pairs of _underscores_ as <em> HTML tags before KaTeX runs.
                 latex = latex.replace("_", r"\_")
             rendered.append(f"{delimiter}{latex}{delimiter}")
         else:
@@ -367,49 +439,15 @@ def convert_doc(
             res = convert_docx(doc_path, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
             if res[0] is not None:
                 return res
-        except Exception as exc:
-            logger.debug("Failed to parse zip file as docx directly (%s), falling back to converter", exc)
+        except Exception:
+            pass
 
-    converted = _convert_via_soffice(doc_path, "docx")
+    converted = _convert_legacy_office(doc_path, "docx")
+
     if converted:
         return convert_docx(converted, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
 
-    if os.name == "nt":
-        # Try win32com if available
-        try:
-            import win32com.client  # type: ignore
-            word = win32com.client.Dispatch("Word.Application")
-            word.Visible = False
-            temp_file = Path(tempfile.mkdtemp()) / f"{Path(doc_path).stem}.docx"
-            doc = word.Documents.Open(str(Path(doc_path).resolve()))
-            doc.SaveAs2(str(temp_file.resolve()), FileFormat=16)
-            doc.Close()
-            word.Quit()
-            if temp_file.is_file():
-                return convert_docx(str(temp_file), out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
-        except Exception:
-            pass
-
-        # Fallback to PowerShell COM automation (no dependencies required)
-        try:
-            temp_dir = tempfile.mkdtemp()
-            temp_file = Path(temp_dir) / f"{Path(doc_path).stem}.docx"
-            ps_cmd = f"""
-            $word = New-Object -ComObject Word.Application
-            $word.Visible = $false
-            $doc = $word.Documents.Open('{Path(doc_path).resolve()}')
-            $doc.SaveAs2('{temp_file.resolve()}', 16)
-            $doc.Close()
-            $word.Quit()
-            """
-            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-                           capture_output=True, check=True)
-            if temp_file.is_file():
-                return convert_docx(str(temp_file), out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
-        except Exception:
-            pass
-
-    logger.error("Legacy .doc format requires LibreOffice or Microsoft Word to be installed for conversion. Tip: use modern .docx for native support without external software.")
+    logger.error("Legacy .doc format requires LibreOffice or Microsoft Word to be installed for conversion. Tip: use modern .docx for native support.")
     return None, 0
 
 
@@ -423,49 +461,15 @@ def convert_xls(
             res = convert_xlsx(xls_path, out_dir, progress_callback=progress_callback)
             if res[0] is not None:
                 return res
-        except Exception as exc:
-            logger.debug("Failed to parse zip file as xlsx directly (%s), falling back to converter", exc)
+        except Exception:
+            pass
 
-    converted = _convert_via_soffice(xls_path, "xlsx")
+    converted = _convert_legacy_office(xls_path, "xlsx")
+
     if converted:
         return convert_xlsx(converted, out_dir, progress_callback=progress_callback)
 
-    if os.name == "nt":
-        # Try win32com if available
-        try:
-            import win32com.client  # type: ignore
-            excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            temp_file = Path(tempfile.mkdtemp()) / f"{Path(xls_path).stem}.xlsx"
-            wb = excel.Workbooks.Open(str(Path(xls_path).resolve()))
-            wb.SaveAs(str(temp_file.resolve()), FileFormat=51)
-            wb.Close()
-            excel.Quit()
-            if temp_file.is_file():
-                return convert_xlsx(str(temp_file), out_dir, progress_callback=progress_callback)
-        except Exception:
-            pass
-
-        # Fallback to PowerShell COM automation
-        try:
-            temp_dir = tempfile.mkdtemp()
-            temp_file = Path(temp_dir) / f"{Path(xls_path).stem}.xlsx"
-            ps_cmd = f"""
-            $excel = New-Object -ComObject Excel.Application
-            $excel.Visible = $false
-            $wb = $excel.Workbooks.Open('{Path(xls_path).resolve()}')
-            $wb.SaveAs('{temp_file.resolve()}', 51)
-            $wb.Close()
-            $excel.Quit()
-            """
-            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-                           capture_output=True, check=True)
-            if temp_file.is_file():
-                return convert_xlsx(str(temp_file), out_dir, progress_callback=progress_callback)
-        except Exception:
-            pass
-
-    logger.error("Legacy .xls format requires LibreOffice or Microsoft Excel to be installed for conversion. Tip: use modern .xlsx for native support without external software.")
+    logger.error("Legacy .xls format requires LibreOffice or Microsoft Excel to be installed for conversion. Tip: use modern .xlsx for native support.")
     return None, 0
 
 
@@ -479,47 +483,15 @@ def convert_ppt(
             res = convert_pptx(ppt_path, out_dir, progress_callback=progress_callback)
             if res[0] is not None:
                 return res
-        except Exception as exc:
-            logger.debug("Failed to parse zip file as pptx directly (%s), falling back to converter", exc)
+        except Exception:
+            pass
 
-    converted = _convert_via_soffice(ppt_path, "pptx")
+    converted = _convert_legacy_office(ppt_path, "pptx")
+
     if converted:
         return convert_pptx(converted, out_dir, progress_callback=progress_callback)
 
-    if os.name == "nt":
-        # Try win32com if available
-        try:
-            import win32com.client  # type: ignore
-            powerpoint = win32com.client.Dispatch("PowerPoint.Application")
-            temp_file = Path(tempfile.mkdtemp()) / f"{Path(ppt_path).stem}.pptx"
-            ppt = powerpoint.Presentations.Open(str(Path(ppt_path).resolve()), WithWindow=False)
-            ppt.SaveAs(str(temp_file.resolve()), FileFormat=24)
-            ppt.Close()
-            powerpoint.Quit()
-            if temp_file.is_file():
-                return convert_pptx(str(temp_file), out_dir, progress_callback=progress_callback)
-        except Exception:
-            pass
-
-        # Fallback to PowerShell COM automation
-        try:
-            temp_dir = tempfile.mkdtemp()
-            temp_file = Path(temp_dir) / f"{Path(ppt_path).stem}.pptx"
-            ps_cmd = f"""
-            $ppt = New-Object -ComObject PowerPoint.Application
-            $presentation = $ppt.Presentations.Open('{Path(ppt_path).resolve()}', 0, 0, 0)
-            $presentation.SaveAs('{temp_file.resolve()}', 24)
-            $presentation.Close()
-            $ppt.Quit()
-            """
-            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-                           capture_output=True, check=True)
-            if temp_file.is_file():
-                return convert_pptx(str(temp_file), out_dir, progress_callback=progress_callback)
-        except Exception:
-            pass
-
-    logger.error("Legacy .ppt format requires LibreOffice or Microsoft PowerPoint to be installed for conversion. Tip: use modern .pptx for native support without external software.")
+    logger.error("Legacy .ppt format requires LibreOffice or Microsoft PowerPoint to be installed for conversion. Tip: use modern .pptx for native support.")
     return None, 0
 
 
