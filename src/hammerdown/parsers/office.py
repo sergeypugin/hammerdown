@@ -27,15 +27,20 @@ ProgressCallback = Callable[[int, int, str], None]
 
 def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
     soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice_bin and os.name == "nt":
-        common_paths = [
-            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "LibreOffice" / "program" / "soffice.exe",
-            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "LibreOffice" / "program" / "soffice.exe",
-        ]
-        for p in common_paths:
-            if p.is_file():
-                soffice_bin = str(p)
-                break
+    if not soffice_bin:
+        if os.name == "nt":
+            common_paths = [
+                Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "LibreOffice" / "program" / "soffice.exe",
+                Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "LibreOffice" / "program" / "soffice.exe",
+            ]
+            for p in common_paths:
+                if p.is_file():
+                    soffice_bin = str(p)
+                    break
+        elif sys.platform == "darwin":
+            mac_path = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
+            if mac_path.is_file():
+                soffice_bin = str(mac_path)
 
     if not soffice_bin:
         return None
@@ -370,6 +375,7 @@ def convert_doc(
         return convert_docx(converted, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
 
     if os.name == "nt":
+        # Try win32com if available
         try:
             import win32com.client  # type: ignore
             word = win32com.client.Dispatch("Word.Application")
@@ -379,6 +385,25 @@ def convert_doc(
             doc.SaveAs2(str(temp_file.resolve()), FileFormat=16)
             doc.Close()
             word.Quit()
+            if temp_file.is_file():
+                return convert_docx(str(temp_file), out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
+        except Exception:
+            pass
+
+        # Fallback to PowerShell COM automation (no dependencies required)
+        try:
+            temp_dir = tempfile.mkdtemp()
+            temp_file = Path(temp_dir) / f"{Path(doc_path).stem}.docx"
+            ps_cmd = f"""
+            $word = New-Object -ComObject Word.Application
+            $word.Visible = $false
+            $doc = $word.Documents.Open('{Path(doc_path).resolve()}')
+            $doc.SaveAs2('{temp_file.resolve()}', 16)
+            $doc.Close()
+            $word.Quit()
+            """
+            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                           capture_output=True, check=True)
             if temp_file.is_file():
                 return convert_docx(str(temp_file), out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
         except Exception:
@@ -406,6 +431,7 @@ def convert_xls(
         return convert_xlsx(converted, out_dir, progress_callback=progress_callback)
 
     if os.name == "nt":
+        # Try win32com if available
         try:
             import win32com.client  # type: ignore
             excel = win32com.client.Dispatch("Excel.Application")
@@ -415,6 +441,25 @@ def convert_xls(
             wb.SaveAs(str(temp_file.resolve()), FileFormat=51)
             wb.Close()
             excel.Quit()
+            if temp_file.is_file():
+                return convert_xlsx(str(temp_file), out_dir, progress_callback=progress_callback)
+        except Exception:
+            pass
+
+        # Fallback to PowerShell COM automation
+        try:
+            temp_dir = tempfile.mkdtemp()
+            temp_file = Path(temp_dir) / f"{Path(xls_path).stem}.xlsx"
+            ps_cmd = f"""
+            $excel = New-Object -ComObject Excel.Application
+            $excel.Visible = $false
+            $wb = $excel.Workbooks.Open('{Path(xls_path).resolve()}')
+            $wb.SaveAs('{temp_file.resolve()}', 51)
+            $wb.Close()
+            $excel.Quit()
+            """
+            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                           capture_output=True, check=True)
             if temp_file.is_file():
                 return convert_xlsx(str(temp_file), out_dir, progress_callback=progress_callback)
         except Exception:
@@ -442,6 +487,7 @@ def convert_ppt(
         return convert_pptx(converted, out_dir, progress_callback=progress_callback)
 
     if os.name == "nt":
+        # Try win32com if available
         try:
             import win32com.client  # type: ignore
             powerpoint = win32com.client.Dispatch("PowerPoint.Application")
@@ -450,6 +496,24 @@ def convert_ppt(
             ppt.SaveAs(str(temp_file.resolve()), FileFormat=24)
             ppt.Close()
             powerpoint.Quit()
+            if temp_file.is_file():
+                return convert_pptx(str(temp_file), out_dir, progress_callback=progress_callback)
+        except Exception:
+            pass
+
+        # Fallback to PowerShell COM automation
+        try:
+            temp_dir = tempfile.mkdtemp()
+            temp_file = Path(temp_dir) / f"{Path(ppt_path).stem}.pptx"
+            ps_cmd = f"""
+            $ppt = New-Object -ComObject PowerPoint.Application
+            $presentation = $ppt.Presentations.Open('{Path(ppt_path).resolve()}', 0, 0, 0)
+            $presentation.SaveAs('{temp_file.resolve()}', 24)
+            $presentation.Close()
+            $ppt.Quit()
+            """
+            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                           capture_output=True, check=True)
             if temp_file.is_file():
                 return convert_pptx(str(temp_file), out_dir, progress_callback=progress_callback)
         except Exception:
