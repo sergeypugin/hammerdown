@@ -41,8 +41,10 @@ def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
         return None
 
     temp_dir = tempfile.mkdtemp()
+    user_dir_uri = Path(temp_dir).resolve().as_uri()
     cmd = [
         soffice_bin,
+        f"-env:UserInstallation={user_dir_uri}",
         "--headless",
         "--convert-to",
         out_ext,
@@ -356,7 +358,12 @@ def convert_doc(
 ) -> tuple[str | None, int]:
     img_dir_name = get_images_dir_name(doc_path)
     if zipfile.is_zipfile(doc_path):
-        return convert_docx(doc_path, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
+        try:
+            res = convert_docx(doc_path, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
+            if res[0] is not None:
+                return res
+        except Exception as exc:
+            logger.debug("Failed to parse zip file as docx directly (%s), falling back to converter", exc)
 
     converted = _convert_via_soffice(doc_path, "docx")
     if converted:
@@ -387,7 +394,12 @@ def convert_xls(
     progress_callback: ProgressCallback | None = None,
 ) -> tuple[str | None, int]:
     if zipfile.is_zipfile(xls_path):
-        return convert_xlsx(xls_path, out_dir, progress_callback=progress_callback)
+        try:
+            res = convert_xlsx(xls_path, out_dir, progress_callback=progress_callback)
+            if res[0] is not None:
+                return res
+        except Exception as exc:
+            logger.debug("Failed to parse zip file as xlsx directly (%s), falling back to converter", exc)
 
     converted = _convert_via_soffice(xls_path, "xlsx")
     if converted:
@@ -418,7 +430,12 @@ def convert_ppt(
     progress_callback: ProgressCallback | None = None,
 ) -> tuple[str | None, int]:
     if zipfile.is_zipfile(ppt_path):
-        return convert_pptx(ppt_path, out_dir, progress_callback=progress_callback)
+        try:
+            res = convert_pptx(ppt_path, out_dir, progress_callback=progress_callback)
+            if res[0] is not None:
+                return res
+        except Exception as exc:
+            logger.debug("Failed to parse zip file as pptx directly (%s), falling back to converter", exc)
 
     converted = _convert_via_soffice(ppt_path, "pptx")
     if converted:

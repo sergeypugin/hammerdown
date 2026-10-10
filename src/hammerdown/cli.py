@@ -167,17 +167,19 @@ def update() -> bool:
     if not getattr(sys, "frozen", False):
         logger.info("Updating Python package via pip...")
         _clean_pip_temp()
-        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "hammerdown"]
+        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "hammerdown"]
         try:
             subprocess.check_call(cmd)
             _clean_pip_temp()
+            install()
             logger.info("Successfully updated hammerdown package.")
             return True
         except subprocess.CalledProcessError:
-            cmd_git = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/sergeypugin/hammerdown.git"]
+            cmd_git = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "git+https://github.com/sergeypugin/hammerdown.git"]
             try:
                 subprocess.check_call(cmd_git)
                 _clean_pip_temp()
+                install()
                 logger.info("Successfully updated hammerdown package.")
                 return True
             except subprocess.CalledProcessError as exc:
@@ -232,6 +234,7 @@ def update() -> bool:
             target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
         logger.info("hammerdown successfully updated to version %s!", latest_tag)
+        install()
         return True
     except Exception as exc:
         logger.error("Failed to update: %s", exc)
