@@ -51,13 +51,13 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
             ]
 
             def _convert_chunk(pages: list[int]) -> str:
-                return pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False)
+                return pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(page_chunks), cpu_cnt)) as executor:
                 chunk_results = list(executor.map(_convert_chunk, page_chunks))
             md_text = "".join(chunk_results)
         else:
-            md_text = pymupdf4llm.to_markdown(file_path, write_images=False)
+            md_text = pymupdf4llm.to_markdown(file_path, write_images=False, use_ocr=False)
 
         return str(md_text), saved_imgs
 
