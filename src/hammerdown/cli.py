@@ -96,7 +96,7 @@ def install() -> bool:
             _install_windows(command)
         else:
             _install_unix(command)
-        logger.info("hammerdown installed. Restart the file manager if its menu does not update.")
+        logger.info("hammerdown installed successfully.")
         return True
     except (OSError, ImportError) as exc:
         logger.error("Installation failed: %s", exc)
