@@ -82,7 +82,7 @@ To deliver maximum speed when processing large documents and batch conversions, 
 2. **Concurrent Test Suite Execution (`ThreadPoolExecutor`)**: golden test conversions run concurrently across available CPU threads, cutting execution time roughly in half
 3. **Page-Level PDF Parallel Chunking (`ThreadPoolExecutor`)**: PDF files with more than 4 pages are divided into page chunks and rendered concurrently in parallel threads before joining the resulting Markdown output
 4. **PyMuPDF4LLM Conversion Flags (`use_ocr=False`)**: OCR verification is bypassed during text extraction since embedded raster graphics are extracted directly via PyMuPDF XREF in milliseconds
-5. **Lazy Dependency Loading**: heavy third-party libraries (`pymupdf`, `python-docx`, `openpyxl`, `python-pptx`, `win32com`) are imported lazily on demand inside format-specific converter routines, allowing quick commands (`--version`, `--install`, `--help`) and plain text/CSV files to process instantly (<0.04s startup)
+5. **Lazy Dependency Loading**: heavy third-party libraries (`pymupdf`, `python-docx`, `openpyxl`, `python-pptx`) are imported lazily on demand inside format-specific converter routines, allowing quick commands (`--version`, `--install`, `--help`) and plain text/CSV files to process instantly (<0.04s startup)
 6. **Concurrent Extracted Image Disk I/O (`ThreadPoolExecutor`)**: saving extracted images, vector charts, and base64 assets to disk is performed concurrently in background thread pools, keeping disk I/O from blocking the main parsing logic
 
 ### Benchmarks
