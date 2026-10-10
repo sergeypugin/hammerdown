@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Rounded Square Container -->
-  <rect width="512" height="512" rx="112" fill="#0e1117" />
-  
+  <!-- Square Container (no rounded corners) -->
+  <rect width="512" height="512" fill="#0e1117" />
+
   <!-- Outer Rune Ring Inscription -->
   <path d="M 0 14 L 0 -14 M -8 -6 L 0 -14 M 8 -6 L 0 -14" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(235.70, 51.00) rotate(-5.66)" />
   <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 0 -6 M 6 -14 L 0 -6" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(252.52, 50.03) rotate(-0.97)" />
@@ -59,8 +59,8 @@
   <path d="M 0 14 L 0 -14 M -6 -5 L 6 5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(138.67, 86.68) rotate(325.28)" />
   <path d="M -6 14 L -6 -14 M -6 -8 L 6 0 M 6 0 L -8 8" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(177.06, 65.72) rotate(337.47)" />
   <path d="M -6 14 L -6 -14 M 6 14 L 6 -14 M -6 -14 L 0 -6 M 6 -14 L 0 -6" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(192.88, 59.91) rotate(342.16)" />
-  
-  
+
+
   <!-- Stencil Mjolnir (enlarged, rectangular, tilted left, no inner ring) -->
   <g transform="translate(256, 252) rotate(-34)">
     <!-- 1. Floating Top Accent Bar -->
