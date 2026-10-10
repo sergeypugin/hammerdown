@@ -153,17 +153,36 @@ def uninstall() -> bool:
         return False
 
 
+def _clean_pip_temp() -> None:
+    if os.name == "nt":
+        temp_dir = Path(tempfile.gettempdir())
+        for p in temp_dir.glob("pip-uninstall-*"):
+            try:
+                shutil.rmtree(p, ignore_errors=True)
+            except Exception:
+                pass
+
+
 def update() -> bool:
     if not getattr(sys, "frozen", False):
         logger.info("Updating Python package via pip...")
-        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/sergeypugin/hammerdown.git"]
+        _clean_pip_temp()
+        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "hammerdown"]
         try:
             subprocess.check_call(cmd)
+            _clean_pip_temp()
             logger.info("Successfully updated hammerdown package.")
             return True
-        except subprocess.CalledProcessError as exc:
-            logger.error("Failed to update via pip: %s", exc)
-            return False
+        except subprocess.CalledProcessError:
+            cmd_git = [sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/sergeypugin/hammerdown.git"]
+            try:
+                subprocess.check_call(cmd_git)
+                _clean_pip_temp()
+                logger.info("Successfully updated hammerdown package.")
+                return True
+            except subprocess.CalledProcessError as exc:
+                logger.error("Failed to update via pip: %s", exc)
+                return False
 
     import json
     import urllib.request
