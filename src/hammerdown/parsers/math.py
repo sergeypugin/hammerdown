@@ -61,9 +61,9 @@ def omml_to_latex(elem: Element) -> str:
             begin_elem = props.find(f"{MATH_NS}begChr")
             end_elem = props.find(f"{MATH_NS}endChr")
             if begin_elem is not None:
-                begin = begin_elem.attrib.get(f"{MATH_NS}val", begin)
+                begin = _math_text(begin_elem.attrib.get(f"{MATH_NS}val", begin))
             if end_elem is not None:
-                end = end_elem.attrib.get(f"{MATH_NS}val", end)
+                end = _math_text(end_elem.attrib.get(f"{MATH_NS}val", end))
         body = " ".join(_omml_text(child) for child in elem.findall(f"{MATH_NS}e"))
         return f"{begin}{body}{end}"
     if tag == "nary":

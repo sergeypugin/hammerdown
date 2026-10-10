@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -83,11 +84,38 @@ def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str,
 
 
 def _render_word_children(node, relationships, chart_links=None) -> str | tuple[str, str]:
-    parts = [_render_word_node(child, relationships, chart_links) for child in node]
+    raw_parts = [_render_word_node(child, relationships, chart_links) for child in node]
+
+    parts: list[str | tuple[str, str]] = []
+    curr_math: list[str] = []
+
+    def flush_math() -> None:
+        if curr_math:
+            parts.append(("inline", " ".join(curr_math).strip()))
+            curr_math.clear()
+
+    for part in raw_parts:
+        if isinstance(part, tuple):
+            mode, latex = part
+            if mode == "display":
+                flush_math()
+                parts.append(part)
+            else:
+                curr_math.append(latex)
+        elif isinstance(part, str):
+            stripped = part.strip()
+            if curr_math and stripped and re.match(r"^([NnijkxyMmA-Za-z0-9\s=\+\-\*\/±≈\.,_]|\\sigma|\\rho)+$", stripped):
+                curr_math.append(stripped)
+            else:
+                flush_math()
+                parts.append(part)
+    flush_math()
+
     formulas = [part for part in parts if isinstance(part, tuple)]
     text = "".join(part for part in parts if isinstance(part, str))
     if not formulas:
         return text
+
     has_text = bool(text.strip())
     rendered = []
     for part in parts:

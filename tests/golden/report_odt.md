@@ -389,7 +389,7 @@ $l_{min}=7симв.,l_{max}=23симв.,\sqrt{N}\approx11{,}2$– для пос�
 
 10. Расчет погрешностей измерений (для прямых и косвенных измерений).
 
-$t_{\alpha,N}=1{,}979\approx1{,}98;\Delta _{пр}=0;\Delta l^{-}=t_{\alpha,N}\cdot\sigma_{〈l〉}\approx1.98\cdot0.26=0{,}5148\approx0{,}51$ симв.
+$t_{\alpha,N}=1{,}979\approx1{,}98;\Delta _{пр}=0;\Delta l^{-}=t_{\alpha,N}\cdot\sigma_{\langle l\rangle }\approx1.98\cdot0.26=0{,}5148\approx0{,}51$ симв.
 
 Абсолютная погрешность с учетом погрешности прибора:
 
