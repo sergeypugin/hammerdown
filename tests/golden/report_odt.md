@@ -395,7 +395,7 @@ $t_{\alpha,N}=1{,}979\approx1{,}98;\Delta _{пр}=0;\Delta l^{-}=t_{\alpha,N}\cd
 
 $\Delta l=\sqrt{(\Delta l^{-})^{2}+(\frac{2}{3}\Delta _{пр})^{2}}\approx0{,}51$ симв.
 
-Относительная погрешность измерения: $\epsilon_{l}=\frac{\Delta l}{\langle l\rangle _{N}}\cdot100%\approx4{,}1%$
+Относительная погрешность измерения: $\epsilon_{l}=\frac{\Delta l}{\langle l\rangle _{N}}\cdot100\%\approx4{,}1\%$
 
 - Графики.
 
@@ -403,7 +403,7 @@ $\Delta l=\sqrt{(\Delta l^{-})^{2}+(\frac{2}{3}\Delta _{пр})^{2}}\approx0{,}51
 
 12. Окончательные результаты.
 
-$$l=(12{,}66\pm0{,}51)симв.(\alpha=0{,}95,\epsilon=4{,}1%)$$
+$$l=(12{,}66\pm0{,}51)симв.(\alpha=0{,}95,\epsilon=4{,}1\%)$$
 
 13. Выводы и анализ результатов работы.
 

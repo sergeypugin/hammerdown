@@ -94,7 +94,8 @@ def _render_word_children(node, relationships, chart_links=None) -> str | tuple[
         if isinstance(part, tuple):
             mode, latex = part
             delimiter = "$$" if mode == "display" or not has_text else "$"
-            rendered.append(f"{delimiter}{latex}{delimiter}")
+            prefix = " " if rendered and isinstance(rendered[-1], str) and rendered[-1] and not rendered[-1].endswith((" ", "\n", "\t", "(")) else ""
+            rendered.append(f"{prefix}{delimiter}{latex}{delimiter}")
         else:
             rendered.append(part)
     return "".join(rendered)

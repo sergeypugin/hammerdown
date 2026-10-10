@@ -16,7 +16,14 @@ with _SYMBOLS_PATH.open("r", encoding="utf-8") as _f:
 def _math_text(text: str) -> str:
     rendered = text.translate(_MATH_SYMBOLS)
     rendered = re.sub(r"(?<=\d),(?=\d)", r"{,}", rendered)
-    return re.sub(r"(?:(?<![A-Za-z\\])|(?<=\\cdot))exp(?![A-Za-z])", lambda _: r"\exp", rendered)
+    rendered = re.sub(r"(?:(?<![A-Za-z\\])|(?<=\\cdot))exp(?![A-Za-z])", lambda _: r"\exp", rendered)
+    # Replace unescaped % with \% in LaTeX math
+    parts = []
+    for idx, segment in enumerate(rendered.split(r"\%")):
+        parts.append(segment.replace("%", r"\%"))
+    rendered = r"\%".join(parts)
+    rendered = rendered.replace("\u2003", r"\quad ").replace("\u2004", r"\; ")
+    return rendered
 
 
 def xml_name(elem: Element) -> str:
