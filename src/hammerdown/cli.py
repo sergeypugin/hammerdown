@@ -14,7 +14,7 @@ from typing import Any, Sequence
 
 from hammerdown import SUPPORTED_EXTENSIONS, __version__
 from hammerdown.core import convert_file
-from hammerdown.utils import normalize_path
+from hammerdown.utils import format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
 
@@ -71,7 +71,7 @@ def _install_windows(command: str) -> None:
             if icon_path:
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --quiet "%1"')
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} "%1"')
 
 
 def _install_unix(command: str) -> None:
@@ -85,7 +85,7 @@ def _install_unix(command: str) -> None:
         nautilus_dir = Path.home() / ".local" / "share" / "nautilus" / "scripts"
         nautilus_dir.mkdir(parents=True, exist_ok=True)
         script = nautilus_dir / "Hammer down file"
-        script.write_text('exec "$HOME/.local/bin/hammerdown" --quiet "$@"\n', encoding="utf-8")
+        script.write_text('exec "$HOME/.local/bin/hammerdown" "$@"\n', encoding="utf-8")
         script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
@@ -233,8 +233,9 @@ def _select_files() -> Sequence[str]:
             )
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script]
             result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0 and result.stdout.strip():
-                return [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+            if result.returncode == 0:
+                stdout = result.stdout.strip()
+                return [line.strip() for line in stdout.splitlines() if line.strip()] if stdout else ()
         except Exception:
             pass
 
@@ -284,12 +285,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     started_at = time.monotonic()
-    results = [convert_file(file_path, force=args.force, in_place=args.in_place) for file_path in files]
+    total_extracted_images = 0
+    results: list[bool] = []
+    for file_path in files:
+        # convert_file logs individual progress and returns success boolean
+        success = convert_file(file_path, force=args.force, in_place=args.in_place)
+        results.append(success)
+
     failed_count = results.count(False)
     if len(files) > 1 and not args.quiet:
+        duration = time.monotonic() - started_at
         logger.info(
-            "Batch conversion finished in %.2fs: %d succeeded, %d failed",
-            time.monotonic() - started_at,
+            "Batch conversion finished in %s: %d succeeded, %d failed",
+            format_duration(duration),
             len(files) - failed_count,
             failed_count,
         )

@@ -19,7 +19,7 @@ from hammerdown.parsers.office import (
 from hammerdown.parsers.pdf import convert_pdf_or_ebook
 from hammerdown.parsers.tables import render_table_regions
 from hammerdown.parsers.text import convert_csv, convert_txt_or_md
-from hammerdown.utils import normalize_path
+from hammerdown.utils import format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
 
@@ -76,7 +76,27 @@ def convert_file(
         logger.error("Unsupported format: %s", extension or "(no extension)")
         return False
 
-    logger.info("Processing %s...", source.name)
+    est_hint = ""
+    if extension in {".pdf", ".epub", ".mobi", ".fb2", ".xps"}:
+        try:
+            import pymupdf  # type: ignore
+            with pymupdf.open(str(source)) as doc:
+                page_count = len(doc)
+            est_seconds = max(1.0, page_count * 0.9)
+            est_hint = f" ({page_count} pages, est. ~{format_duration(est_seconds)})"
+        except Exception:
+            pass
+    elif extension in {".pptx"}:
+        try:
+            from pptx import Presentation  # type: ignore
+            prs = Presentation(str(source))
+            slide_count = len(prs.slides)
+            est_seconds = max(1.0, slide_count * 0.1)
+            est_hint = f" ({slide_count} slides, est. ~{format_duration(est_seconds)})"
+        except Exception:
+            pass
+
+    logger.info("Processing %s%s...", source.name, est_hint)
     started_at = time.monotonic()
     try:
         md_text, saved_images = converter(str(source), str(out_dir))
@@ -88,10 +108,11 @@ def convert_file(
         trimmed_lines = [line.rstrip() for line in normalized_text.split("\n")]
         cleaned_md = "\n".join(trimmed_lines).rstrip() + "\n"
         out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
+        duration = time.monotonic() - started_at
         logger.info(
-            "Completed %s in %.2fs (saved %d images)",
+            "Completed %s in %s (%d images extracted)",
             source.name,
-            time.monotonic() - started_at,
+            format_duration(duration),
             saved_images,
         )
         return True
