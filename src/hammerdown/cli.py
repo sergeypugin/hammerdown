@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from hammerdown import SUPPORTED_EXTENSIONS, __version__
-from hammerdown.core import convert_file
 from hammerdown.utils import format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
@@ -274,6 +273,8 @@ def _select_files() -> Sequence[str]:
 
 
 def _process_single_file(args_tuple: tuple[str, bool, bool, bool]) -> bool:
+    from hammerdown.core import convert_file
+
     file_path, force, in_place, quiet = args_tuple
     if not logger.handlers:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -312,6 +313,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     files = args.files or _select_files()
     if not files:
         return 0
+
+    from hammerdown.core import convert_file
 
     started_at = time.monotonic()
     results: list[bool] = []
