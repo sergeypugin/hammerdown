@@ -154,7 +154,8 @@ def _render_paragraph(
     rendered = []
     for part in parts:
         if isinstance(part, tuple):
-            rendered.append(f"${part[1]}$")
+            latex = part[1].replace("_", r"\_")
+            rendered.append(f"${latex}$")
         else:
             rendered.append(part)
     return "".join(rendered).strip()

@@ -16,7 +16,7 @@ def test_docx_preserves_formula_and_table_order(tmp_path: Path) -> None:
     assert markdown is not None
     assert images == 1
     assert r"\frac{1}{N}" in markdown
-    assert r"\sum_{i=1}^{N}" in markdown
+    assert r"\sum\_{i=1}^{N}" in markdown
     assert (
         r"\rho(12) \approx \frac{1}{2{,}891\sqrt{2\pi}}\cdot\exp(-\frac{(12 - 12.66)^{2}}{2\cdot2{,}891^{2}})\approx0{,}13"
         in markdown

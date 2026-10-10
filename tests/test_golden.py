@@ -1,5 +1,6 @@
 import glob
 import os
+import re
 import subprocess
 import sys
 from collections import Counter
@@ -42,6 +43,13 @@ def test_golden_conversion(tmp_path: Path):
         assert out_md_path.is_file(), f"Expected output MD file not found: {out_md_path}"
 
         generated_content = out_md_path.read_text(encoding="utf-8")
+
+        # Verify images if they are referenced in the markdown
+        image_links = re.findall(r"!\[.*?\]\(([^)]+)\)", generated_content)
+        for link in image_links:
+            if not link.startswith(("http://", "https://", "data:")):
+                img_path = run_dir / link
+                assert img_path.is_file(), f"Referenced image not found: {img_path}"
 
         specific_golden = golden_dir / f"{stem}_{ext_clean}.md"
         if specific_golden.is_file():

@@ -179,6 +179,10 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
         if isinstance(part, tuple):
             mode, latex = part
             delimiter = "$$" if mode == "display" else "$"
+            if delimiter == "$":
+                # Escape underscores in inline math so GitHub Flavored Markdown (GFM)
+                # does not parse pairs of _underscores_ as <em> HTML tags before KaTeX runs.
+                latex = latex.replace("_", r"\_")
             rendered.append(f"{delimiter}{latex}{delimiter}")
         else:
             rendered.append(part)
