@@ -20,7 +20,7 @@ from hammerdown.core import (
     to_markdown,
 )
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 
 __all__ = [
     "SUPPORTED_EXTENSIONS",
