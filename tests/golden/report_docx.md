@@ -32,7 +32,7 @@
 
 Рабочие формулы и исходные данные.
 
-$\langle l\rangle _{N} = \frac{1}{N} (l_{1} + l_{2} + ... + l_{N}) = \frac{1}{N} \sum_{i=1}^{N} l_{i}$ – среднее арифметическое всех результатов измерений.
+$\langle l\rangle _{N} = \frac{1}{N} (l_{1} + l_{2} + ... + l_{N}) = \frac{1}{N} \sum_{i=1}^{N} l_{i}$– среднее арифметическое всех результатов измерений.
 
 $\sigma_{N}=\sqrt{\frac{1}{N-1}\sum_{i=1}^{N} (l_{i}-\langle l\rangle _{N})^{2}}$ – выборочное среднеквадратичное отклонение.
 
@@ -58,9 +58,9 @@ $\Delta l = t_{\alpha,N} \cdot \sigma_{\langle l\rangle}$– доверител�
 
 8. Результаты прямых измерений и их обработки.
 
-| Actors | Actors | $l_{i}$, симв. | $l_{i}- \langle l\rangle _{N}$, симв. | $(l_{i}- \langle l\rangle _{N})^{2}$, симв.2 |
+| Actors | Actors | $l_{i}$, симв. | $l_{i}- \langle l\rangle _{N}$, симв. | $(l_{i}- \langle l\rangle _{N})^{2}$, симв. $^{2}$ |
 | --- | --- | --- | --- | --- |
-| surname | name | $l_{i}$, симв. | $l_{i}- \langle l\rangle _{N}$, симв. | $(l_{i}- \langle l\rangle _{N})^{2}$, симв.2 |
+| surname | name | $l_{i}$, симв. | $l_{i}- \langle l\rangle _{N}$, симв. | $(l_{i}- \langle l\rangle _{N})^{2}$, симв. $^{2}$ |
 | Holland | Tom | 10 | -2,66 | 7,05 |
 | Zendaya | Zendaya | 14 | 1,34 | 1,81 |
 | Sink | Sadie | 9 | -3,66 | 13,37 |
@@ -189,21 +189,21 @@ $\Delta l = t_{\alpha,N} \cdot \sigma_{\langle l\rangle}$– доверител�
 
 9. Расчет результатов косвенных измерений.
 
-$\langle l\rangle N = \frac{1}{125}$ $\sum_{i=1}^{125} l_{i}$ ≈ 12.66 симв.
+$$\langle l\rangle _{N}  =  \frac{1}{125}   \sum_{i=1}^{125} l_{i}   ≈  12 .66\text{ симв.}$$
 
-$\sigma_{N} =$  $\sqrt{\frac{1}{125-1}\sum_{i=1}^{125} (l_{i}-\langle l\rangle _{N})^{2}}$ ≈ 2.89 симв.
+$$\sigma_{N} =     \sqrt{\frac{1}{125-1}\sum_{i=1}^{125} (l_{i}-\langle l\rangle _{N})^{2}}   ≈   2.89\text{ симв.}$$
 
-$\rho$ max =  $\frac{1}{\sigma_{N}\sqrt{2\pi}} ≈$ 0,14 симв.-1
+$$\rho   _{max}  =   \frac{1}{\sigma_{N}\sqrt{2\pi}} ≈   0,1 4\text{ симв.}-1$$
 
-$\sigma_{\langle l\rangle}=\sqrt{\frac{1}{125\cdot124}\sum_{i=1}^{125} (l_{i}-\langle l\rangle _{N})^{2}}$ ≈ 0.26 симв.
+$$\sigma_{\langle l\rangle}=\sqrt{\frac{1}{125\cdot124}\sum_{i=1}^{125} (l_{i}-\langle l\rangle _{N})^{2}}   ≈   0.2 6\text{ симв.}$$
 
-$\Delta l \approx1.979\cdot0.26 = 0.513$ симв.
+$$\Delta l \approx1.979\cdot0.26 = 0.513\text{ симв.}$$
 
-$l_{min}=7\text{симв}.  , l_{max}=23 \text{симв}.,  \sqrt{N} \approx11{,}2$– для построения гистограммы возьмем 9 интервалов шириной $\Delta l=$2 симв.
+$l_{min}=7\text{симв}.  , l_{max}=23 \text{симв}.,  \sqrt{N} \approx11{,}2 –$для построения гистограммы возьмем 9 интервалов шириной $\Delta l=$2 симв.
 
 Таблица 2. Данные для построения гистограммы.
 
-| Начало | Конец | ∆N | $$\frac{\Delta N}{N\cdot\Delta l}$$ | l | ρ |
+| Начало | Конец | ∆N | $\frac{\Delta N}{N\cdot\Delta l}$ | l | ρ |
 | --- | --- | --- | --- | --- | --- |
 | 7 | 9 | 6 | 0,02 | 8 | 0,04 |
 | 9 | 11 | 22 | 0,09 | 10 | 0,09 |
@@ -224,19 +224,19 @@ $l_{min}=7\text{симв}.  , l_{max}=23 \text{симв}.,  \sqrt{N} \approx11{,
 |  | Интервал | Интервал | ∆N | $$\frac{\Delta N}{N}$$ | P |
 | --- | --- | --- | --- | --- | --- |
 |  | от (симв.) | до (симв.) | ∆N | $$\frac{\Delta N}{N}$$ | P |
-| $\langle l\rangle N$ ± $\sigma$ | 9,77 | 15,55 | 91 | 0,728 | 0,683 |
-| $\langle l\rangle N$ ± 2 $\sigma$ | 6,87 | 18,44 | 120 | 0,960 | 0,954 |
-| $\langle l\rangle N$ ± 3 $\sigma$ | 3,98 | 21,33 | 123 | 0,984 | 0,997 |
+| $\langle l\rangle _{N}   ±  \sigma$ | 9,77 | 15,55 | 91 | 0,728 | 0,683 |
+| $\langle l\rangle _{N}   ± 2 \sigma$ | 6,87 | 18,44 | 120 | 0,960 | 0,954 |
+| $\langle l\rangle _{N}   ± 3 \sigma$ | 3,98 | 21,33 | 123 | 0,984 | 0,997 |
 
 10. Расчет погрешностей измерений (для прямых и косвенных измерений).
 
-$t_{\alpha,N}=1{,}979\approx1{,}98; \Delta _{\text{пр}}= 0; \Delta l=t_{\alpha,N}\cdot\sigma_{\langle l\rangle}\approx 1.98 \cdot 0.26=0{,}5148 \approx 0{,}51$ симв.
+$$t_{\alpha,N}=1{,}979\approx1{,}98; \Delta _{\text{пр}}= 0; \Delta l=t_{\alpha,N}\cdot\sigma_{\langle l\rangle}\approx 1.98 \cdot 0.26=0{,}5148 \approx 0{,}51\text{симв}.$$
 
 Абсолютная погрешность с учетом погрешности прибора:
 
-$\Delta l=\sqrt{(\Delta l)^{2}+(\frac{2}{3}\Delta _{\text{пр}})^{2}}\approx0{,}51$ симв.
+$$\Delta l=\sqrt{(\Delta l)^{2}+(\frac{2}{3}\Delta _{\text{пр}})^{2}}\approx0{,}51\text{симв.}$$
 
-Относительная погрешность измерения: $\epsilon_{l}=\frac{\Delta l}{\langle l\rangle _{N}}\cdot100\%\approx4{,}1\%$
+Относительная погрешность измерения: $\epsilon_{l}=\frac{\Delta l}{\langle l\rangle _{N}}\cdot100\text{%}\approx4{,}1\text{%}$
 
 Графики.
 
@@ -246,7 +246,7 @@ $\Delta l=\sqrt{(\Delta l)^{2}+(\frac{2}{3}\Delta _{\text{пр}})^{2}}\approx0{,
 
 12. Окончательные результаты.
 
-$$l=(12{,}66\pm0{,}51) \text{симв.}\quad (\alpha=0{,}95, \epsilon=4{,}1\%)$$
+$$l=(12{,}66\pm0{,}51) \text{симв.}\quad (\alpha=0{,}95, \epsilon=4{,}1\text{%})$$
 
 13. Выводы и анализ результатов работы.
 

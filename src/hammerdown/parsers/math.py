@@ -17,11 +17,11 @@ def _math_text(text: str) -> str:
     rendered = text.translate(_MATH_SYMBOLS)
     rendered = re.sub(r"(?<=\d),(?=\d)", r"{,}", rendered)
     rendered = re.sub(r"(?:(?<![A-Za-z\\])|(?<=\\cdot))exp(?![A-Za-z])", lambda _: r"\exp", rendered)
-    # Replace unescaped % with \% in LaTeX math
+    # Replace unescaped % with \text{%} in LaTeX math so GitHub Markdown/KaTeX renders it cleanly
     parts = []
     for idx, segment in enumerate(rendered.split(r"\%")):
-        parts.append(segment.replace("%", r"\%"))
-    rendered = r"\%".join(parts)
+        parts.append(segment.replace("%", r"\text{%}"))
+    rendered = r"\text{%}".join(parts)
     rendered = rendered.replace("\u2003", r"\quad ").replace("\u2004", " ").replace("\xa0", " ")
     # Wrap Cyrillic text in \text{...} so KaTeX/MathJax can render it inside math mode
     rendered = re.sub(r"([а-яА-ЯёЁ]+(?:\.[а-яА-ЯёЁ]+|\.)?)", r"\\text{\1}", rendered)

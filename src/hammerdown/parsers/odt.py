@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import re
 import zipfile
 import xml.etree.ElementTree as ET
 from urllib.parse import unquote
@@ -81,22 +82,69 @@ def _render_paragraph(
     output_dir: Path,
     img_dir_name: str,
     images: dict[str, str],
+    force_inline: bool = False,
 ) -> str:
-    parts = _render_node(element, archive, output_dir, img_dir_name, images)
-    has_text = any(isinstance(part, str) and part.strip() for part in parts)
+    raw_parts = _render_node(element, archive, output_dir, img_dir_name, images)
+
+    parts: list[str | tuple[str, str]] = []
+    curr_math: list[str] = []
+
+    def flush_math() -> None:
+        if curr_math:
+            parts.append(("math", " ".join(curr_math).strip()))
+            curr_math.clear()
+
+    for part in raw_parts:
+        if isinstance(part, tuple):
+            curr_math.append(part[1])
+        else:
+            is_glue = not part.strip() or re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–]+$", part)
+            if curr_math and is_glue:
+                curr_math.append(part)
+            else:
+                flush_math()
+                parts.append(part)
+    flush_math()
+
+    text_content = "".join(part for part in parts if isinstance(part, str))
+    formulas = [part for part in parts if isinstance(part, tuple)]
+    if not formulas:
+        text = "".join(p for p in parts if isinstance(p, str)).strip()
+        if xml_name(element) == "h" and text:
+            level = min(6, max(1, int(element.attrib.get(f"{{{ODF_NS['text']}}}outline-level", "1"))))
+            return f"{'#' * level} {text}"
+        return text
+
+    is_standalone = not force_inline and len(re.findall(r"[\w\d]", text_content)) < 10
+    is_header = xml_name(element) == "h"
+
+    if is_standalone or is_header:
+        rendered_parts = []
+        for part in parts:
+            if isinstance(part, tuple):
+                rendered_parts.append(part[1])
+            else:
+                if part.strip():
+                    if re.match(r"^[0-9\s.,=≈\+\-\*\/±]+$", part):
+                        rendered_parts.append(part)
+                    else:
+                        val = part.replace("{", "\\{").replace("}", "\\}")
+                        rendered_parts.append(rf"\text{{{val}}}")
+                else:
+                    rendered_parts.append(part)
+        res = f"$${''.join(rendered_parts).strip()}$$"
+        if is_header:
+            level = min(6, max(1, int(element.attrib.get(f"{{{ODF_NS['text']}}}outline-level", "1"))))
+            return f"{'#' * level} {res}"
+        return res
+
     rendered = []
-    display = xml_name(element) == "h"
     for part in parts:
         if isinstance(part, tuple):
-            delimiter = "$$" if display or not has_text else "$"
-            rendered.append(f"{delimiter}{part[1]}{delimiter}")
+            rendered.append(f"${part[1]}$")
         else:
             rendered.append(part)
-    text = "".join(rendered).strip()
-    if xml_name(element) == "h" and text:
-        level = min(6, max(1, int(element.attrib.get(f"{{{ODF_NS['text']}}}outline-level", "1"))))
-        return f"{'#' * level} {text}"
-    return text
+    return "".join(rendered).strip()
 
 
 def _render_table(
@@ -113,7 +161,7 @@ def _render_table(
         rendered_cells = []
         for cell in cells:
             paragraphs = [
-                _render_paragraph(child, archive, output_dir, img_dir_name, images)
+                _render_paragraph(child, archive, output_dir, img_dir_name, images, force_inline=True)
                 for child in cell
                 if xml_name(child) in {"p", "h"}
             ]

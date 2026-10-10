@@ -53,7 +53,7 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(image_tasks), 8)) as executor:
             list(executor.map(_write_image, image_tasks))
 
-    if page_count > 4:
+    if page_count > 1:
         cpu_cnt = os.cpu_count() or 4
         chunk_size = max(2, (page_count + cpu_cnt - 1) // cpu_cnt)
         page_chunks = [
@@ -62,7 +62,8 @@ def convert_pdf_or_ebook(file_path: str, out_dir: str) -> tuple[str | None, int]
         ]
 
         def _convert_chunk(pages: list[int]) -> str:
-            return pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
+            res = pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
+            return str(res)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(page_chunks), cpu_cnt)) as executor:
             chunk_results = list(executor.map(_convert_chunk, page_chunks))

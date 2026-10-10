@@ -77,7 +77,7 @@ def test_odt_uses_inline_and_display_math_and_keeps_tables_ordered(tmp_path: Pat
         xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
         xmlns:xlink="http://www.w3.org/1999/xlink">
       <office:body><office:text>
-        <text:p>Inline <draw:object xlink:href="Object 1/"/> formula</text:p>
+        <text:p>This is a long sentence that contains an inline <draw:object xlink:href="Object 1/"/> formula and enough text to exceed the threshold.</text:p>
         <text:p><draw:object xlink:href="Object 1/"/></text:p>
         <table:table>
           <table:table-row><table:table-cell><text:p>Header</text:p></table:table-cell></table:table-row>
@@ -107,6 +107,6 @@ def test_odt_uses_inline_and_display_math_and_keeps_tables_ordered(tmp_path: Pat
     assert images == 1
     assert (tmp_path / "hammerdown_images_sample_odt" / "img_000.png").read_bytes() == b"image data"
     assert "![Image](hammerdown_images_sample_odt/img_000.png)" in markdown
-    assert "Inline $\\frac{1}{N}$ formula" in markdown
+    assert "inline $\\frac{1}{N}$ formula" in markdown
     assert "$$\\frac{1}{N}$$" in markdown
     assert markdown.index("$$\\frac{1}{N}$$") < markdown.index("| Header |")

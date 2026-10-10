@@ -57,6 +57,25 @@ def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
 
 def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str, str]:
     tag = _xml_name(node)
+    if tag == "r":
+        # Handle subscripts/superscripts in regular text runs (common in legacy or mixed documents)
+        rPr = node.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr")
+        vert = None
+        if rPr is not None:
+            va = rPr.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}vertAlign")
+            if va is not None:
+                vert = va.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val")
+
+        res = _render_word_children(node, relationships, chart_links)
+        if vert in {"subscript", "superscript"}:
+            latex = res[1] if isinstance(res, tuple) else res
+            # Allow letters (Unicode), digits, dots and internal spaces.
+            # Must contain at least one letter or digit to be a valid index.
+            if latex.strip() and re.search(r"[\w\d]", latex) and re.match(r"^[ \w\d\.]+$", latex.strip()):
+                prefix = "_" if vert == "subscript" else "^"
+                return ("inline", f"{prefix}{{{latex.strip()}}}")
+        return res
+
     if tag == "chart":
         relation_id = node.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
         return chart_links.get(relation_id, "") if chart_links else ""
@@ -83,7 +102,7 @@ def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str,
     return _render_word_children(node, relationships, chart_links)
 
 
-def _render_word_children(node, relationships, chart_links=None) -> str | tuple[str, str]:
+def _render_word_children(node, relationships, chart_links=None, force_inline=False) -> str | tuple[str, str]:
     raw_parts = [_render_word_node(child, relationships, chart_links) for child in node]
 
     parts: list[str | tuple[str, str]] = []
@@ -94,6 +113,7 @@ def _render_word_children(node, relationships, chart_links=None) -> str | tuple[
             parts.append(("inline", " ".join(curr_math).strip()))
             curr_math.clear()
 
+    # Merge math fragments and "glue" text (numbers, operators, short units/abbreviations)
     for part in raw_parts:
         if isinstance(part, tuple):
             mode, latex = part
@@ -103,25 +123,47 @@ def _render_word_children(node, relationships, chart_links=None) -> str | tuple[
             else:
                 curr_math.append(latex)
         elif isinstance(part, str):
-            stripped = part.strip()
-            if curr_math and stripped and re.match(r"^([NnijkxyMmA-Za-z0-9\s=\+\-\*\/±≈\.,_]|\\sigma|\\rho)+$", stripped):
-                curr_math.append(stripped)
+            # Strictly math symbols, numbers, and whitespace. No words/letters allowed in glue.
+            is_glue = not part.strip() or re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–]+$", part)
+            if curr_math and is_glue:
+                curr_math.append(part)
             else:
                 flush_math()
                 parts.append(part)
     flush_math()
 
     formulas = [part for part in parts if isinstance(part, tuple)]
-    text = "".join(part for part in parts if isinstance(part, str))
+    text_content = "".join(part for part in parts if isinstance(part, str))
     if not formulas:
-        return text
+        return text_content
 
-    has_text = bool(text.strip())
+    # A paragraph is standalone if the remaining text is very short (e.g. units, labels, or empty)
+    # This prevents regular sentences from being swallowed into $$ blocks.
+    # In table cells, we always prefer inline math.
+    is_standalone = not force_inline and len(re.findall(r"[\w\d]", text_content)) < 10
+
+    if is_standalone:
+        rendered_parts = []
+        for part in parts:
+            if isinstance(part, tuple):
+                rendered_parts.append(part[1])
+            else:
+                if part.strip():
+                    # Preserve numbers and math symbols in math mode font, wrap text in \text{}
+                    if re.match(r"^[0-9\s.,=≈\+\-\*\/±]+$", part):
+                        rendered_parts.append(part)
+                    else:
+                        val = part.replace("{", "\\{").replace("}", "\\}")
+                        rendered_parts.append(rf"\text{{{val}}}")
+                else:
+                    rendered_parts.append(part)
+        return f"$${''.join(rendered_parts).strip()}$$"
+
     rendered = []
     for part in parts:
         if isinstance(part, tuple):
             mode, latex = part
-            delimiter = "$$" if mode == "display" or not has_text else "$"
+            delimiter = "$$" if mode == "display" else "$"
             prefix = " " if rendered and isinstance(rendered[-1], str) and rendered[-1] and not rendered[-1].endswith((" ", "\n", "\t", "(")) else ""
             rendered.append(f"{prefix}{delimiter}{latex}{delimiter}")
         else:
@@ -129,8 +171,8 @@ def _render_word_children(node, relationships, chart_links=None) -> str | tuple[
     return "".join(rendered)
 
 
-def _render_word_paragraph(element, relationships, chart_links=None) -> str:
-    rendered = _render_word_children(element, relationships, chart_links)
+def _render_word_paragraph(element, relationships, chart_links=None, force_inline=False) -> str:
+    rendered = _render_word_children(element, relationships, chart_links, force_inline=force_inline)
     return rendered.strip() if isinstance(rendered, str) else ""
 
 
@@ -174,7 +216,7 @@ def convert_docx(docx_path: str, out_dir: str, images_dir_name: str | None = Non
                 cells = []
                 for cell in row.cells:
                     cell_paragraphs = [
-                        _render_word_paragraph(paragraph._p, doc.part.rels, chart_links)
+                        _render_word_paragraph(paragraph._p, doc.part.rels, chart_links, force_inline=True)
                         for paragraph in cell.paragraphs
                     ]
                     cells.append(" ".join(text for text in cell_paragraphs if text).replace("|", "\\|"))
