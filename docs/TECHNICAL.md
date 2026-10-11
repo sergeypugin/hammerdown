@@ -76,17 +76,17 @@ The symbol catalog is maintained in `src/hammerdown/parsers/symbols.json` and is
 Any fixes or subsequent updates must always increment the version number (e.g. `1.5.3`) and be released as a fresh tag.
 
 > [!warning]
-> **Legacy Version Ambiguity (v1.5.2 "Frankenstein")**: Due to a synchronization overlap during the transition to tag protection, version `1.5.2` on PyPI may differ from the `v1.5.2` tag on GitHub. To ensure a clean state for any version below `2.0.2`, it is strictly recommended to run the following recovery sequence:
+> **Legacy Version Ambiguity (v1.5.2 "Frankenstein")**: Due to a synchronization overlap during the transition to tag protection, version `1.5.2` on PyPI may differ from the `v1.5.2` tag on GitHub. To ensure a clean state for any version below `2.0.3`, it is strictly recommended to run the following recovery sequence:
 > 1. `pip uninstall hammerdown`
 > 2. `pip install --no-cache-dir hammerdown`
 > 3. `hammerdown --install` (to refresh OS integrations)
 
-Starting from version `2.0.2`, overwriting existing target Markdown files is the default behavior. The `--force` flag has been completely removed in favor of `--skip-existing` (`-s`) to skip already converted files.
+Starting from version `2.0.3`, overwriting existing target Markdown files is the default behavior. The `--force` flag has been completely removed in favor of `--skip-existing` (`-s`) to skip already converted files.
 
-## Architecture and File Conventions in v2.0.2
+## Architecture and File Conventions in v2.0.3
 
 ### Output Naming Convention
-To prevent collisions between documents with the same name across different formats or subfolders, `hammerdown` 2.0.2 enforces:
+To prevent collisions between documents with the same name across different formats or subfolders, `hammerdown` 2.0.3 enforces:
 - Output Markdown filename: `hm_<stem>_<ext>.md` (e.g. `hm_report_docx.md` or `hm_notes_txt.md`)
 - Extracted images directory: `hm_images_<stem>_<ext>/` (e.g. `hm_images_report_docx/`)
 

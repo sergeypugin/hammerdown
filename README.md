@@ -92,7 +92,7 @@ hammerdown --update
 ```
 
 > [!warning]
-> **Legacy version ambiguity (versions below 2.0.2):** due to a release synchronization conflict on version 1.5.2, run the clean recovery sequence below to avoid environment inconsistencies:
+> **Legacy version ambiguity (versions below 2.0.3):** due to a release synchronization conflict on version 1.5.2, run the clean recovery sequence below to avoid environment inconsistencies:
 >
 > ```sh
 > pip uninstall hammerdown -y
@@ -122,7 +122,7 @@ Options:
 - `-v`, `--version` -- display version information
 
 > [!note]
-> The `-f` / `--force` flag has been removed in 2.0.2 because overwriting target Markdown output files is now default behavior.
+> The `-f` / `--force` flag has been removed in 2.0.3 because overwriting target Markdown output files is now default behavior.
 
 ```sh
 hammerdown -i document.pdf
