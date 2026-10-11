@@ -13,7 +13,8 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
-from hammerdown import APP_DESCRIPTION, APP_NAME, SUPPORTED_EXTENSIONS, __version__
+from hammerdown import APP_DESCRIPTION, APP_NAME, SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, __version__
+from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
 from hammerdown.utils import format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
@@ -356,6 +357,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("-s", "--skip-existing", action="store_true", help="Skip conversion if target markdown file already exists")
     parser.add_argument("-m", "--merge", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress routine conversion messages")
+    parser.add_argument("--coordinator", action="store_true", help="Enable single-instance coordinator mode for batch invocation")
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(argv)
 
@@ -379,38 +381,58 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.info("No supported documents found to convert")
         return 0
 
+    use_ipc = args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
+    options = {
+        "in_place": args.in_place,
+        "overwrite": args.overwrite,
+        "skip_existing": args.skip_existing,
+        "quiet": args.quiet,
+    }
+
+    if use_ipc and try_delegate_to_coordinator(files, options):
+        logger.info("Delegated %d files to active hammerdown coordinator", len(files))
+        return 0
+
+    coordinator = IPCCoordinator() if use_ipc else None
+    if coordinator and coordinator.start():
+        files = coordinator.collect_files(files, assembly_timeout=0.35)
+
     from hammerdown.core import convert_file
 
     started_at = time.monotonic()
     results: list[bool] = []
-    if len(files) == 1:
-        results.append(
-            convert_file(
-                files[0],
-                in_place=args.in_place,
-                overwrite=args.overwrite,
-                skip_existing=args.skip_existing,
-            )
-        )
-    else:
-        max_workers = min(len(files), os.cpu_count() or 4)
-        worker_args = [
-            (f, args.in_place, args.quiet, args.overwrite, args.skip_existing)
-            for f in files
-        ]
-        try:
-            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-                results = list(executor.map(_process_single_file, worker_args))
-        except Exception:
-            results = [
+    try:
+        if len(files) == 1:
+            results.append(
                 convert_file(
-                    f,
+                    files[0],
                     in_place=args.in_place,
                     overwrite=args.overwrite,
                     skip_existing=args.skip_existing,
                 )
+            )
+        else:
+            max_workers = min(len(files), os.cpu_count() or 4)
+            worker_args = [
+                (f, args.in_place, args.quiet, args.overwrite, args.skip_existing)
                 for f in files
             ]
+            try:
+                with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                    results = list(executor.map(_process_single_file, worker_args))
+            except Exception:
+                results = [
+                    convert_file(
+                        f,
+                        in_place=args.in_place,
+                        overwrite=args.overwrite,
+                        skip_existing=args.skip_existing,
+                    )
+                    for f in files
+                ]
+    finally:
+        if coordinator:
+            coordinator.stop()
 
     failed_count = results.count(False)
     if args.merge and any(results):
