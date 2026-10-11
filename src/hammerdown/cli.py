@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
-from hammerdown import SUPPORTED_EXTENSIONS, __version__
+from hammerdown import APP_DESCRIPTION, APP_NAME, SUPPORTED_EXTENSIONS, __version__
 from hammerdown.utils import format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
@@ -288,10 +288,10 @@ def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="hammerdown",
-        description="Convert PDF and office documents to Markdown",
+        prog=APP_NAME,
+        description=APP_DESCRIPTION,
     )
-    parser.add_argument("-v", "--version", action="version", version=f"hammerdown {__version__}")
+    parser.add_argument("-v", "--version", action="version", version=f"{APP_NAME} {__version__}")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--install", action="store_true", help="Install the file-manager integration")
     action.add_argument("--uninstall", action="store_true", help="Remove the file-manager integration")

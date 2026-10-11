@@ -24,6 +24,13 @@ def test_package_exports():
     assert hasattr(hammerdown, "omml_to_latex")
     assert hasattr(hammerdown, "mathml_to_latex")
     assert hasattr(hammerdown, "SUPPORTED_EXTENSIONS")
+    assert hasattr(hammerdown, "TEXT_EXTENSIONS")
+    assert hasattr(hammerdown, "APP_NAME")
+    assert hasattr(hammerdown, "APP_DESCRIPTION")
+    assert hasattr(hammerdown, "DEFAULT_IN_PLACE")
+    assert hasattr(hammerdown, "DEFAULT_OVERWRITE")
+    assert hasattr(hammerdown, "DEFAULT_SKIP_EXISTING")
+    assert hasattr(hammerdown, "DEFAULT_QUIET")
     assert hasattr(hammerdown, "__version__")
 
 

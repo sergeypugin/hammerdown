@@ -27,7 +27,16 @@ logger = logging.getLogger("hammerdown")
 
 ProgressCallback = Callable[[int, int, str], None]
 
+APP_NAME: str = "hammerdown"
+APP_DESCRIPTION: str = "Convert PDF and office documents to Markdown"
+
 SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(CONVERTERS)
+TEXT_EXTENSIONS: tuple[str, ...] = (".txt", ".md")
+
+DEFAULT_IN_PLACE: bool = False
+DEFAULT_OVERWRITE: bool = True
+DEFAULT_SKIP_EXISTING: bool = False
+DEFAULT_QUIET: bool = False
 
 
 def to_markdown(
@@ -76,7 +85,7 @@ def convert_file(
     out_md = out_dir / out_md_name
 
     # Handle explicit source overwrite for text-like files
-    is_text = extension in {".txt", ".md", ".log", ".csv"}
+    is_text = extension in TEXT_EXTENSIONS
     if overwrite:
         if is_text:
             out_md = source
