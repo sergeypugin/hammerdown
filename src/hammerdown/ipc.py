@@ -15,7 +15,7 @@ IPC_PORT = 58432
 IPC_AUTH_KEY = b"hammerdown-ipc-secret"
 
 
-def _get_address(pipe_name: str | None = None) -> str | tuple[str, int]:
+def _get_address(pipe_name: str | tuple[str, int] | None = None) -> str | tuple[str, int]:
     if pipe_name:
         return pipe_name
     env_pipe = os.environ.get("HAMMERDOWN_IPC_PIPE")
@@ -29,7 +29,7 @@ def _get_address(pipe_name: str | None = None) -> str | tuple[str, int]:
 def try_delegate_to_coordinator(
     files: Sequence[str],
     options: dict[str, Any],
-    pipe_name: str | None = None,
+    pipe_name: str | tuple[str, int] | None = None,
 ) -> bool:
     address = _get_address(pipe_name)
     try:
@@ -47,7 +47,7 @@ def try_delegate_to_coordinator(
 
 
 class IPCCoordinator:
-    def __init__(self, pipe_name: str | None = None) -> None:
+    def __init__(self, pipe_name: str | tuple[str, int] | None = None) -> None:
         self.address = _get_address(pipe_name)
         self.listener: Listener | None = None
         self._incoming_queue: queue.Queue[list[str]] = queue.Queue()
