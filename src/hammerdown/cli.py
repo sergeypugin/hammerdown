@@ -296,6 +296,35 @@ def _expand_paths(paths: Sequence[str]) -> list[str]:
     return expanded
 
 
+def _merge_converted_files(
+    files: Sequence[str],
+    results: Sequence[bool],
+    merge_target: str,
+    overwrite_sources: bool = False,
+) -> None:
+    merged_sections: list[str] = []
+    for file_path, succeeded in zip(files, results):
+        if not succeeded:
+            continue
+        source = Path(normalize_path(file_path))
+        stem = source.stem
+        ext_clean = source.suffix.lower().lstrip(".")
+        out_md_name = f"hm_{stem}_{ext_clean}.md" if ext_clean else f"hm_{stem}.md"
+        out_md = source.parent / out_md_name
+        if overwrite_sources and source.suffix.lower() in TEXT_EXTENSIONS:
+            out_md = source
+        if out_md.is_file():
+            content = out_md.read_text(encoding="utf-8").strip()
+            section = f"# {source.name}\n\n{content}" if content else f"# {source.name}"
+            merged_sections.append(section)
+
+    if merged_sections:
+        dest = Path(normalize_path(merge_target))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text("\n\n".join(merged_sections) + "\n", encoding="utf-8", newline="\n")
+        logger.info("Merged %d documents into %s", len(merged_sections), dest.name)
+
+
 def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool:
     from hammerdown.core import convert_file
 
@@ -325,6 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("-i", "--in-place", action="store_true", help="Save output Markdown and images in the same directory as the input file")
     parser.add_argument("-w", "--overwrite", action="store_true", help="Overwrite input text file in-place instead of creating a copy")
     parser.add_argument("-s", "--skip-existing", action="store_true", help="Skip conversion if target markdown file already exists")
+    parser.add_argument("-m", "--merge", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress routine conversion messages")
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(argv)
@@ -383,6 +413,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             ]
 
     failed_count = results.count(False)
+    if args.merge and any(results):
+        _merge_converted_files(files, results, args.merge, overwrite_sources=args.overwrite)
+
     if len(files) > 1 and not args.quiet:
         duration = time.monotonic() - started_at
         logger.info(

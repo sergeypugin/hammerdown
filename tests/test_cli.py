@@ -180,3 +180,34 @@ def test_recursive_directory_empty_or_no_supported_files(tmp_path: Path):
     unsupported_dir.mkdir()
     (unsupported_dir / "data.bin").write_bytes(b"12345")
     assert hammerdown.cli.main([str(unsupported_dir)]) == 0
+
+
+def test_merge_converted_files(tmp_path: Path):
+    file1 = tmp_path / "doc1.txt"
+    file1.write_text("Hello from file 1\n", encoding="utf-8")
+    file2 = tmp_path / "doc2.txt"
+    file2.write_text("Hello from file 2\n", encoding="utf-8")
+
+    merged_file = tmp_path / "summary.md"
+    assert hammerdown.cli.main(["--merge", str(merged_file), str(file1), str(file2)]) == 0
+
+    assert merged_file.is_file()
+    content = merged_file.read_text(encoding="utf-8")
+    assert "# doc1.txt" in content
+    assert "Hello from file 1" in content
+    assert "# doc2.txt" in content
+    assert "Hello from file 2" in content
+
+
+def test_merge_with_short_flag_and_skipped_failure(tmp_path: Path):
+    file1 = tmp_path / "doc1.txt"
+    file1.write_text("Hello from file 1\n", encoding="utf-8")
+    bad_file = tmp_path / "missing.docx"
+
+    merged_file = tmp_path / "partial.md"
+    assert hammerdown.cli.main(["-m", str(merged_file), str(file1), str(bad_file)]) == 1
+
+    assert merged_file.is_file()
+    content = merged_file.read_text(encoding="utf-8")
+    assert "# doc1.txt" in content
+    assert "missing.docx" not in content
