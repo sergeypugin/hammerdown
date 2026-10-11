@@ -141,3 +141,42 @@ def test_logging_progress_from_zero(tmp_path: Path, caplog):
 
     progress_messages = [record.message for record in caplog.records if "(0%)" in record.message]
     assert len(progress_messages) > 0, "Expected a log message starting at 0%"
+
+
+def test_recursive_directory_traversal(tmp_path: Path):
+    root_dir = tmp_path / "documents"
+    sub_dir = root_dir / "nested" / "deep"
+    sub_dir.mkdir(parents=True)
+
+    file1 = root_dir / "doc1.txt"
+    file1.write_text("content 1\n", encoding="utf-8")
+
+    file2 = sub_dir / "doc2.txt"
+    file2.write_text("content 2\n", encoding="utf-8")
+
+    ignored_temp = root_dir / "~$temp.docx"
+    ignored_temp.write_bytes(b"temp")
+
+    ignored_hidden = sub_dir / ".hidden.txt"
+    ignored_hidden.write_text("secret\n", encoding="utf-8")
+
+    assert hammerdown.cli.main([str(root_dir)]) == 0
+
+    assert (root_dir / "hm_doc1_txt.md").is_file()
+    assert (root_dir / "hm_doc1_txt.md").read_text(encoding="utf-8") == "content 1\n"
+    assert (sub_dir / "hm_doc2_txt.md").is_file()
+    assert (sub_dir / "hm_doc2_txt.md").read_text(encoding="utf-8") == "content 2\n"
+
+    assert not (root_dir / "hm_~$temp_docx.md").exists()
+    assert not (sub_dir / "hm_.hidden_txt.md").exists()
+
+
+def test_recursive_directory_empty_or_no_supported_files(tmp_path: Path):
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    assert hammerdown.cli.main([str(empty_dir)]) == 0
+
+    unsupported_dir = tmp_path / "unsupported"
+    unsupported_dir.mkdir()
+    (unsupported_dir / "data.bin").write_bytes(b"12345")
+    assert hammerdown.cli.main([str(unsupported_dir)]) == 0

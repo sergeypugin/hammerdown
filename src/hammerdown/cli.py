@@ -277,6 +277,25 @@ def _select_files() -> Sequence[str]:
 
 
 
+def _expand_paths(paths: Sequence[str]) -> list[str]:
+    expanded: list[str] = []
+    for raw in paths:
+        p = Path(normalize_path(raw))
+        if p.is_dir():
+            for root, _, filenames in os.walk(p):
+                for f in sorted(filenames):
+                    if f.startswith("~$") or f.startswith("."):
+                        continue
+                    file_path = Path(root) / f
+                    if file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                        expanded.append(str(file_path))
+        elif p.is_file():
+            expanded.append(str(p))
+        else:
+            expanded.append(raw)
+    return expanded
+
+
 def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool:
     from hammerdown.core import convert_file
 
@@ -321,8 +340,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.update:
         return 0 if update() else 1
 
-    files = args.files or _select_files()
+    raw_files = args.files or _select_files()
+    if not raw_files:
+        return 0
+
+    files = _expand_paths(raw_files)
     if not files:
+        logger.info("No supported documents found to convert")
         return 0
 
     from hammerdown.core import convert_file
