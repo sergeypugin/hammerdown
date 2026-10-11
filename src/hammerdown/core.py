@@ -160,6 +160,18 @@ def convert_file(
         size_mb = source.stat().st_size / (1024 * 1024)
         est_seconds = 3.0 + (size_mb * 2.0)
         est_hint = f" (legacy format, est. ~{format_duration(est_seconds)})"
+    elif extension == ".odt":
+        try:
+            import zipfile
+            with zipfile.ZipFile(str(source)) as z:
+                content_size = z.getinfo("content.xml").file_size
+                est_seconds = max(1.0, content_size / 50000)
+                est_hint = f" (est. ~{format_duration(est_seconds)})"
+        except Exception:
+            pass
+    elif extension in {".txt", ".md", ".log", ".csv"}:
+        # Instant or near-instant text processing
+        est_hint = " (fast text conversion)"
 
     logger.info("Processing %s%s...", source.name, est_hint)
     started_at = time.monotonic()
