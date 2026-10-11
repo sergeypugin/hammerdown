@@ -71,19 +71,38 @@ def convert_pdf_or_ebook(
 
         completed_pages = 0
 
-        def _convert_chunk(pages: list[int]) -> str:
+        def _convert_single_page_safe(page_idx: int) -> str:
             nonlocal completed_pages
-            res = pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
-            completed_pages += len(pages)
+            try:
+                res = pymupdf4llm.to_markdown(file_path, pages=[page_idx], write_images=False, use_ocr=False)
+                res_str = str(res)
+            except Exception:
+                res_str = f"\n\n<!-- Warning: failed to parse page {page_idx + 1} -->\n\n"
+            completed_pages += 1
             if progress_callback:
                 progress_callback(completed_pages, page_count, "pages")
-            return str(res)
+            return res_str
+
+        def _convert_chunk_worker(pages: list[int]) -> str:
+            nonlocal completed_pages
+            try:
+                res = pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
+                completed_pages += len(pages)
+                if progress_callback:
+                    progress_callback(completed_pages, page_count, "pages")
+                return str(res)
+            except Exception:
+                # If a multi-page chunk fails, fall back to safe per-page extraction
+                sub_results = [_convert_single_page_safe(p) for p in pages]
+                return "".join(sub_results)
 
         if progress_callback:
             progress_callback(0, page_count, "pages")
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(page_chunks), cpu_cnt)) as executor:
-            chunk_results = list(executor.map(_convert_chunk, page_chunks))
+        worker_count = min(len(page_chunks), cpu_cnt)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_to_chunk = [executor.submit(_convert_chunk_worker, chunk) for chunk in page_chunks]
+            chunk_results = [f.result() for f in future_to_chunk]
         md_text = "".join(chunk_results)
     else:
         if progress_callback:
