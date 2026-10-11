@@ -91,7 +91,7 @@ hammerdown --update
 ```
 
 > [!warning]
-> **Note for users upgrading from version 1.5.1 or earlier:** run `hammerdown --install` immediately after updating, or perform a clean reinstall to refresh context menu launcher scripts:
+> **Legacy version ambiguity (versions below 2.0.0):** due to a release synchronization conflict on version 1.5.2, run the clean recovery sequence below to avoid environment inconsistencies:
 >
 > ```sh
 > pip uninstall hammerdown -y
@@ -99,7 +99,7 @@ hammerdown --update
 > hammerdown --install
 > ```
 >
-> Starting from version 1.5.2, `hammerdown --update` automatically refreshes all launcher scripts and file manager integrations without manual reinstallation.
+> Starting from version 1.5.2, `hammerdown --update` automatically refreshes all launcher scripts and file manager integrations without manual reinstallation. Release tags on GitHub are protected by immutable tag rulesets (`Protect release tags`).
 
 ## Usage
 

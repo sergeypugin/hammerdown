@@ -69,7 +69,19 @@ The symbol catalog is maintained in `src/hammerdown/parsers/symbols.json` and is
 ## Release and PyPI Immutability
 
 > [!important]
-> Once a release artifact (for example, version `1.3.0`) is published to PyPI, the index entry is strictly immutable. PyPI prohibits overwriting or re-uploading an existing version artifact under any circumstances. Even if you rewrite git history or attempt a force push (`git push --force`) on the release tag, PyPI will reject the re-upload with an HTTP error (`File already exists`). Any updates or post-release fixes after successful upload must always be released under a new version number (such as `1.3.1` or higher).
+> Release versions are strictly immutable across both distribution channels:
+> - PyPI registry: once a version package (such as `1.5.2`) is published to PyPI, the index entry is permanently locked. PyPI prohibits overwriting or re-uploading an existing version artifact under any circumstances. Any attempt to re-upload the same version will immediately fail with an HTTP error (`File already exists`), regardless of pipeline settings.
+> - GitHub release tags: repository tag rulesets (`Protect release tags` targeting `v*`) explicitly forbid force-pushing, updating, or deleting existing release tags on GitHub.
+
+Any fixes or subsequent updates must always increment the version number (e.g. `1.5.3`) and be released as a fresh tag.
+
+> [!warning]
+> **Legacy Version Ambiguity (v1.5.2 "Frankenstein")**: Due to a synchronization overlap during the transition to tag protection, version `1.5.2` on PyPI may differ from the `v1.5.2` tag on GitHub. To ensure a clean state for any version below `2.0.0`, it is strictly recommended to run the following recovery sequence:
+> 1. `pip uninstall hammerdown`
+> 2. `pip install --no-cache-dir hammerdown`
+> 3. `hammerdown --install` (to refresh OS integrations)
+
+Starting from version `2.0.0`, the `--force` flag becomes the default behavior for file overwrites to streamline CLI workflows.
 
 > [!note]
 > If a CI workflow fails during early stages (such as linting, unit tests, or matrix builds) before the PyPI upload step executes, the version number has not been registered on PyPI yet. In that case, fixing the root cause and updating the git tag to re-trigger the release workflow is safe, because PyPI only locks version numbers once an actual distribution archive (`.whl` or `.tar.gz`) has been successfully received by its registry index.
