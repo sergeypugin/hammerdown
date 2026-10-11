@@ -4,12 +4,14 @@ import argparse
 import concurrent.futures
 import logging
 import os
+import plistlib
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -19,12 +21,35 @@ from hammerdown.utils import format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
 
+LINUX_MIME_TYPES: tuple[str, ...] = (
+    "application/pdf",
+    "application/epub+zip",
+    "application/x-mobipocket-ebook",
+    "application/x-fictionbook+xml",
+    "application/vnd.ms-xpsdocument",
+    "application/oxps",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-powerpoint",
+    "text/csv",
+    "text/plain",
+    "text/markdown",
+    "text/x-markdown",
+    "text/x-log",
+    "inode/directory",
+)
 
-def _installed_command() -> tuple[Path, str]:
+
+def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
+    home = home_dir or Path.home()
     if os.name == "nt":
-        app_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
+        app_dir = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local")) / "Programs" / "hammerdown"
     else:
-        app_dir = Path.home() / ".local" / "share" / "hammerdown"
+        app_dir = home / ".local" / "share" / "hammerdown"
     app_dir.mkdir(parents=True, exist_ok=True)
 
     if getattr(sys, "frozen", False):
@@ -89,19 +114,314 @@ def _install_windows(command: str) -> None:
         cmd_file.write_text(f'@echo off\n{command} --coordinator %*\n', encoding="utf-8")
 
 
-def _install_unix(command: str) -> None:
-    bin_dir = Path.home() / ".local" / "bin"
+def _desktop_file_content(exec_cmd: str) -> str:
+    mimes = ";".join(LINUX_MIME_TYPES) + ";"
+    return (
+        "[Desktop Entry]\n"
+        "Version=1.0\n"
+        "Type=Application\n"
+        "Name=Hammer down\n"
+        "GenericName=Document to Markdown Converter\n"
+        "Comment=Convert PDF and office documents to Markdown\n"
+        f"Exec={exec_cmd} %F\n"
+        "Icon=hammerdown\n"
+        "Terminal=false\n"
+        f"MimeType={mimes}\n"
+        "Categories=Utility;Office;\n"
+        "StartupNotify=false\n"
+        "NoDisplay=false\n"
+    )
+
+
+def _kde_servicemenu_content(exec_cmd: str) -> str:
+    mimes = ";".join(LINUX_MIME_TYPES) + ";"
+    return (
+        "[Desktop Entry]\n"
+        "Type=Service\n"
+        "ServiceTypes=KonqPopupMenu/Plugin\n"
+        f"MimeType={mimes}\n"
+        "Actions=HammerDown;\n"
+        "X-KDE-Priority=TopLevel\n"
+        "X-KDE-Submenu=\n"
+        "\n"
+        "[Desktop Action HammerDown]\n"
+        "Name=Hammer down file\n"
+        "Icon=hammerdown\n"
+        f"Exec={exec_cmd} %F\n"
+    )
+
+
+def _find_icon_png() -> Path | None:
+    pkg_dir = Path(__file__).resolve().parent
+    candidates = [
+        pkg_dir / "icon.png",
+        pkg_dir.parent.parent / "assets" / "icon.png",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
+
+
+def _install_launcher(command: str, home_dir: Path | None = None) -> Path:
+    home = home_dir or Path.home()
+    bin_dir = home / ".local" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     launcher = bin_dir / "hammerdown"
-    launcher.write_text(f"#!/bin/sh\nexec {command} \"$@\"\n", encoding="utf-8")
-    launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    launcher.write_text(f'#!/bin/sh\nexec {command} "$@"\n', encoding="utf-8")
+    try:
+        launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    except OSError:
+        pass
+    return launcher
 
-    if sys.platform.startswith("linux"):
-        nautilus_dir = Path.home() / ".local" / "share" / "nautilus" / "scripts"
-        nautilus_dir.mkdir(parents=True, exist_ok=True)
-        script = nautilus_dir / "Hammer down file"
-        script.write_text('exec "$HOME/.local/bin/hammerdown" "$@"\n', encoding="utf-8")
-        script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+def _install_linux(command: str, home_dir: Path | None = None) -> None:
+    home = home_dir or Path.home()
+    launcher = _install_launcher(command, home)
+    exec_cmd = f'"{launcher}"' if " " in str(launcher) else str(launcher)
+
+    apps_dir = home / ".local" / "share" / "applications"
+    apps_dir.mkdir(parents=True, exist_ok=True)
+    (apps_dir / "hammerdown.desktop").write_text(_desktop_file_content(exec_cmd), encoding="utf-8")
+
+    kde6_dir = home / ".local" / "share" / "kio" / "servicemenus"
+    kde6_dir.mkdir(parents=True, exist_ok=True)
+    (kde6_dir / "hammerdown.desktop").write_text(_kde_servicemenu_content(exec_cmd), encoding="utf-8")
+
+    kde5_dir = home / ".local" / "share" / "kservices5" / "ServiceMenus"
+    kde5_dir.mkdir(parents=True, exist_ok=True)
+    (kde5_dir / "hammerdown.desktop").write_text(_kde_servicemenu_content(exec_cmd), encoding="utf-8")
+
+    for script_parent in (
+        home / ".local" / "share" / "nautilus" / "scripts",
+        home / ".local" / "share" / "nemo" / "scripts",
+        home / ".config" / "caja" / "scripts",
+    ):
+        script_parent.mkdir(parents=True, exist_ok=True)
+        script_file = script_parent / "Hammer down file"
+        script_file.write_text(f'exec "{launcher}" "$@"\n', encoding="utf-8")
+        try:
+            script_file.chmod(script_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except OSError:
+            pass
+
+    icon_src = _find_icon_png()
+    if icon_src:
+        icon_dest_dir = home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps"
+        icon_dest_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(icon_src, icon_dest_dir / "hammerdown.png")
+        except OSError:
+            pass
+
+        app_dir = home / ".local" / "share" / "hammerdown"
+        app_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(icon_src, app_dir / "hammerdown.png")
+        except OSError:
+            pass
+
+    update_db = shutil.which("update-desktop-database")
+    if update_db:
+        try:
+            subprocess.run([update_db, str(apps_dir)], capture_output=True, check=False)
+        except Exception:
+            pass
+
+
+def _create_macos_workflow(workflow_dir: Path, launcher: Path | str) -> None:
+    contents_dir = workflow_dir / "Contents"
+    contents_dir.mkdir(parents=True, exist_ok=True)
+
+    info_data = {
+        "CFBundleIdentifier": "com.hammerdown.quickaction",
+        "CFBundleName": "Hammer down",
+        "CFBundleShortVersionString": "1.0",
+        "CFBundleVersion": "1",
+        "NSServices": [
+            {
+                "NSBackgroundColorName": "background",
+                "NSIconName": "NSTouchBarDocument",
+                "NSMenuItem": {
+                    "default": "Hammer down",
+                },
+                "NSMessage": "runWorkflowAsService",
+                "NSRequiredContext": {
+                    "NSApplicationIdentifier": "com.apple.finder",
+                },
+                "NSSendFileTypes": [
+                    "public.item",
+                ],
+            }
+        ],
+    }
+    with open(contents_dir / "Info.plist", "wb") as fp:
+        plistlib.dump(info_data, fp, fmt=plistlib.FMT_XML)
+
+    exec_target = f'"{launcher}"' if " " in str(launcher) else str(launcher)
+    wflow_data = {
+        "AMApplicationBuild": "523",
+        "AMApplicationVersion": "2.10",
+        "AMDocumentVersion": "2",
+        "actions": [
+            {
+                "action": {
+                    "AMAccepts": {
+                        "Container": "List",
+                        "Optional": True,
+                        "Types": ["com.apple.cocoa.path"],
+                    },
+                    "AMActionVersion": "2.0.3",
+                    "AMApplication": ["Automator"],
+                    "AMCategory": "AMCategoryUtilities",
+                    "AMParameterProperties": {
+                        "COMMAND_STRING": {},
+                        "CheckedForUserDefaultShell": {},
+                        "inputMethod": {},
+                        "shell": {},
+                        "source": {},
+                    },
+                    "AMProvides": {
+                        "Container": "List",
+                        "Types": ["com.apple.cocoa.path"],
+                    },
+                    "ActionBundlePath": "/System/Library/Automator/Run Shell Script.action",
+                    "ActionName": "Run Shell Script",
+                    "ActionParameters": {
+                        "COMMAND_STRING": f'exec {exec_target} "$@"',
+                        "CheckedForUserDefaultShell": True,
+                        "inputMethod": 1,
+                        "shell": "/bin/sh",
+                        "source": "",
+                    },
+                    "BundleIdentifier": "com.apple.RunShellScript",
+                    "CFBundleIdentifier": "com.apple.RunShellScript",
+                    "Class Name": "RunShellScriptAction",
+                    "InputUUID": str(uuid.uuid4()),
+                    "Keywords": ["Shell", "Script", "Command", "Run", "Unix"],
+                    "OutputUUID": str(uuid.uuid4()),
+                    "UUID": str(uuid.uuid4()),
+                    "UnlocalizedApplications": ["Automator"],
+                }
+            }
+        ],
+        "connectors": {},
+        "workflowMetaData": {
+            "applicationBundleIDsByPath": {},
+            "applicationPaths": [],
+            "inputTypeIdentifier": "com.apple.Automator.fileSystemObject",
+            "outputTypeIdentifier": "com.apple.Automator.nothing",
+            "presentationMode": 15,
+            "processesInput": False,
+            "serviceApplicationBundleID": "com.apple.finder",
+            "serviceApplicationPath": "/System/Library/CoreServices/Finder.app",
+            "serviceInputTypeIdentifier": "com.apple.Automator.fileSystemObject",
+            "serviceOutputTypeIdentifier": "com.apple.Automator.nothing",
+            "serviceProcessesInput": False,
+            "systemImageName": "NSTouchBarDocument",
+            "useAutomaticInputType": False,
+            "workflowTypeIdentifier": "com.apple.Automator.servicesMenu",
+        },
+    }
+    with open(contents_dir / "document.wflow", "wb") as fp:
+        plistlib.dump(wflow_data, fp, fmt=plistlib.FMT_XML)
+
+
+def _create_macos_droplet(app_dest: Path, launcher: Path | str) -> bool:
+    osacompile = shutil.which("osacompile")
+    if not osacompile:
+        return False
+
+    app_dest.parent.mkdir(parents=True, exist_ok=True)
+    if app_dest.exists():
+        try:
+            shutil.rmtree(app_dest)
+        except OSError:
+            pass
+
+    exec_target = f'"{launcher}"' if " " in str(launcher) else str(launcher)
+    applescript_source = (
+        'on run\n'
+        '    set chosenFiles to choose file with prompt "Select documents to convert:" with multiple selections allowed\n'
+        '    open chosenFiles\n'
+        'end run\n'
+        '\n'
+        'on open droppedItems\n'
+        f'    set cmd to {repr(exec_target)}\n'
+        '    repeat with anItem in droppedItems\n'
+        '        set cmd to cmd & " " & quoted form of (POSIX path of anItem)\n'
+        '    end repeat\n'
+        '    do shell script cmd\n'
+        'end open\n'
+    )
+
+    try:
+        subprocess.run(
+            [osacompile, "-o", str(app_dest), "-e", applescript_source],
+            capture_output=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return False
+
+    info_plist_path = app_dest / "Contents" / "Info.plist"
+    if info_plist_path.is_file():
+        try:
+            with open(info_plist_path, "rb") as fp:
+                info_data = plistlib.load(fp)
+            info_data["CFBundleDocumentTypes"] = [
+                {
+                    "CFBundleTypeName": "Supported Documents",
+                    "CFBundleTypeRole": "Viewer",
+                    "LSHandlerRank": "Alternate",
+                    "LSItemContentTypes": [
+                        "public.item",
+                        "public.content",
+                        "public.data",
+                    ],
+                }
+            ]
+            with open(info_plist_path, "wb") as fp:
+                plistlib.dump(info_data, fp, fmt=plistlib.FMT_XML)
+        except Exception:
+            pass
+
+    lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+    if Path(lsregister).is_file():
+        try:
+            subprocess.run([lsregister, "-f", str(app_dest)], capture_output=True, check=False)
+        except Exception:
+            pass
+
+    return True
+
+
+def _install_macos(command: str, home_dir: Path | None = None) -> None:
+    home = home_dir or Path.home()
+    launcher = _install_launcher(command, home)
+
+    services_dir = home / "Library" / "Services"
+    services_dir.mkdir(parents=True, exist_ok=True)
+    _create_macos_workflow(services_dir / "Hammer down.workflow", launcher)
+
+    app_dest = home / "Applications" / "Hammer down.app"
+    _create_macos_droplet(app_dest, launcher)
+
+    if sys.platform == "darwin":
+        pbs_path = "/System/Library/CoreServices/pbs"
+        if Path(pbs_path).is_file():
+            try:
+                subprocess.run([pbs_path, "-flush"], capture_output=True, check=False)
+            except Exception:
+                pass
+
+
+def _install_unix(command: str) -> None:
+    if sys.platform == "darwin":
+        _install_macos(command)
+    else:
+        _install_linux(command)
 
 
 def install() -> bool:
@@ -109,8 +429,10 @@ def install() -> bool:
         _, command = _installed_command()
         if os.name == "nt":
             _install_windows(command)
+        elif sys.platform == "darwin":
+            _install_macos(command)
         else:
-            _install_unix(command)
+            _install_linux(command)
         logger.info("hammerdown installed successfully.")
         return True
     except (OSError, ImportError) as exc:
@@ -134,37 +456,106 @@ def _remove_registry_tree(root: Any, path: str) -> None:
         pass
 
 
+def _uninstall_windows() -> None:
+    import winreg
+
+    for ext in SUPPORTED_EXTENSIONS:
+        _remove_registry_tree(
+            winreg.HKEY_CURRENT_USER,
+            rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown",
+        )
+        _remove_registry_tree(
+            winreg.HKEY_CURRENT_USER,
+            rf"Software\Classes\SystemFileAssociations\{ext}\shell\Convert to Markdown",
+        )
+    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\shell\hammerdown")
+    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown")
+    sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
+    (sendto_dir / "Hammer down.cmd").unlink(missing_ok=True)
+    (sendto_dir / "Hammer down.lnk").unlink(missing_ok=True)
+    install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
+    if install_dir.exists():
+        try:
+            shutil.rmtree(install_dir)
+        except OSError:
+            logger.warning("Could not remove installed program files at %s", install_dir)
+
+
+def _uninstall_linux(home_dir: Path | None = None) -> None:
+    home = home_dir or Path.home()
+    (home / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)
+    (home / ".local" / "share" / "applications" / "hammerdown.desktop").unlink(missing_ok=True)
+    (home / ".local" / "share" / "kio" / "servicemenus" / "hammerdown.desktop").unlink(missing_ok=True)
+    (home / ".local" / "share" / "kservices5" / "ServiceMenus" / "hammerdown.desktop").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nautilus" / "scripts" / "Hammer down file").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nautilus" / "scripts" / "Convert to Markdown").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nemo" / "scripts" / "Hammer down file").unlink(missing_ok=True)
+    (home / ".config" / "caja" / "scripts" / "Hammer down file").unlink(missing_ok=True)
+    (home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "hammerdown.png").unlink(missing_ok=True)
+
+    install_dir = home / ".local" / "share" / "hammerdown"
+    if install_dir.exists():
+        try:
+            shutil.rmtree(install_dir)
+        except OSError:
+            logger.warning("Could not remove installed program files at %s", install_dir)
+
+    update_db = shutil.which("update-desktop-database")
+    if update_db:
+        try:
+            subprocess.run([update_db, str(home / ".local" / "share" / "applications")], capture_output=True, check=False)
+        except Exception:
+            pass
+
+
+def _uninstall_macos(home_dir: Path | None = None) -> None:
+    home = home_dir or Path.home()
+    (home / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)
+    workflow_path = home / "Library" / "Services" / "Hammer down.workflow"
+    if workflow_path.exists():
+        try:
+            shutil.rmtree(workflow_path)
+        except OSError:
+            pass
+
+    legacy_workflow = home / "Library" / "Services" / "Hammer down file.workflow"
+    if legacy_workflow.exists():
+        try:
+            shutil.rmtree(legacy_workflow)
+        except OSError:
+            pass
+
+    app_path = home / "Applications" / "Hammer down.app"
+    if app_path.exists():
+        try:
+            shutil.rmtree(app_path)
+        except OSError:
+            pass
+
+    install_dir = home / ".local" / "share" / "hammerdown"
+    if install_dir.exists():
+        try:
+            shutil.rmtree(install_dir)
+        except OSError:
+            logger.warning("Could not remove installed program files at %s", install_dir)
+
+    if sys.platform == "darwin":
+        pbs_path = "/System/Library/CoreServices/pbs"
+        if Path(pbs_path).is_file():
+            try:
+                subprocess.run([pbs_path, "-flush"], capture_output=True, check=False)
+            except Exception:
+                pass
+
+
 def uninstall() -> bool:
     try:
         if os.name == "nt":
-            import winreg
-
-            for ext in SUPPORTED_EXTENSIONS:
-                _remove_registry_tree(
-                    winreg.HKEY_CURRENT_USER,
-                    rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown",
-                )
-                _remove_registry_tree(
-                    winreg.HKEY_CURRENT_USER,
-                    rf"Software\Classes\SystemFileAssociations\{ext}\shell\Convert to Markdown",
-                )
-            _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\shell\hammerdown")
-            _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown")
-            sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
-            (sendto_dir / "Hammer down.cmd").unlink(missing_ok=True)
-            (sendto_dir / "Hammer down.lnk").unlink(missing_ok=True)
-            install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
+            _uninstall_windows()
+        elif sys.platform == "darwin":
+            _uninstall_macos()
         else:
-            (Path.home() / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)
-            (Path.home() / ".local" / "share" / "nautilus" / "scripts" / "Hammer down file").unlink(missing_ok=True)
-            (Path.home() / ".local" / "share" / "nautilus" / "scripts" / "Convert to Markdown").unlink(missing_ok=True)
-            install_dir = Path.home() / ".local" / "share" / "hammerdown"
-
-        try:
-            if install_dir.exists():
-                shutil.rmtree(install_dir)
-        except OSError:
-            logger.warning("Could not remove installed program files at %s", install_dir)
+            _uninstall_linux()
         logger.info("hammerdown integration uninstalled")
         return True
     except (OSError, ImportError) as exc:
