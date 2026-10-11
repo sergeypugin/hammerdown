@@ -71,7 +71,7 @@ def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path, d
             return
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
 
-    out_md_path = run_dir / f"{stem}_{ext_clean}.md" if ext_clean else run_dir / f"{stem}.md"
+    out_md_path = run_dir / f"hm_{stem}_{ext_clean}.md" if ext_clean else run_dir / f"hm_{stem}.md"
     assert out_md_path.is_file(), f"Expected output MD file not found: {out_md_path}"
 
     generated_content = out_md_path.read_text(encoding="utf-8")
@@ -83,13 +83,7 @@ def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path, d
             img_path = run_dir / link
             assert img_path.is_file(), f"Referenced image not found: {img_path}"
 
-    specific_golden = golden_dir / f"{stem}_{ext_clean}.md"
-    if specific_golden.is_file():
-        golden_file_path = specific_golden
-    elif stem in duplicate_stems:
-        golden_file_path = specific_golden
-    else:
-        golden_file_path = golden_dir / f"{stem}.md"
+    golden_file_path = golden_dir / f"hm_{stem}_{ext_clean}.md" if ext_clean else golden_dir / f"hm_{stem}.md"
 
     if not golden_file_path.is_file():
         golden_dir.mkdir(parents=True, exist_ok=True)

@@ -48,7 +48,7 @@ def test_convert_file_package(tmp_path: Path):
     source.write_text("package test", encoding="utf-8")
 
     assert convert_file(source)
-    out_file = tmp_path / "doc_txt.md"
+    out_file = tmp_path / "hm_doc_txt.md"
     assert out_file.is_file()
     assert out_file.read_text(encoding="utf-8") == "package test\n"
 

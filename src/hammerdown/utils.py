@@ -30,7 +30,7 @@ def get_images_dir_name(file_path: str | os.PathLike[str]) -> str:
     source = Path(file_path)
     stem = source.stem
     ext_clean = source.suffix.lower().lstrip(".")
-    return f"hammerdown_images_{stem}_{ext_clean}" if ext_clean else f"hammerdown_images_{stem}"
+    return f"hm_images_{stem}_{ext_clean}" if ext_clean else f"hm_images_{stem}"
 
 
 def format_duration(seconds: float) -> str:

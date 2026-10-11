@@ -81,7 +81,7 @@ def convert_file(
     ext_clean = extension.lstrip(".")
 
     out_dir = source.parent
-    out_md_name = f"{stem}_{ext_clean}.md" if ext_clean else f"{stem}.md"
+    out_md_name = f"hm_{stem}_{ext_clean}.md" if ext_clean else f"hm_{stem}.md"
     out_md = out_dir / out_md_name
 
     # Handle explicit source overwrite for text-like files
