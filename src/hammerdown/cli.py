@@ -54,7 +54,6 @@ def _install_windows(command: str) -> None:
     if getattr(sys, "frozen", False):
         icon_path = sys.executable
     else:
-        # Try to use installed icon.ico from the package directory if running as Python script
         try:
             pkg_icon = Path(__file__).resolve().parent / "icon.ico"
             if pkg_icon.is_file():
@@ -64,15 +63,30 @@ def _install_windows(command: str) -> None:
         if not icon_path:
             icon_path = command.split('"')[1]
 
-    extensions = list(SUPPORTED_EXTENSIONS)
-    for ext in extensions:
-        key_path = rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown"
+    targets = [
+        *(rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown" for ext in SUPPORTED_EXTENSIONS),
+        r"Software\Classes\Directory\shell\hammerdown",
+    ]
+    for key_path in targets:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down file")
             if icon_path:
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} "%1"')
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator "%1"')
+
+    bg_key_path = r"Software\Classes\Directory\Background\shell\hammerdown"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path) as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down directory")
+        if icon_path:
+            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path + r"\command") as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator "%V"')
+
+    sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
+    if sendto_dir.is_dir():
+        cmd_file = sendto_dir / "Hammer down.cmd"
+        cmd_file.write_text(f'@echo off\n{command} --coordinator %*\n', encoding="utf-8")
 
 
 def _install_unix(command: str) -> None:
@@ -125,8 +139,7 @@ def uninstall() -> bool:
         if os.name == "nt":
             import winreg
 
-            extensions = [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".txt", ".md", ".log", ".csv"]
-            for ext in extensions:
+            for ext in SUPPORTED_EXTENSIONS:
                 _remove_registry_tree(
                     winreg.HKEY_CURRENT_USER,
                     rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown",
@@ -135,6 +148,11 @@ def uninstall() -> bool:
                     winreg.HKEY_CURRENT_USER,
                     rf"Software\Classes\SystemFileAssociations\{ext}\shell\Convert to Markdown",
                 )
+            _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\shell\hammerdown")
+            _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown")
+            sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
+            (sendto_dir / "Hammer down.cmd").unlink(missing_ok=True)
+            (sendto_dir / "Hammer down.lnk").unlink(missing_ok=True)
             install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
         else:
             (Path.home() / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)

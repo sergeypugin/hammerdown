@@ -211,3 +211,39 @@ def test_merge_with_short_flag_and_skipped_failure(tmp_path: Path):
     content = merged_file.read_text(encoding="utf-8")
     assert "# doc1.txt" in content
     assert "missing.docx" not in content
+
+
+def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
+    sendto_dir = tmp_path / "Microsoft" / "Windows" / "SendTo"
+    sendto_dir.mkdir(parents=True)
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
+    recorded_keys = []
+
+    class DummyKey:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    def dummy_create_key(root, subkey):
+        recorded_keys.append(subkey)
+        return DummyKey()
+
+    def dummy_set_value(key, value_name, reserved, type_, value):
+        pass
+
+    import winreg
+    monkeypatch.setattr(winreg, "CreateKey", dummy_create_key)
+    monkeypatch.setattr(winreg, "SetValueEx", dummy_set_value)
+
+    hammerdown.cli._install_windows("hammerdown")
+
+    sendto_cmd = sendto_dir / "Hammer down.cmd"
+    assert sendto_cmd.is_file()
+    cmd_content = sendto_cmd.read_text(encoding="utf-8")
+    assert "--coordinator %*" in cmd_content
+
+    assert r"Software\Classes\Directory\shell\hammerdown" in recorded_keys
+    assert r"Software\Classes\Directory\Background\shell\hammerdown" in recorded_keys
