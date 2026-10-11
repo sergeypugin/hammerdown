@@ -65,9 +65,9 @@ def to_markdown(
 
 def convert_file(
     file_path: str | os.PathLike[str],
-    force: bool = False,
     in_place: bool = True,
     overwrite: bool = False,
+    skip_existing: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> bool:
     normalized_path = normalize_path(file_path)
@@ -92,9 +92,9 @@ def convert_file(
         else:
             logger.warning("Overwrite flag ignored for binary format: %s", extension)
 
-    if out_md.exists() and not force and out_md != source:
-        logger.error("Destination file already exists: %s. Use --force to overwrite.", out_md)
-        return False
+    if skip_existing and out_md.exists() and out_md != source:
+        logger.info("Skipping %s (output already exists: %s)", source.name, out_md.name)
+        return True
 
     out_dir.mkdir(parents=True, exist_ok=True)
 

@@ -63,7 +63,7 @@ def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path, d
     shutil.copy2(file_path, target_input)
 
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(Path("src").resolve()), os.environ.get("PYTHONPATH", "")]))}
-    cmd = [sys.executable, "-m", "hammerdown.cli", "--force", str(target_input)]
+    cmd = [sys.executable, "-m", "hammerdown.cli", str(target_input)]
     result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
     if result.returncode != 0:
         if "requires LibreOffice or Microsoft" in result.stderr and not _has_legacy_office_converter():

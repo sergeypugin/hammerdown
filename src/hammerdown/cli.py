@@ -275,15 +275,22 @@ def _select_files() -> Sequence[str]:
         return ()
 
 
+
+
 def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool:
     from hammerdown.core import convert_file
 
-    file_path, force, in_place, quiet, overwrite = args_tuple
+    file_path, in_place, quiet, overwrite, skip_existing = args_tuple
     if not logger.handlers:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
     if quiet:
         logger.setLevel(logging.ERROR)
-    return convert_file(file_path, force=force, in_place=in_place, overwrite=overwrite)
+    return convert_file(
+        file_path,
+        in_place=in_place,
+        overwrite=overwrite,
+        skip_existing=skip_existing,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -298,7 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--update", action="store_true", help="Update hammerdown to the latest version")
     parser.add_argument("-i", "--in-place", action="store_true", help="Save output Markdown and images in the same directory as the input file")
     parser.add_argument("-w", "--overwrite", action="store_true", help="Overwrite input text file in-place instead of creating a copy")
-    parser.add_argument("-f", "--force", action="store_true", help="Overwrite existing output directories/files")
+    parser.add_argument("-s", "--skip-existing", action="store_true", help="Skip conversion if target markdown file already exists")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress routine conversion messages")
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(argv)
@@ -323,15 +330,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     started_at = time.monotonic()
     results: list[bool] = []
     if len(files) == 1:
-        results.append(convert_file(files[0], force=args.force, in_place=args.in_place, overwrite=args.overwrite))
+        results.append(
+            convert_file(
+                files[0],
+                in_place=args.in_place,
+                overwrite=args.overwrite,
+                skip_existing=args.skip_existing,
+            )
+        )
     else:
         max_workers = min(len(files), os.cpu_count() or 4)
-        worker_args = [(f, args.force, args.in_place, args.quiet, args.overwrite) for f in files]
+        worker_args = [
+            (f, args.in_place, args.quiet, args.overwrite, args.skip_existing)
+            for f in files
+        ]
         try:
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                 results = list(executor.map(_process_single_file, worker_args))
         except Exception:
-            results = [convert_file(f, force=args.force, in_place=args.in_place, overwrite=args.overwrite) for f in files]
+            results = [
+                convert_file(
+                    f,
+                    in_place=args.in_place,
+                    overwrite=args.overwrite,
+                    skip_existing=args.skip_existing,
+                )
+                for f in files
+            ]
 
     failed_count = results.count(False)
     if len(files) > 1 and not args.quiet:

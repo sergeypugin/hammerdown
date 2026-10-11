@@ -34,18 +34,44 @@ def test_convert_file_in_place(tmp_path: Path):
     assert (tmp_path / "hm_memo_txt.md").read_text(encoding="utf-8") == "memo text\n"
 
 
-def test_convert_file_existing_output_without_force(tmp_path: Path):
+def test_overwrite_by_default(tmp_path: Path):
     source = tmp_path / "notes.txt"
     source.write_text("line one\n", encoding="utf-8")
     assert hammerdown.core.convert_file(source)
+    assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "line one\n"
 
-    # Calling again without force should fail
-    assert not hammerdown.core.convert_file(source)
-    assert hammerdown.cli.main([str(source)]) == 1
+    # Modifying source and running again overwrites existing output by default
+    source.write_text("updated line\n", encoding="utf-8")
+    assert hammerdown.cli.main([str(source)]) == 0
+    assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "updated line\n"
 
-    # Calling with force should succeed
-    assert hammerdown.core.convert_file(source, force=True)
-    assert hammerdown.cli.main(["--force", str(source)]) == 0
+
+def test_skip_existing_flag(tmp_path: Path):
+    source = tmp_path / "notes.txt"
+    source.write_text("line one\n", encoding="utf-8")
+    assert hammerdown.cli.main([str(source)]) == 0
+    assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "line one\n"
+
+    # Modify source, but with -s / --skip-existing the output is not overwritten
+    source.write_text("modified text\n", encoding="utf-8")
+    assert hammerdown.cli.main(["-s", str(source)]) == 0
+    assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "line one\n"
+
+    assert hammerdown.cli.main(["--skip-existing", str(source)]) == 0
+    assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "line one\n"
+
+
+def test_quiet_flag_suppresses_logs(tmp_path: Path, caplog):
+    import logging
+
+    source = tmp_path / "notes.txt"
+    source.write_text("quiet test\n", encoding="utf-8")
+    with caplog.at_level(logging.INFO):
+        assert hammerdown.cli.main(["-q", str(source)]) == 0
+    assert "Completed" not in caplog.text
+
+    with caplog.at_level(logging.INFO):
+        assert hammerdown.cli.main(["--quiet", str(source)]) == 0
 
 
 def test_unsupported_file_returns_failure(tmp_path: Path):
