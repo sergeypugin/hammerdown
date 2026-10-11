@@ -81,7 +81,27 @@ Any fixes or subsequent updates must always increment the version number (e.g. `
 > 2. `pip install --no-cache-dir hammerdown`
 > 3. `hammerdown --install` (to refresh OS integrations)
 
-Starting from version `2.0.0`, the `--force` flag becomes the default behavior for file overwrites to streamline CLI workflows.
+Starting from version `2.0.0`, overwriting existing target Markdown files is the default behavior. The `--force` flag has been completely removed in favor of `--skip-existing` (`-s`) to skip already converted files.
+
+## Architecture and File Conventions in v2.0.0
+
+### Output Naming Convention
+To prevent collisions between documents with the same name across different formats or subfolders, `hammerdown` 2.0.0 enforces:
+- Output Markdown filename: `hm_<stem>_<ext>.md` (e.g. `hm_report_docx.md` or `hm_notes_txt.md`)
+- Extracted images directory: `hm_images_<stem>_<ext>/` (e.g. `hm_images_report_docx/`)
+
+### Single-Instance IPC Coordinator
+On Windows, when selecting multiple files in Explorer and clicking context menu actions or SendTo, Windows Explorer launches a separate process for each selected file.
+To prevent spawning multiple black console windows, `hammerdown` incorporates `IPCCoordinator`:
+- Primary instance binds a local IPC channel (`\\.\pipe\hammerdown_coordinator` on Windows).
+- Subsequent instances detect the active coordinator, pass their file paths, and exit immediately.
+- The coordinator assembles all incoming files within a 0.35s window and converts them concurrently in a single window.
+
+### Recursive Directory Traversal
+When passing a directory to `hammerdown`, it recursively scans for all files matching `SUPPORTED_EXTENSIONS` while skipping temporary office lock files (`~$*`) and hidden files (`.*`).
+
+### Merged Output (`-m / --merge`)
+When `-m <output.md>` is specified, all successful Markdown conversions are bundled into a single destination file separated with document headings (`# <filename>`).
 
 > [!note]
 > If a CI workflow fails during early stages (such as linting, unit tests, or matrix builds) before the PyPI upload step executes, the version number has not been registered on PyPI yet. In that case, fixing the root cause and updating the git tag to re-trigger the release workflow is safe, because PyPI only locks version numbers once an actual distribution archive (`.whl` or `.tar.gz`) has been successfully received by its registry index.

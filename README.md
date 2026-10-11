@@ -73,10 +73,11 @@ hammerdown --install
 ```
 
 What this does:
-- on Windows: adds a **Hammer down file** action with an icon to the File Explorer context menu for all supported document formats (no administrator privileges required)
-- on Linux: installs the executable into `~/.local/bin` and adds a context script for GNOME Nautilus (`Scripts -> Hammer down file`)
+- on Windows: adds a **Hammer down file** action with an icon to the File Explorer context menu for all supported document formats, adds folder context menu options for recursive directory conversions, creates a **Send to** shortcut (`Send to -> Hammer down`) for first-level access in Windows 11, and activates an IPC coordinator to process multi-file selections in a single terminal window
+- on Linux: installs the launcher into `~/.local/bin`, installs a FreeDesktop application entry in `~/.local/share/applications/hammerdown.desktop` with MIME associations, registers KDE Dolphin ServiceMenus in `~/.local/share/kio/servicemenus` and `~/.local/share/kservices5/ServiceMenus`, and adds scripts for Nautilus, Nemo, and Caja (`Scripts -> Hammer down file`)
+- on macOS: installs the launcher into `~/.local/bin`, creates an Automator Quick Action in `~/Library/Services/Hammer down.workflow` for the Finder right-click context menu, and generates a drag-and-drop Droplet in `~/Applications/Hammer down.app` with `CFBundleDocumentTypes` for Finder "Open With"
 
-To convert a file, right-click any supported document (`.pdf`, `.docx`, etc.) and select **Hammer down file**. The Markdown output and extracted images are saved directly next to the original document.
+To convert a file or folder, right-click any supported document or folder and select **Hammer down file** (or use **Send to -> Hammer down**). The Markdown output and extracted images are saved directly next to each original document.
 
 To remove file manager integration and clean up shortcuts:
 
@@ -115,14 +116,19 @@ hammerdown report.docx workbook.xlsx slides.pptx
 Options:
 - `-i`, `--in-place` -- save output Markdown and extracted images in the same directory as the source file
 - `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`, `.log`, `.csv`) in-place instead of creating a copy
-- `-f`, `--force` -- overwrite existing output Markdown files
+- `-s`, `--skip-existing` -- skip conversion if target Markdown file already exists (overwriting is enabled by default)
+- `-m`, `--merge OUTPUT_MD` -- merge all converted Markdown documents into a single target Markdown file
 - `-q`, `--quiet` -- suppress routine status output
 - `-v`, `--version` -- display version information
 
+> [!note]
+> The `-f` / `--force` flag has been removed in 2.0.0 because overwriting target Markdown output files is now default behavior.
+
 ```sh
 hammerdown -i document.pdf
-hammerdown -w notes.txt
-hammerdown -f report.docx
+hammerdown -s document.pdf
+hammerdown -m summary.md file1.pdf file2.docx
+hammerdown folder/
 ```
 
 ### Logging and Progress Tracking
@@ -156,7 +162,7 @@ hammerdown.convert_file("document.pdf", progress_callback=on_progress)
 
 ### Extracting Base64 Images from Markdown
 
-If you have a Markdown file with embedded base64 images (such as `data:image/png;base64,...`), running `hammerdown` with `--in-place` will extract those raw image strings into PNG or JPEG files inside `hammerdown_images_<stem>_<ext>/` and replace inline base64 data URIs with clean relative links:
+If you have a Markdown file with embedded base64 images (such as `data:image/png;base64,...`), running `hammerdown` with `--in-place` will extract those raw image strings into PNG or JPEG files inside `hm_images_<stem>_<ext>/` and replace inline base64 data URIs with clean relative links:
 
 ```sh
 hammerdown document.md --in-place
@@ -170,7 +176,7 @@ Use `hammerdown` directly in your Python code:
 import hammerdown
 
 # Convert a file on disk
-hammerdown.convert_file("document.pdf", force=True)
+hammerdown.convert_file("document.pdf", skip_existing=True)
 
 # Get Markdown text in memory
 text, image_count = hammerdown.to_markdown("report.docx")
@@ -196,7 +202,7 @@ For specialized format converters and low-level helpers, see [docs/PYTHON.md](do
 
 ## Output Directory Layout
 
-Output Markdown files are saved using the template `<stem>_<ext>.md` to avoid conflicts when files of different formats share the same base name.
+Output Markdown files are saved using the template `hm_<stem>_<ext>.md` to avoid conflicts when files of different formats share the same base name.
 
 **Before conversion:**
 ```text
@@ -208,8 +214,8 @@ folder/
 ```text
 folder/
 ├── document.pdf
-├── document_pdf.md
-└── hammerdown_images_document_pdf/
+├── hm_document_pdf.md
+└── hm_images_document_pdf/
     └── img_p001_xref105.png
 ```
 
