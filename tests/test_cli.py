@@ -234,9 +234,15 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     def dummy_set_value(key, value_name, reserved, type_, value):
         pass
 
-    import winreg
-    monkeypatch.setattr(winreg, "CreateKey", dummy_create_key)
-    monkeypatch.setattr(winreg, "SetValueEx", dummy_set_value)
+    import sys
+    import types
+
+    fake_winreg = types.ModuleType("winreg")
+    setattr(fake_winreg, "HKEY_CURRENT_USER", "HKEY_CURRENT_USER")
+    setattr(fake_winreg, "REG_SZ", 1)
+    setattr(fake_winreg, "CreateKey", dummy_create_key)
+    setattr(fake_winreg, "SetValueEx", dummy_set_value)
+    monkeypatch.setitem(sys.modules, "winreg", fake_winreg)
 
     hammerdown.cli._install_windows("hammerdown")
 
