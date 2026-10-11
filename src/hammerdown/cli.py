@@ -752,6 +752,12 @@ def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    if os.name == "nt" and "--coordinator" in sys.argv:
+        import ctypes
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE = 0
+
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
         description=APP_DESCRIPTION,
@@ -790,6 +796,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.info("No supported documents found to convert")
         return 0
 
+    files.sort()
+
     use_ipc = args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
     options = {
         "in_place": args.in_place,
@@ -804,41 +812,34 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     coordinator = IPCCoordinator() if use_ipc else None
     if coordinator and coordinator.start():
+        if os.name == "nt":
+            import ctypes
+            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW = 5
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+
         files = coordinator.collect_files(files, assembly_timeout=0.35)
+    elif use_ipc:
+        # We delegated successfully, just exit.
+        return 0
 
     from hammerdown.core import convert_file
 
     started_at = time.monotonic()
     results: list[bool] = []
     try:
-        if len(files) == 1:
+        # To maintain ordered output and clean progress bars, we process sequentially in TTY/batch mode.
+        # Parallel processing via ProcessPoolExecutor causes interleaved log output and messy progress bars.
+        for f in files:
             results.append(
                 convert_file(
-                    files[0],
+                    f,
                     in_place=args.in_place,
                     overwrite=args.overwrite,
                     skip_existing=args.skip_existing,
                 )
             )
-        else:
-            max_workers = min(len(files), os.cpu_count() or 4)
-            worker_args = [
-                (f, args.in_place, args.quiet, args.overwrite, args.skip_existing)
-                for f in files
-            ]
-            try:
-                with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-                    results = list(executor.map(_process_single_file, worker_args))
-            except Exception:
-                results = [
-                    convert_file(
-                        f,
-                        in_place=args.in_place,
-                        overwrite=args.overwrite,
-                        skip_existing=args.skip_existing,
-                    )
-                    for f in files
-                ]
     finally:
         if coordinator:
             coordinator.stop()

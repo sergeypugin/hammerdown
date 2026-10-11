@@ -113,15 +113,53 @@ def convert_file(
             est_hint = f" ({page_count} pages, est. ~{format_duration(est_seconds)})"
         except Exception:
             pass
-    elif extension in {".pptx"}:
+    elif extension == ".docx":
         try:
-            from pptx import Presentation  # type: ignore
-            prs = Presentation(str(source))
-            slide_count = len(prs.slides)
-            est_seconds = max(1.0, slide_count * 0.1)
-            est_hint = f" ({slide_count} slides, est. ~{format_duration(est_seconds)})"
+            import zipfile
+            import re
+            with zipfile.ZipFile(str(source)) as z:
+                try:
+                    app_xml = z.read("docProps/app.xml").decode("utf-8")
+                    match = re.search(r"<Pages>(\d+)</Pages>", app_xml)
+                    if match:
+                        page_count = int(match.group(1))
+                        est_seconds = max(1.0, page_count * 0.4)
+                        est_hint = f" ({page_count} pages, est. ~{format_duration(est_seconds)})"
+                    else:
+                        # Fallback: estimate from document.xml size
+                        doc_xml_size = z.getinfo("word/document.xml").file_size
+                        est_seconds = max(1.0, doc_xml_size / 50000)
+                        est_hint = f" (est. ~{format_duration(est_seconds)})"
+                except Exception:
+                    pass
         except Exception:
             pass
+    elif extension == ".pptx":
+        try:
+            import zipfile
+            import re
+            with zipfile.ZipFile(str(source)) as z:
+                slides = [name for name in z.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml")]
+                slide_count = len(slides)
+                est_seconds = max(1.0, slide_count * 0.2)
+                est_hint = f" ({slide_count} slides, est. ~{format_duration(est_seconds)})"
+        except Exception:
+            pass
+    elif extension == ".xlsx":
+        try:
+            import zipfile
+            with zipfile.ZipFile(str(source)) as z:
+                sheets = [name for name in z.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")]
+                sheet_count = len(sheets)
+                est_seconds = max(1.0, sheet_count * 0.5)
+                est_hint = f" ({sheet_count} sheets, est. ~{format_duration(est_seconds)})"
+        except Exception:
+            pass
+    elif extension in {".doc", ".xls", ".ppt"}:
+        # Legacy formats require conversion via Word/LibreOffice
+        size_mb = source.stat().st_size / (1024 * 1024)
+        est_seconds = 3.0 + (size_mb * 2.0)
+        est_hint = f" (legacy format, est. ~{format_duration(est_seconds)})"
 
     logger.info("Processing %s%s...", source.name, est_hint)
     started_at = time.monotonic()
