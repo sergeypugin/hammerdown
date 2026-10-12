@@ -668,22 +668,46 @@ def update() -> bool:
 
 
 def _select_files() -> Sequence[str]:
+    selected_paths: list[str] = []
+
     if os.name == "nt":
         try:
+            # Step 1: Ask user if they want to select files, a folder, or both
             pattern = ";".join(f"*{ext}" for ext in SUPPORTED_EXTENSIONS)
             ps_script = (
                 "Add-Type -AssemblyName PresentationFramework | Out-Null;"
-                "$dialog = New-Object Microsoft.Win32.OpenFileDialog;"
-                f"$dialog.Filter = 'Supported Documents|{pattern}|All Files (*.*)|*.*';"
-                "$dialog.Multiselect = $true;"
-                "$dialog.Title = 'Select documents to convert';"
-                "if ($dialog.ShowDialog() -eq $true) { $dialog.FileNames }"
+                "[System.Windows.MessageBox]::Show('Do you want to convert a FOLDER?`n`nClick [Yes] to select a folder.`nClick [No] to select individual files.', 'Hammerdown Selection Mode', [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)"
             )
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script]
             result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                stdout = result.stdout.strip()
-                return [line.strip() for line in stdout.splitlines() if line.strip()] if stdout else ()
+            choice = result.stdout.strip()
+
+            if choice == "Yes":
+                # Select Folder
+                ps_folder = (
+                    "Add-Type -AssemblyName System.Windows.Forms | Out-Null;"
+                    "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog;"
+                    "$dialog.Description = 'Select a folder containing documents to convert';"
+                    "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dialog.SelectedPath }"
+                )
+                res_f = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_folder], capture_output=True, text=True)
+                if res_f.returncode == 0 and res_f.stdout.strip():
+                    selected_paths.append(res_f.stdout.strip())
+            elif choice == "No":
+                # Select Files
+                ps_files = (
+                    "Add-Type -AssemblyName PresentationFramework | Out-Null;"
+                    "$dialog = New-Object Microsoft.Win32.OpenFileDialog;"
+                    f"$dialog.Filter = 'Supported Documents|{pattern}|All Files (*.*)|*.*';"
+                    "$dialog.Multiselect = $true;"
+                    "$dialog.Title = 'Select documents to convert';"
+                    "if ($dialog.ShowDialog() -eq $true) { $dialog.FileNames }"
+                )
+                res_files = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_files], capture_output=True, text=True)
+                if res_files.returncode == 0 and res_files.stdout.strip():
+                    selected_paths.extend([line.strip() for line in res_files.stdout.strip().splitlines() if line.strip()])
+
+            return selected_paths
         except Exception:
             pass
 
@@ -693,7 +717,10 @@ def _select_files() -> Sequence[str]:
         root = Tk()
         root.withdraw()
         try:
-            return filedialog.askopenfilenames(title="Select documents to convert")
+            files = filedialog.askopenfilenames(title="Select documents to convert")
+            if files:
+                selected_paths.extend(files)
+            return selected_paths
         finally:
             root.destroy()
     except Exception as exc:
