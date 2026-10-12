@@ -672,29 +672,31 @@ def _select_files() -> Sequence[str]:
 
     if os.name == "nt":
         try:
-            # Step 1: Ask user if they want to select files, a folder, or both
             pattern = ";".join(f"*{ext}" for ext in SUPPORTED_EXTENSIONS)
-            ps_script = (
+
+            # Step 1: Improved MessageBox with proper newlines
+            ps_msg = (
                 "Add-Type -AssemblyName PresentationFramework | Out-Null;"
-                "[System.Windows.MessageBox]::Show('Do you want to convert a FOLDER?`n`nClick [Yes] to select a folder.`nClick [No] to select individual files.', 'Hammerdown Selection Mode', [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)"
+                "$text = 'Do you want to convert a FOLDER?`r`n`r`nClick [Yes] to select a folder.`r`nClick [No] to select individual files.';"
+                "[System.Windows.MessageBox]::Show($text, 'Hammerdown Selection Mode', [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)"
             )
-            cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            cmd_msg = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_msg]
+            result = subprocess.run(cmd_msg, capture_output=True, text=True)
             choice = result.stdout.strip()
 
             if choice == "Yes":
-                # Select Folder
+                # Use a trick with Shell.Application to open the modern Folder Picker
+                # This opens the standard Windows folder selection dialog
                 ps_folder = (
-                    "Add-Type -AssemblyName System.Windows.Forms | Out-Null;"
-                    "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog;"
-                    "$dialog.Description = 'Select a folder containing documents to convert';"
-                    "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dialog.SelectedPath }"
+                    "$app = New-Object -ComObject Shell.Application;"
+                    "$folder = $app.BrowseForFolder(0, 'Select a folder containing documents to convert', 0, 0);"
+                    "if ($folder) { $folder.Self.Path }"
                 )
                 res_f = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_folder], capture_output=True, text=True)
                 if res_f.returncode == 0 and res_f.stdout.strip():
                     selected_paths.append(res_f.stdout.strip())
             elif choice == "No":
-                # Select Files
+                # Select Files (Modern OpenFileDialog)
                 ps_files = (
                     "Add-Type -AssemblyName PresentationFramework | Out-Null;"
                     "$dialog = New-Object Microsoft.Win32.OpenFileDialog;"
