@@ -674,23 +674,26 @@ def _select_files() -> Sequence[str]:
         try:
             pattern = ";".join(f"*{ext}" for ext in SUPPORTED_EXTENSIONS)
 
-            # Step 1: Improved MessageBox with proper newlines
+            # Step 1: Improved MessageBox with guaranteed newlines
             ps_msg = (
-                "Add-Type -AssemblyName PresentationFramework | Out-Null;"
-                "$text = 'Do you want to convert a FOLDER?`r`n`r`nClick [Yes] to select a folder.`r`nClick [No] to select individual files.';"
-                "[System.Windows.MessageBox]::Show($text, 'Hammerdown Selection Mode', [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)"
+                "Add-Type -AssemblyName PresentationFramework | Out-Null; "
+                "$msg = 'Do you want to convert a FOLDER?' + [char]10 + [char]10 + "
+                "'Click [Yes] to select a folder.' + [char]10 + "
+                "'Click [No] to select individual files.'; "
+                "[System.Windows.MessageBox]::Show($msg, 'Hammerdown Selection Mode', 'YesNoCancel', 'Question')"
             )
             cmd_msg = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_msg]
             result = subprocess.run(cmd_msg, capture_output=True, text=True)
             choice = result.stdout.strip()
 
             if choice == "Yes":
-                # Use a trick with Shell.Application to open the modern Folder Picker
-                # This opens the standard Windows folder selection dialog
+                # Step 2: Use modern Vista-style Folder Picker via a .NET trick
                 ps_folder = (
-                    "$app = New-Object -ComObject Shell.Application;"
-                    "$folder = $app.BrowseForFolder(0, 'Select a folder containing documents to convert', 0, 0);"
-                    "if ($folder) { $folder.Self.Path }"
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "$d = New-Object System.Windows.Forms.OpenFileDialog; "
+                    "$d.ValidateNames = $false; $d.CheckFileExists = $false; $d.CheckPathExists = $true; "
+                    "$d.FileName = 'Select Folder'; $d.Title = 'Select a folder containing documents to convert'; "
+                    "if ($d.ShowDialog() -eq 'OK') { [System.IO.Path]::GetDirectoryName($d.FileName) }"
                 )
                 res_f = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_folder], capture_output=True, text=True)
                 if res_f.returncode == 0 and res_f.stdout.strip():
