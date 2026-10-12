@@ -152,20 +152,20 @@ class BatchUI:
         if self.is_tty:
             self.render()
 
-    def complete_file(self, index: int, success: bool, duration_str: str, images: int = 0) -> None:
+    def complete_file(self, index: int, success: bool, duration: str, images: int = 0, tokens: int = 0) -> None:
         if success:
             self.statuses[index] = "[x]"
-            img_info = f", {images} images" if images else ""
-            self.details[index] = f"({duration_str}{img_info})"
+            token_info = f", ~{tokens} tokens" if tokens > 0 else ""
+            img_info = f", {images} images" if images > 0 else ""
+            self.details[index] = f"({duration}{img_info}{token_info})"
         else:
             self.statuses[index] = "[!]"
             self.details[index] = "(failed)"
-
         if self.is_tty:
             self.render()
         elif not self.quiet:
             status_text = "Completed" if success else "Failed"
-            logger.info("%s %s in %s", status_text, self.files[index].name, duration_str)
+            logger.info("%s %s in %s", status_text, self.files[index].name, duration)
 
 
 def format_progress_bar(current: int, total: int, unit: str = "pages", bar_length: int = 20) -> str:

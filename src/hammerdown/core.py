@@ -26,6 +26,7 @@ from hammerdown.utils import format_duration, format_progress_bar, normalize_pat
 logger = logging.getLogger("hammerdown")
 
 ProgressCallback = Callable[[int, int, str], None]
+CompletionCallback = Callable[[bool, float, int, int], None]
 
 APP_NAME: str = "hammerdown"
 APP_DESCRIPTION: str = "Convert PDF and office documents to Markdown"
@@ -41,7 +42,7 @@ DEFAULT_QUIET: bool = False
 
 def to_markdown(
     file_path: str | os.PathLike[str],
-    out_dir: str | os.PathLike[str] | None = None,
+    target_dir: str | os.PathLike[str] | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> tuple[str | None, int]:
     normalized_path = normalize_path(file_path)
@@ -56,11 +57,11 @@ def to_markdown(
         logger.error("Unsupported format: %s", extension or "(no extension)")
         return None, 0
 
-    target_dir = str(out_dir) if out_dir is not None else str(source.parent)
+    target_dir_path = str(target_dir) if target_dir is not None else str(source.parent)
     try:
-        return converter(str(source), target_dir, progress_callback=progress_callback)
+        return converter(str(source), target_dir_path, progress_callback=progress_callback)
     except TypeError:
-        return converter(str(source), target_dir)
+        return converter(str(source), target_dir_path)
 
 
 def get_conversion_estimate(file_path: Path) -> str:
@@ -127,7 +128,7 @@ def convert_file(
     overwrite: bool = False,
     skip_existing: bool = False,
     progress_callback: ProgressCallback | None = None,
-    completion_callback: Callable[[bool, float, int], None] | None = None,
+    completion_callback: CompletionCallback | None = None,
     batch_mode: bool = False,
 ) -> bool:
     normalized_path = normalize_path(file_path)
@@ -282,31 +283,43 @@ def convert_file(
             if is_tty:
                 print(f"[x] Failed to convert {source.name}")
             if completion_callback:
-                completion_callback(False, time.monotonic() - started_at, 0)
+                completion_callback(False, time.monotonic() - started_at, 0, 0)
             return False
 
         # Trim trailing whitespace on each line and ensure a single final newline
         normalized_text = md_text.replace("\r\n", "\n").replace("\r", "\n")
         trimmed_lines = [line.rstrip() for line in normalized_text.split("\n")]
         cleaned_md = "\n".join(trimmed_lines).rstrip() + "\n"
+
+        token_count = 0
+        try:
+            import tiktoken
+            encoding = tiktoken.get_encoding("cl100k_base")
+            token_count = len(encoding.encode(cleaned_md, disallowed_special=()))
+        except Exception:
+            pass
+
         out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
         duration = time.monotonic() - started_at
         if completion_callback:
-            completion_callback(True, duration, saved_images)
+            completion_callback(True, duration, saved_images, token_count)
+
+        token_info = f", ~{token_count} tokens" if token_count > 0 else ""
         if is_tty:
-            print(f"[x] Completed {source.name} in {format_duration(duration)} ({saved_images} images extracted)")
+            print(f"[x] Completed {source.name} in {format_duration(duration)} ({saved_images} images{token_info})")
         elif not batch_mode:
             logger.info(
-                "Completed %s in %s (%d images extracted)",
+                "Completed %s in %s (%d images%s)",
                 source.name,
                 format_duration(duration),
                 saved_images,
+                token_info,
             )
         return True
     except Exception:
         duration = time.monotonic() - started_at
         if completion_callback:
-            completion_callback(False, duration, 0)
+            completion_callback(False, duration, 0, 0)
         if is_tty and last_len > 0:
             sys.stdout.write(f"\r{' ' * last_len}\r")
             sys.stdout.flush()
