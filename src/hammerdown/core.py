@@ -69,6 +69,8 @@ def convert_file(
     overwrite: bool = False,
     skip_existing: bool = False,
     progress_callback: ProgressCallback | None = None,
+    completion_callback: Callable[[bool, float, int], None] | None = None,
+    batch_mode: bool = False,
 ) -> bool:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
@@ -173,15 +175,14 @@ def convert_file(
         # Instant or near-instant text processing
         est_hint = " (fast text conversion)"
 
-    # Output format according to plan.spec:
-    # Processing "file" (hint)
-    # <empty line>
-    # [progress bar]
-    is_tty = sys.stdout.isatty() and logger.isEnabledFor(logging.INFO)
+    is_tty = sys.stdout.isatty() and logger.isEnabledFor(logging.INFO) and not batch_mode
     if is_tty:
-        # Visual separation
         print(f'\nProcessing "{source.name}"{est_hint}...\n')
-    else:
+        if extension in {".doc", ".xls", ".ppt"}:
+            sys.stdout.write("[ ] Converting via Office automation...")
+            sys.stdout.flush()
+            last_len = 35
+    elif not batch_mode:
         logger.info("Processing %s%s...", source.name, est_hint)
 
     started_at = time.monotonic()
@@ -222,6 +223,8 @@ def convert_file(
         if md_text is None:
             if is_tty:
                 print(f"[x] Failed to convert {source.name}")
+            if completion_callback:
+                completion_callback(False, time.monotonic() - started_at, 0)
             return False
 
         # Trim trailing whitespace on each line and ensure a single final newline
@@ -230,9 +233,11 @@ def convert_file(
         cleaned_md = "\n".join(trimmed_lines).rstrip() + "\n"
         out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
         duration = time.monotonic() - started_at
+        if completion_callback:
+            completion_callback(True, duration, saved_images)
         if is_tty:
             print(f"[x] Completed {source.name} in {format_duration(duration)} ({saved_images} images extracted)")
-        else:
+        elif not batch_mode:
             logger.info(
                 "Completed %s in %s (%d images extracted)",
                 source.name,
@@ -241,6 +246,9 @@ def convert_file(
             )
         return True
     except Exception:
+        duration = time.monotonic() - started_at
+        if completion_callback:
+            completion_callback(False, duration, 0)
         if is_tty and last_len > 0:
             sys.stdout.write(f"\r{' ' * last_len}\r")
             sys.stdout.flush()

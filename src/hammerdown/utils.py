@@ -4,9 +4,32 @@ import logging
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 logger = logging.getLogger("hammerdown")
+
+COLOR_RESET = "\033[0m"
+COLOR_GREEN = "\033[38;2;167;201;57m"   # #a7c939
+COLOR_ORANGE = "\033[38;2;236;124;57m"  # #ec7c39
+COLOR_RED = "\033[38;2;157;47;52m"     # #9d2f34
+COLOR_DIM = "\033[90m"                  # Dim gray
+COLOR_BOLD = "\033[1m"
+
+
+def enable_vt_mode() -> bool:
+    if os.name == "nt":
+        import ctypes
+        try:
+            kernel32 = ctypes.windll.kernel32
+            hStdOut = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            mode = ctypes.c_ulong()
+            kernel32.GetConsoleMode(hStdOut, ctypes.byref(mode))
+            kernel32.SetConsoleMode(hStdOut, mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            return True
+        except Exception:
+            return False
+    return True
 
 
 def normalize_path(path_str: str | os.PathLike[str]) -> str:
@@ -49,70 +72,89 @@ def format_duration(seconds: float) -> str:
     return f"{hours}h{rem_minutes}m" if rem_minutes else f"{hours}h"
 
 
-class TerminalUI:
-    """Helper for managing persistent batch progress display in the terminal."""
-    def __init__(self, total_files: int, quiet: bool = False):
-        self.total_files = total_files
+class BatchUI:
+    """Helper for managing an in-place updating batch conversion queue."""
+
+    def __init__(self, file_paths: list[str], quiet: bool = False):
+        self.files = [Path(p) for p in file_paths]
         self.quiet = quiet
-        self.completed_files = 0
         self.is_tty = sys.stdout.isatty() and not quiet
-        self._last_len = 0
-
-    def print_queue(self, files: list[Path]):
-        if self.quiet:
-            return
-        print(f"\nQueueing {len(files)} files for conversion:")
-        for f in files:
-            print(f" [ ] {f.name}")
-        print()
-
-    def start_file(self, filename: str, est_hint: str):
-        if self.quiet:
-            return
         if self.is_tty:
-            # Add an empty line before processing to separate from previous/list
-            print(f"\nProcessing \"{filename}\"{est_hint}\n")
-        else:
-            logger.info("Processing %s%s...", filename, est_hint)
+            enable_vt_mode()
 
-    def update_progress(self, current: int, total: int, unit: str, filename: str):
+        self.statuses: list[str] = ["[ ]"] * len(self.files)
+        self.details: list[str] = [""] * len(self.files)
+        self.current_idx: int = -1
+        self._rendered = False
+
+    def render(self) -> None:
         if self.quiet or not self.is_tty:
             return
-        bar_str = format_progress_bar(current, total, unit=unit)
-        line = f"\r{bar_str}"
-        sys.stdout.write(line.ljust(self._last_len))
+
+        lines = [f"\nQueueing {len(self.files)} files for conversion:\n"]
+        for i, f in enumerate(self.files):
+            status = self.statuses[i]
+            detail = f" {self.details[i]}" if self.details[i] else ""
+
+            if status == "[x]":
+                marker = f"{COLOR_GREEN}[x]{COLOR_RESET}"
+                line = f" {marker} {COLOR_GREEN}{f.name}{COLOR_RESET}{detail}"
+            elif status == "[!]":
+                marker = f"{COLOR_RED}[!]{COLOR_RESET}"
+                line = f" {marker} {COLOR_RED}{f.name}{COLOR_RESET}{detail}"
+            elif status == "[>]":
+                marker = f"{COLOR_ORANGE}[>]{COLOR_RESET}"
+                line = f" {marker} {COLOR_BOLD}{f.name}{COLOR_RESET}{detail}"
+            else:
+                marker = f"{COLOR_DIM}[ ]{COLOR_RESET}"
+                line = f" {marker} {COLOR_DIM}{f.name}{COLOR_RESET}"
+            lines.append(line)
+
+        output = "\n".join(lines) + "\n"
+
+        if self._rendered:
+            # Move cursor up by (total lines in previous render)
+            num_lines = len(self.files) + 2
+            sys.stdout.write(f"\033[{num_lines}A\r")
+
+        sys.stdout.write(output)
         sys.stdout.flush()
-        self._last_len = max(self._last_len, len(line))
+        self._rendered = True
 
-    def complete_file(self, filename: str, duration_str: str, images: int, success: bool):
-        if self.quiet:
-            return
-        self.completed_files += 1
+    def start_file(self, index: int, hint: str = "") -> None:
+        self.current_idx = index
+        self.statuses[index] = "[>]"
+        self.details[index] = hint
         if self.is_tty:
-            # Clear the progress bar line
-            sys.stdout.write(f"\r{' ' * self._last_len}\r")
-            # Move cursor up to the "Processing" line to mark it as completed
-            # ESC[2A moves up 2 lines (one for the empty line, one for the processing line)
-            # Actually, the layout is:
-            # Processing "file" (hint)
-            # <empty line>
-            # [progress bar]
-            # So we are on the progress bar line. We want to overwrite the "Processing" line.
-            # But let's keep it simple and just print the completion status.
-            status = "v" if success else "x"
-            print(f"[{status}] Completed {filename} in {duration_str} ({images} images)")
-            self._last_len = 0
-        else:
-            logger.info("Completed %s in %s (%d images)", filename, duration_str, images)
+            self.render()
+        elif not self.quiet:
+            logger.info("Processing %s%s...", self.files[index].name, f" {hint}" if hint else "")
 
-    def print_summary(self):
-        if self.quiet:
+    def update_progress(self, index: int, current: int, total: int, unit: str = "pages") -> None:
+        if total <= 0:
             return
-        print(f"\nSuccessfully converted {self.completed_files} of {self.total_files} files.")
-        if os.name == "nt":
-            input("\nPress Enter to close...")
+        pct = int((current / total) * 100)
+        bar_len = 10
+        filled = int(round(bar_len * current / float(total)))
+        bar = "█" * filled + "░" * (bar_len - filled)
+        self.details[index] = f"[{bar}] {pct}% ({current}/{total} {unit})"
+        if self.is_tty:
+            self.render()
+
+    def complete_file(self, index: int, success: bool, duration_str: str, images: int = 0) -> None:
+        if success:
+            self.statuses[index] = "[x]"
+            img_info = f", {images} images" if images else ""
+            self.details[index] = f"({duration_str}{img_info})"
         else:
-            print("Done.")
+            self.statuses[index] = "[!]"
+            self.details[index] = "(failed)"
+
+        if self.is_tty:
+            self.render()
+        elif not self.quiet:
+            status_text = "Completed" if success else "Failed"
+            logger.info("%s %s in %s", status_text, self.files[index].name, duration_str)
 
 
 def format_progress_bar(current: int, total: int, unit: str = "pages", bar_length: int = 20) -> str:

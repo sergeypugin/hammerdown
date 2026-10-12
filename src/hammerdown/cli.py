@@ -17,7 +17,7 @@ from typing import Any, Sequence
 
 from hammerdown import APP_DESCRIPTION, APP_NAME, SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, __version__
 from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
-from hammerdown.utils import format_duration, normalize_path
+from hammerdown.utils import BatchUI, format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
 
@@ -843,25 +843,39 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     started_at = time.monotonic()
     results: list[bool] = []
-    try:
-        # Pre-render queued file list if multiple files
-        if len(files) > 1 and not args.quiet:
-            print(f"\nQueueing {len(files)} files for conversion:")
-            for item in files:
-                print(f" [ ] {Path(item).name}")
-            print()
+    batch_ui = BatchUI(files, quiet=args.quiet) if len(files) > 1 else None
 
-        # To maintain ordered output and clean progress bars, we process sequentially in TTY/batch mode.
-        # Parallel processing via ProcessPoolExecutor causes interleaved log output and messy progress bars.
-        for f in files:
-            results.append(
-                convert_file(
+    if batch_ui and batch_ui.is_tty:
+        batch_ui.render()
+
+    try:
+        for idx, f in enumerate(files):
+            if batch_ui:
+                batch_ui.start_file(idx)
+
+                def on_progress(current: int, total: int, unit: str = "pages") -> None:
+                    batch_ui.update_progress(idx, current, total, unit)
+
+                def on_complete(success: bool, dur: float, imgs: int) -> None:
+                    batch_ui.complete_file(idx, success, format_duration(dur), imgs)
+
+                res = convert_file(
+                    f,
+                    in_place=args.in_place,
+                    overwrite=args.overwrite,
+                    skip_existing=args.skip_existing,
+                    progress_callback=on_progress,
+                    completion_callback=on_complete,
+                    batch_mode=True,
+                )
+            else:
+                res = convert_file(
                     f,
                     in_place=args.in_place,
                     overwrite=args.overwrite,
                     skip_existing=args.skip_existing,
                 )
-            )
+            results.append(res)
     finally:
         if coordinator:
             coordinator.stop()
