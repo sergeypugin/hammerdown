@@ -88,8 +88,14 @@ def _install_windows(command: str) -> None:
         if not icon_path:
             icon_path = command.split('"')[1]
 
+    # Registry path for all filesystem objects to support mixed selection
+    all_files_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown"
+
+    # Advanced Query Syntax (AQS) filter for supported extensions
+    aqs_filter = " OR ".join(f"System.FileExtension:={ext}" for ext in SUPPORTED_EXTENSIONS)
+
     targets = [
-        *(rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown" for ext in SUPPORTED_EXTENSIONS),
+        all_files_path,
         r"Software\Classes\Directory\shell\hammerdown",
     ]
     for key_path in targets:
@@ -97,7 +103,15 @@ def _install_windows(command: str) -> None:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down file")
             if icon_path:
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
+
+            # Use MultiSelectModel=Player to group selected files into a single process launch
+            if key_path == all_files_path:
+                winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
+                winreg.SetValueEx(key, "AppliesTo", 0, winreg.REG_SZ, aqs_filter)
+
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
+            # We still use --coordinator because Windows may still launch multiple
+            # processes if the command line limit is exceeded (>8191 chars)
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator "%1"')
 
     bg_key_path = r"Software\Classes\Directory\Background\shell\hammerdown"
@@ -468,6 +482,7 @@ def _uninstall_windows() -> None:
             winreg.HKEY_CURRENT_USER,
             rf"Software\Classes\SystemFileAssociations\{ext}\shell\Convert to Markdown",
         )
+    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\shell\hammerdown")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown")
     sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
