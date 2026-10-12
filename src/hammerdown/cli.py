@@ -18,6 +18,7 @@ from typing import Any, Sequence
 from hammerdown import APP_DESCRIPTION, APP_NAME, SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, __version__
 from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
 from hammerdown.utils import BatchUI, format_duration, normalize_path
+from hammerdown.core import convert_file, get_conversion_estimate
 
 logger = logging.getLogger("hammerdown")
 
@@ -850,8 +851,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         for idx, f in enumerate(files):
+            f_path = Path(f)
             if batch_ui:
-                batch_ui.start_file(idx)
+                estimate = get_conversion_estimate(f_path)
+                batch_ui.start_file(idx, hint=estimate)
 
                 def on_progress(current: int, total: int, unit: str = "pages") -> None:
                     batch_ui.update_progress(idx, current, total, unit)
@@ -860,7 +863,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     batch_ui.complete_file(idx, success, format_duration(dur), imgs)
 
                 res = convert_file(
-                    f,
+                    f_path,
                     in_place=args.in_place,
                     overwrite=args.overwrite,
                     skip_existing=args.skip_existing,
@@ -894,7 +897,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     # If launched from GUI/coordinator on Windows, wait for user keypress before closing window
-    if not args.quiet and (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"):
+    if not args.quiet and (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1" or batch_ui):
         if os.name == "nt":
             try:
                 input("\nConversion completed. Press Enter to exit...")

@@ -91,31 +91,41 @@ class BatchUI:
         if self.quiet or not self.is_tty:
             return
 
-        lines = [f"\nQueueing {len(self.files)} files for conversion:\n"]
+        # Prepare all lines
+        header = f"Queueing {len(self.files)} files for conversion:"
+        lines = [header, ""]  # Header and an empty line
         for i, f in enumerate(self.files):
             status = self.statuses[i]
             detail = f" {self.details[i]}" if self.details[i] else ""
 
             if status == "[x]":
                 marker = f"{COLOR_GREEN}[x]{COLOR_RESET}"
-                line = f" {marker} {COLOR_GREEN}{f.name}{COLOR_RESET}{detail}"
+                line = f"  {marker} {COLOR_GREEN}{f.name}{COLOR_RESET}{detail}"
             elif status == "[!]":
                 marker = f"{COLOR_RED}[!]{COLOR_RESET}"
-                line = f" {marker} {COLOR_RED}{f.name}{COLOR_RESET}{detail}"
+                line = f"  {marker} {COLOR_RED}{f.name}{COLOR_RESET}{detail}"
             elif status == "[>]":
                 marker = f"{COLOR_ORANGE}[>]{COLOR_RESET}"
-                line = f" {marker} {COLOR_BOLD}{f.name}{COLOR_RESET}{detail}"
+                line = f"  {marker} {COLOR_BOLD}{f.name}{COLOR_RESET}{detail}"
             else:
                 marker = f"{COLOR_DIM}[ ]{COLOR_RESET}"
-                line = f" {marker} {COLOR_DIM}{f.name}{COLOR_RESET}"
+                line = f"  {marker} {COLOR_DIM}{f.name}{COLOR_RESET}"
             lines.append(line)
 
-        output = "\n".join(lines) + "\n"
-
+        # Move cursor up if we already rendered once
         if self._rendered:
-            # Move cursor up by (total lines in previous render)
-            num_lines = len(self.files) + 2
-            sys.stdout.write(f"\033[{num_lines}A\r")
+            # We move up by the number of lines we previously printed
+            # (header + empty line + N files)
+            num_lines_to_move = len(self.files) + 2
+            sys.stdout.write(f"\033[{num_lines_to_move}A")
+        else:
+            # First time rendering, add a newline to separate from previous prompt
+            sys.stdout.write("\n")
+
+        # Join lines and print. We use \033[K to clear each line to avoid artifacts.
+        output = ""
+        for line in lines:
+            output += f"\r\033[K{line}\n"
 
         sys.stdout.write(output)
         sys.stdout.flush()
