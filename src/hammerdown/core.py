@@ -158,7 +158,7 @@ def convert_file(
     elif extension in {".doc", ".xls", ".ppt"}:
         # Legacy formats require conversion via Word/LibreOffice
         size_mb = source.stat().st_size / (1024 * 1024)
-        est_seconds = 3.0 + (size_mb * 2.0)
+        est_seconds = 10.0 + (size_mb * 2.0)
         est_hint = f" (legacy format, est. ~{format_duration(est_seconds)})"
     elif extension == ".odt":
         try:
@@ -173,11 +173,20 @@ def convert_file(
         # Instant or near-instant text processing
         est_hint = " (fast text conversion)"
 
-    logger.info("Processing %s%s...", source.name, est_hint)
+    # Output format according to plan.spec:
+    # Processing "file" (hint)
+    # <empty line>
+    # [progress bar]
+    is_tty = sys.stdout.isatty() and logger.isEnabledFor(logging.INFO)
+    if is_tty:
+        # Visual separation
+        print(f'\nProcessing "{source.name}"{est_hint}...\n')
+    else:
+        logger.info("Processing %s%s...", source.name, est_hint)
+
     started_at = time.monotonic()
 
     active_callback = progress_callback
-    is_tty = sys.stdout.isatty() and logger.isEnabledFor(logging.INFO)
     last_len = 0
     last_pct = -1
 
@@ -189,10 +198,10 @@ def convert_file(
             pct = int((current / total) * 100)
             if is_tty:
                 bar_str = format_progress_bar(current, total, unit=unit)
-                line = f"\rProcessing {source.name}: {bar_str}"
-                sys.stdout.write(line.ljust(last_len))
+                # Keep active bar cleanly formatted
+                sys.stdout.write(f"\r{bar_str}".ljust(last_len))
                 sys.stdout.flush()
-                last_len = max(last_len, len(line))
+                last_len = max(last_len, len(bar_str))
             else:
                 if pct > last_pct:
                     last_pct = pct
@@ -211,6 +220,8 @@ def convert_file(
             sys.stdout.flush()
 
         if md_text is None:
+            if is_tty:
+                print(f"[x] Failed to convert {source.name}")
             return False
 
         # Trim trailing whitespace on each line and ensure a single final newline
@@ -219,13 +230,21 @@ def convert_file(
         cleaned_md = "\n".join(trimmed_lines).rstrip() + "\n"
         out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
         duration = time.monotonic() - started_at
-        logger.info(
-            "Completed %s in %s (%d images extracted)",
-            source.name,
-            format_duration(duration),
-            saved_images,
-        )
+        if is_tty:
+            print(f"[x] Completed {source.name} in {format_duration(duration)} ({saved_images} images extracted)")
+        else:
+            logger.info(
+                "Completed %s in %s (%d images extracted)",
+                source.name,
+                format_duration(duration),
+                saved_images,
+            )
         return True
     except Exception:
+        if is_tty and last_len > 0:
+            sys.stdout.write(f"\r{' ' * last_len}\r")
+            sys.stdout.flush()
+        if is_tty:
+            print(f"[x] Failed to convert {source.name}")
         logger.exception("Failed to convert %s", source.name)
         return False

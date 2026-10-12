@@ -844,6 +844,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     started_at = time.monotonic()
     results: list[bool] = []
     try:
+        # Pre-render queued file list if multiple files
+        if len(files) > 1 and not args.quiet:
+            print(f"\nQueueing {len(files)} files for conversion:")
+            for item in files:
+                print(f" [ ] {Path(item).name}")
+            print()
+
         # To maintain ordered output and clean progress bars, we process sequentially in TTY/batch mode.
         # Parallel processing via ProcessPoolExecutor causes interleaved log output and messy progress bars.
         for f in files:
@@ -871,6 +878,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             len(files) - failed_count,
             failed_count,
         )
+
+    # If launched from GUI/coordinator on Windows, wait for user keypress before closing window
+    if not args.quiet and (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"):
+        if os.name == "nt":
+            try:
+                input("\nConversion completed. Press Enter to exit...")
+            except (EOFError, KeyboardInterrupt):
+                pass
+
     return 1 if failed_count else 0
 
 

@@ -102,7 +102,9 @@ Multi-threading is intentionally restricted to PDF documents and batch conversio
 - structured office documents (`.docx`, `.odt`, `.xlsx`) parse nearly instantaneously (<0.1s total), so introducing thread scheduling overhead would degrade rather than improve conversion speed
 - batch file execution across all formats automatically leverages multi-process concurrency (`ProcessPoolExecutor`) when multiple files are supplied to the CLI
 
-For legacy binary office formats (`.doc`, `.xls`, `.ppt`), conversion timing depends on external application initialization times (~0.5--5.0s).
+For legacy binary office formats (`.doc`, `.xls`, `.ppt`), conversion timing depends on external application initialization times. The baseline ETA estimation uses a 10.0s baseline:
+
+$$\text{Estimated Time} = 10.0 + (\text{Size in MB} \times 2.0)$$
 
 ## Human-Readable Duration Formatting
 
