@@ -704,22 +704,34 @@ def _select_files() -> Sequence[str]:
 
 
 def _expand_paths(paths: Sequence[str]) -> list[str]:
-    expanded: list[str] = []
+    unique_files: list[str] = []
+    seen_paths: set[Path] = set()
+
     for raw in paths:
-        p = Path(normalize_path(raw))
+        try:
+            p = Path(normalize_path(raw)).resolve()
+        except Exception:
+            continue
+
         if p.is_dir():
             for root, _, filenames in os.walk(p):
                 for f in sorted(filenames):
                     if f.startswith("~$") or f.startswith("."):
                         continue
-                    file_path = Path(root) / f
-                    if file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
-                        expanded.append(str(file_path))
+                    try:
+                        file_path = (Path(root) / f).resolve()
+                        if file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                            if file_path not in seen_paths:
+                                seen_paths.add(file_path)
+                                unique_files.append(str(file_path))
+                    except Exception:
+                        continue
         elif p.is_file():
-            expanded.append(str(p))
-        else:
-            expanded.append(raw)
-    return expanded
+            if p.suffix.lower() in SUPPORTED_EXTENSIONS:
+                if p not in seen_paths:
+                    seen_paths.add(p)
+                    unique_files.append(str(p))
+    return unique_files
 
 
 def _merge_converted_files(
