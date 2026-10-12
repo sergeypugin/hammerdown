@@ -673,48 +673,40 @@ def _select_files() -> Sequence[str]:
     if os.name == "nt":
         try:
             pattern = ";".join(f"*{ext}" for ext in SUPPORTED_EXTENSIONS)
-
-            # Step 1: Improved MessageBox with guaranteed newlines
-            ps_msg = (
-                "Add-Type -AssemblyName PresentationFramework | Out-Null; "
-                "$msg = 'Do you want to convert a FOLDER?' + [char]10 + [char]10 + "
-                "'Click [Yes] to select a folder.' + [char]10 + "
-                "'Click [No] to select individual files.'; "
-                "[System.Windows.MessageBox]::Show($msg, 'Hammerdown Selection Mode', 'YesNoCancel', 'Question')"
+            ps_files = (
+                "Add-Type -AssemblyName PresentationFramework | Out-Null;"
+                "$dialog = New-Object Microsoft.Win32.OpenFileDialog;"
+                f"$dialog.Filter = 'Supported Documents|{pattern}|All Files (*.*)|*.*';"
+                "$dialog.Multiselect = $true;"
+                "$dialog.Title = 'Select documents to convert';"
+                "if ($dialog.ShowDialog() -eq $true) { $dialog.FileNames }"
             )
-            cmd_msg = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_msg]
-            result = subprocess.run(cmd_msg, capture_output=True, text=True)
-            choice = result.stdout.strip()
-
-            if choice == "Yes":
-                # Step 2: Use modern Vista-style Folder Picker via a .NET trick
-                ps_folder = (
-                    "Add-Type -AssemblyName System.Windows.Forms; "
-                    "$d = New-Object System.Windows.Forms.OpenFileDialog; "
-                    "$d.ValidateNames = $false; $d.CheckFileExists = $false; $d.CheckPathExists = $true; "
-                    "$d.FileName = 'Select Folder'; $d.Title = 'Select a folder containing documents to convert'; "
-                    "if ($d.ShowDialog() -eq 'OK') { [System.IO.Path]::GetDirectoryName($d.FileName) }"
-                )
-                res_f = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_folder], capture_output=True, text=True)
-                if res_f.returncode == 0 and res_f.stdout.strip():
-                    selected_paths.append(res_f.stdout.strip())
-            elif choice == "No":
-                # Select Files (Modern OpenFileDialog)
-                ps_files = (
-                    "Add-Type -AssemblyName PresentationFramework | Out-Null;"
-                    "$dialog = New-Object Microsoft.Win32.OpenFileDialog;"
-                    f"$dialog.Filter = 'Supported Documents|{pattern}|All Files (*.*)|*.*';"
-                    "$dialog.Multiselect = $true;"
-                    "$dialog.Title = 'Select documents to convert';"
-                    "if ($dialog.ShowDialog() -eq $true) { $dialog.FileNames }"
-                )
-                res_files = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_files], capture_output=True, text=True)
-                if res_files.returncode == 0 and res_files.stdout.strip():
-                    selected_paths.extend([line.strip() for line in res_files.stdout.strip().splitlines() if line.strip()])
-
-            return selected_paths
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_files],
+                capture_output=True,
+                text=True,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                selected_paths.extend([line.strip() for line in res.stdout.strip().splitlines() if line.strip()])
+                return selected_paths
         except Exception:
             pass
+
+    try:
+        from tkinter import Tk, filedialog
+
+        root = Tk()
+        root.withdraw()
+        try:
+            files = filedialog.askopenfilenames(title="Select documents to convert")
+            if files:
+                selected_paths.extend(files)
+        finally:
+            root.destroy()
+    except Exception:
+        pass
+
+    return selected_paths
 
     try:
         from tkinter import Tk, filedialog
@@ -944,7 +936,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.quiet and (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1" or batch_ui):
         if os.name == "nt":
             try:
-                input("\nConversion completed. Press Enter to exit...")
+                input("\nConversion completed. Press Enter to exit... ")
             except (EOFError, KeyboardInterrupt):
                 pass
 

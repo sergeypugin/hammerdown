@@ -111,12 +111,13 @@ class BatchUI:
                 marker = f"{COLOR_DIM}[ ]{COLOR_RESET}"
                 line = f"  {marker} {COLOR_DIM}{f.name}{COLOR_RESET}"
             lines.append(line)
+        lines.append("")  # Blank line after file queue list
 
         # Move cursor up if we already rendered once
         if self._rendered:
             # We move up by the number of lines we previously printed
-            # (header + empty line + N files)
-            num_lines_to_move = len(self.files) + 2
+            # (header + empty line + N files + trailing empty line)
+            num_lines_to_move = len(self.files) + 3
             sys.stdout.write(f"\033[{num_lines_to_move}A")
         else:
             # First time rendering, add a newline to separate from previous prompt

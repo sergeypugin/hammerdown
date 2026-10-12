@@ -27,7 +27,7 @@ from hammerdown.core import (
     to_markdown,
 )
 
-__version__ = "2.0.4"
+__version__ = "2.1.0"
 
 __all__ = [
     "APP_NAME",
