@@ -212,6 +212,39 @@ def test_recursive_directory_traversal(tmp_path: Path):
     assert not (sub_dir / "hm_.hidden_txt.md").exists()
 
 
+def test_directory_converts_supported_files_and_ignores_unsupported(tmp_path: Path):
+    root_dir = tmp_path / "flat"
+    root_dir.mkdir()
+    first = root_dir / "first.txt"
+    second = root_dir / "second.md"
+    unsupported = root_dir / "notes.bin"
+    first.write_text("first document\n", encoding="utf-8")
+    second.write_text("# second document\n", encoding="utf-8")
+    unsupported.write_bytes(b"not a supported format")
+
+    assert hammerdown.cli.main([str(root_dir)]) == 0
+
+    assert (root_dir / "hm_first_txt.md").read_text(encoding="utf-8") == "first document\n"
+    assert (root_dir / "hm_second_md.md").read_text(encoding="utf-8") == "# second document\n"
+    assert not (root_dir / "hm_notes_bin.md").exists()
+
+
+def test_directory_and_explicit_child_file_are_deduplicated(tmp_path: Path, caplog):
+    import logging
+
+    root_dir = tmp_path / "deduplicated"
+    nested = root_dir / "nested"
+    nested.mkdir(parents=True)
+    child = nested / "child.txt"
+    child.write_text("convert once\n", encoding="utf-8")
+
+    with caplog.at_level(logging.INFO, logger="hammerdown"):
+        assert hammerdown.cli.main([str(root_dir), str(child)]) == 0
+
+    assert (nested / "hm_child_txt.md").read_text(encoding="utf-8") == "convert once\n"
+    assert sum("Completed child.txt" in record.message for record in caplog.records) == 1
+
+
 def test_recursive_directory_empty_or_no_supported_files(tmp_path: Path):
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()

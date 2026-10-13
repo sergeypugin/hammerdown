@@ -891,7 +891,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     total_tokens = 0
     batch_ui = BatchUI(ui_files, quiet=args.quiet)
 
-    if batch_ui.is_tty:
+    if batch_ui.can_redraw:
         batch_ui.render()
 
     try:

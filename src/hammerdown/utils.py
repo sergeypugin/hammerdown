@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -25,9 +26,9 @@ def enable_vt_mode() -> bool:
             kernel32 = ctypes.windll.kernel32
             hStdOut = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
             mode = ctypes.c_ulong()
-            kernel32.GetConsoleMode(hStdOut, ctypes.byref(mode))
-            kernel32.SetConsoleMode(hStdOut, mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
-            return True
+            if not kernel32.GetConsoleMode(hStdOut, ctypes.byref(mode)):
+                return False
+            return bool(kernel32.SetConsoleMode(hStdOut, mode.value | 0x0004))  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
         except Exception:
             return False
     return True
@@ -80,8 +81,12 @@ class BatchUI:
         self.files = [Path(p) for p in file_paths]
         self.quiet = quiet
         self.is_tty = sys.stdout.isatty() and not quiet
+        self.can_redraw = self.is_tty
         if self.is_tty:
-            enable_vt_mode()
+            self.can_redraw = enable_vt_mode()
+            terminal_rows = shutil.get_terminal_size((80, 24)).lines
+            max_frame_rows = 2 * len(self.files) + 5
+            self.can_redraw = self.can_redraw and max_frame_rows < terminal_rows
 
         self.statuses: list[str] = ["[ ]"] * len(self.files)
         self.details: list[str] = [""] * len(self.files)
@@ -121,14 +126,14 @@ class BatchUI:
                 lines.append(f"  {COLOR_RED}{file_name} -- {reason}{COLOR_RESET}")
             lines.append("")
 
-        # Move over the exact number of lines from the previous render.
+        if self._rendered and not self.can_redraw:
+            return
+
         if self._rendered:
             sys.stdout.write(f"\033[{self._rendered_lines}A")
         else:
-            # First time rendering, add a newline to separate from previous prompt
             sys.stdout.write("\n")
 
-        # Join lines and print. We use \033[K to clear each line to avoid artifacts.
         output = ""
         for line in lines:
             output += f"\r\033[K{line}\n"
@@ -143,7 +148,7 @@ class BatchUI:
         self._progress_started_at = time.monotonic()
         self.statuses[index] = "[>]"
         self.details[index] = hint
-        if self.is_tty:
+        if self.can_redraw:
             self.render()
         elif not self.quiet:
             logger.info("Processing %s%s...", self.files[index].name, f" {hint}" if hint else "")
@@ -156,17 +161,18 @@ class BatchUI:
         filled = int(round(bar_len * current / float(total)))
         bar = "█" * filled + "░" * (bar_len - filled)
         self.details[index] = f"[{bar}] {pct}% ({current}/{total} {unit})"
-        if self.is_tty and time.monotonic() - self._progress_started_at >= PROGRESS_DISPLAY_DELAY:
+        if self.can_redraw and time.monotonic() - self._progress_started_at >= PROGRESS_DISPLAY_DELAY:
             self.render()
 
     def fail_file(self, index: int, reason: str) -> None:
         self.statuses[index] = "[!]"
         self.details[index] = ""
         self.errors.append((self.files[index].name, reason))
-        if self.is_tty:
+        if self.can_redraw:
             self.render()
         elif not self.quiet:
-            logger.error("%s -- %s", self.files[index].name, reason)
+            logger.error("\033[38;2;157;47;52m[!] %s\033[0m", self.files[index].name)
+            logger.error("Errors:\n  %s -- %s", self.files[index].name, reason)
 
     def complete_file(
         self,
@@ -187,7 +193,7 @@ class BatchUI:
             self.statuses[index] = "[!]"
             self.details[index] = ""
             self.errors.append((self.files[index].name, info or "conversion failed"))
-        if self.is_tty:
+        if self.can_redraw:
             self.render()
         elif not self.quiet:
             if success:
