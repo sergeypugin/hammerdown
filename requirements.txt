@@ -5,4 +5,5 @@ openpyxl
 python-pptx
 onnxruntime
 tiktoken
+rich
 pytest-xdist
