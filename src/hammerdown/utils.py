@@ -15,6 +15,7 @@ COLOR_ORANGE = "\033[38;2;236;124;57m"  # #ec7c39
 COLOR_RED = "\033[38;2;157;47;52m"     # #9d2f34
 COLOR_DIM = "\033[90m"                  # Dim gray
 COLOR_BOLD = "\033[1m"
+PROGRESS_DISPLAY_DELAY = 0.5
 
 
 def enable_vt_mode() -> bool:
@@ -86,6 +87,7 @@ class BatchUI:
         self.details: list[str] = [""] * len(self.files)
         self.current_idx: int = -1
         self._rendered = False
+        self._progress_started_at = 0.0
 
     def render(self) -> None:
         if self.quiet or not self.is_tty:
@@ -133,6 +135,7 @@ class BatchUI:
 
     def start_file(self, index: int, hint: str = "") -> None:
         self.current_idx = index
+        self._progress_started_at = time.monotonic()
         self.statuses[index] = "[>]"
         self.details[index] = hint
         if self.is_tty:
@@ -148,7 +151,7 @@ class BatchUI:
         filled = int(round(bar_len * current / float(total)))
         bar = "█" * filled + "░" * (bar_len - filled)
         self.details[index] = f"[{bar}] {pct}% ({current}/{total} {unit})"
-        if self.is_tty:
+        if self.is_tty and time.monotonic() - self._progress_started_at >= PROGRESS_DISPLAY_DELAY:
             self.render()
 
     def complete_file(self, index: int, success: bool, duration: str, images: int = 0, tokens: int = 0) -> None:
