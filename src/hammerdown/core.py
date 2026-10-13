@@ -293,11 +293,17 @@ def convert_file(
 
         token_count = 0
         try:
+            if getattr(sys, "frozen", False) and not os.environ.get("TIKTOKEN_CACHE_DIR"):
+                bundle_dir = getattr(sys, "_MEIPASS", None)
+                bundled_cache = Path(bundle_dir) / "data-gym-cache" if bundle_dir else None
+                if bundled_cache and bundled_cache.is_dir():
+                    os.environ["TIKTOKEN_CACHE_DIR"] = str(bundled_cache)
+
             import tiktoken
             encoding = tiktoken.get_encoding("cl100k_base")
             token_count = len(encoding.encode(cleaned_md, disallowed_special=()))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Token counting unavailable for %s: %s", source.name, exc)
 
         out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
         duration = time.monotonic() - started_at

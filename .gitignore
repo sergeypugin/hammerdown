@@ -4,6 +4,7 @@ venv/
 build/
 dist/
 *.spec
+!hammerdown.spec
 *.egg-info/
 tests/inputs/MD_*
 ~$*

@@ -15,6 +15,7 @@ dependencies = [
     "openpyxl",
     "python-pptx",
     "onnxruntime",
+    "tiktoken",
 ]
 
 [project.scripts]
