@@ -33,6 +33,11 @@ def test_convert_file_in_place(tmp_path: Path):
     assert hammerdown.cli.main(["--in-place", str(source2)]) == 0
     assert (tmp_path / "hm_memo_txt.md").read_text(encoding="utf-8") == "memo text\n"
 
+    source3 = tmp_path / "draft.txt"
+    source3.write_text("draft text\n", encoding="utf-8")
+    assert hammerdown.cli.main(["--in_place", str(source3)]) == 0
+    assert (tmp_path / "hm_draft_txt.md").read_text(encoding="utf-8") == "draft text\n"
+
 
 def test_overwrite_by_default(tmp_path: Path):
     source = tmp_path / "notes.txt"
@@ -58,6 +63,9 @@ def test_skip_existing_flag(tmp_path: Path):
     assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "line one\n"
 
     assert hammerdown.cli.main(["--skip-existing", str(source)]) == 0
+    assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "line one\n"
+
+    assert hammerdown.cli.main(["--skip_existing", str(source)]) == 0
     assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "line one\n"
 
 
