@@ -53,6 +53,19 @@ def test_convert_file_package(tmp_path: Path):
     assert out_file.read_text(encoding="utf-8") == "package test\n"
 
 
+def test_batch_ui_completion_logs_token_count(tmp_path: Path, caplog):
+    import logging
+    from hammerdown.utils import BatchUI
+
+    ui = BatchUI([str(tmp_path / "document.pdf")])
+    ui.is_tty = False
+
+    with caplog.at_level(logging.INFO, logger="hammerdown"):
+        ui.complete_file(0, True, "5s", images=2, tokens=123)
+
+    assert "Completed document.pdf (5s, 2 images, ~123 tokens)" in caplog.text
+
+
 def test_progress_callback(tmp_path: Path):
     from hammerdown.utils import format_progress_bar
 

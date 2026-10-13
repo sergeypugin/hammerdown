@@ -880,40 +880,32 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     started_at = time.monotonic()
     results: list[bool] = []
-    batch_ui = BatchUI(files, quiet=args.quiet) if len(files) > 1 else None
+    batch_ui = BatchUI(files, quiet=args.quiet)
 
-    if batch_ui and batch_ui.is_tty:
+    if batch_ui.is_tty:
         batch_ui.render()
 
     try:
         for idx, f in enumerate(files):
             f_path = Path(f)
-            if batch_ui:
-                estimate = get_conversion_estimate(f_path)
-                batch_ui.start_file(idx, hint=estimate)
+            estimate = get_conversion_estimate(f_path)
+            batch_ui.start_file(idx, hint=estimate)
 
-                def on_progress(current: int, total: int, unit: str = "pages") -> None:
-                    batch_ui.update_progress(idx, current, total, unit)
+            def on_progress(current: int, total: int, unit: str = "pages") -> None:
+                batch_ui.update_progress(idx, current, total, unit)
 
-                def on_complete(success: bool, dur: float, imgs: int) -> None:
-                    batch_ui.complete_file(idx, success, format_duration(dur), imgs)
+            def on_complete(success: bool, dur: float, imgs: int, tokens: int) -> None:
+                batch_ui.complete_file(idx, success, format_duration(dur), imgs, tokens)
 
-                res = convert_file(
-                    f_path,
-                    in_place=args.in_place,
-                    overwrite=args.overwrite,
-                    skip_existing=args.skip_existing,
-                    progress_callback=on_progress,
-                    completion_callback=on_complete,
-                    batch_mode=True,
-                )
-            else:
-                res = convert_file(
-                    f,
-                    in_place=args.in_place,
-                    overwrite=args.overwrite,
-                    skip_existing=args.skip_existing,
-                )
+            res = convert_file(
+                f_path,
+                in_place=args.in_place,
+                overwrite=args.overwrite,
+                skip_existing=args.skip_existing,
+                progress_callback=on_progress,
+                completion_callback=on_complete,
+                batch_mode=True,
+            )
             results.append(res)
     finally:
         if coordinator:
@@ -932,13 +924,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             failed_count,
         )
 
-    # If launched from GUI/coordinator on Windows, wait for user keypress before closing window
-    if not args.quiet and (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1" or batch_ui):
-        if os.name == "nt":
-            try:
-                input("\nConversion completed. Press Enter to exit... ")
-            except (EOFError, KeyboardInterrupt):
-                pass
+    # Keep standalone and coordinator consoles open after conversion.
+    should_wait = (
+        os.name == "nt"
+        and not args.quiet
+        and (
+            args.coordinator
+            or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
+            or getattr(sys, "frozen", False)
+        )
+    )
+    if should_wait:
+        try:
+            input("\nConversion completed. Press Enter to exit... ")
+        except (EOFError, KeyboardInterrupt):
+            pass
 
     return 1 if failed_count else 0
 

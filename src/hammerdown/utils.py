@@ -91,9 +91,8 @@ class BatchUI:
         if self.quiet or not self.is_tty:
             return
 
-        # Prepare all lines
-        header = f"Queueing {len(self.files)} files for conversion:"
-        lines = [header, ""]  # Header and an empty line
+        header = f"Processing {len(self.files)} file{'s' if len(self.files) != 1 else ''}:"
+        lines = [header, ""]
         for i, f in enumerate(self.files):
             status = self.statuses[i]
             detail = f" {self.details[i]}" if self.details[i] else ""
@@ -164,8 +163,15 @@ class BatchUI:
         if self.is_tty:
             self.render()
         elif not self.quiet:
-            status_text = "Completed" if success else "Failed"
-            logger.info("%s %s in %s", status_text, self.files[index].name, duration)
+            if success:
+                details = [duration]
+                if images > 0:
+                    details.append(f"{images} images")
+                if tokens > 0:
+                    details.append(f"~{tokens} tokens")
+                logger.info("Completed %s (%s)", self.files[index].name, ", ".join(details))
+            else:
+                logger.info("Failed to convert %s", self.files[index].name)
 
 
 def format_progress_bar(current: int, total: int, unit: str = "pages", bar_length: int = 20) -> str:
