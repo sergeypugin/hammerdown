@@ -36,17 +36,17 @@ Key naming rules:
 
 ### Word Documents (.docx, .doc, .odt)
 
-- **Text and Paragraphs**: headings, paragraphs, and list items are converted to standard Markdown syntax
-- **Math Formulas**: Word stores equations internally using XML structures (such as OMML in Word or MathML in LibreOffice). `hammerdown` converts these equation trees into standard LaTeX formulas (e.g. `\frac{1}{N}`, `\sum`, `\sqrt{x}`) using a character mapping dictionary stored in `src/hammerdown/parsers/symbols.json`
-- **Charts and Diagrams**: embedded charts in Word documents are converted into vector SVG graphics
-- **Legacy Files (.doc)**: if LibreOffice or Microsoft Word is installed on the system, legacy binary files are converted to DOCX first, then processed normally
+- headings, paragraphs, and list items are converted to standard Markdown syntax
+- equations are translated from internal XML structures into standard LaTeX formulas using character mapping definitions in `src/hammerdown/parsers/symbols.json`
+- embedded diagrams and charts are exported as vector SVG graphics
+- binary `.doc` legacy files are converted to DOCX first when LibreOffice or Microsoft Word is installed
 
 ### Excel Workbooks and CSV (.xlsx, .xls, .csv)
 
-- **Sheet Tables**: each worksheet is exported with a `# Sheet: <name>` header
-- **Cell Matrix Detection**: empty rows and margins are automatically trimmed; isolated tables on the same sheet are split into separate Markdown tables
-- **Formulas vs Values**: cell values are preferred, but if calculated values are missing, formula strings are preserved
-- **CSV Encoding and Dialect**: CSV files are read with automatic encoding detection (UTF-8, CP1251, Latin-1) and delimiter detection (comma, semicolon, tab)
+- each worksheet is exported with a `# Sheet: <name>` header
+- cell boundaries are detected automatically, trimming blank margins and turning separate tables on the same sheet into individual Markdown tables
+- evaluated values take precedence over raw formulas when available
+- character encodings (UTF-8, CP1251, Latin-1) and tabular delimiters (comma, semicolon, tab) are detected automatically for CSV files
 
 ### Plain Text and Markdown (.txt, .md, .log)
 
@@ -91,11 +91,18 @@ To prevent collisions between documents with the same name across different form
 - Extracted images directory: `hm_images_<stem>_<ext>/` (e.g. `hm_images_report_docx/`)
 
 ### Single-Instance IPC Coordinator
-On Windows, when selecting multiple files in Explorer and clicking context menu actions or SendTo, Windows Explorer launches a separate process for each selected file.
-To prevent spawning multiple black console windows, `hammerdown` incorporates `IPCCoordinator`:
-- Primary instance binds a local IPC channel (`\\.\pipe\hammerdown_coordinator` on Windows).
-- Subsequent instances detect the active coordinator, pass their file paths, and exit immediately.
-- The coordinator assembles all incoming files within a 0.35s window and converts them concurrently in a single window.
+On Windows, selecting multiple files in Explorer normally starts a separate process for each file. `hammerdown` combines Explorer's native multi-select grouping with an IPC fallback to handle these launches:
+
+- native multi-select grouping in Explorer is configured via `MultiSelectModel = "Player"` and an Advanced Query Syntax (`AppliesTo`) filter so Explorer passes supported files to a **single process**
+- local IPC channels (`\\.\pipe\hammerdown_coordinator` on Windows) catch additional launches when command line limits (8191 characters) are exceeded or files arrive separately
+- incoming paths are assembled over a 0.35-second window by the coordinator before rendering them together in one console window
+
+### Interactive File Queue UI
+When files are processed in an interactive terminal (TTY), `hammerdown` displays a progress table. Status colors are fixed ANSI values for consistent visibility across terminal themes:
+
+- finished files switch to green (`#a7c939`) marked with `[x]` alongside execution duration and asset counts
+- active files display an orange (`#ec7c39`) `[>]` indicator, while queued files remain in dim gray (`#909090`) `[ ]`
+- unhandled errors or parsing failures appear in red (`#9d2f34`) marked with `[!]`
 
 ### Recursive Directory Traversal
 When passing a directory to `hammerdown`, it recursively scans for all files matching `SUPPORTED_EXTENSIONS` while skipping temporary office lock files (`~$*`) and hidden files (`.*`).
@@ -110,22 +117,22 @@ When `-m <output.md>` is specified, all successful Markdown conversions are bund
 
 To deliver maximum speed when processing large documents and batch conversions, `hammerdown` employs multi-level parallelism and lazy loading:
 
-1. **Batch Parallel File Processing (`ProcessPoolExecutor`)**: when passing multiple documents via CLI (`hammerdown doc1.pdf doc2.docx doc3.pdf`), conversion tasks are executed in parallel using multi-process CPU workers
-2. **Concurrent Test Suite Execution (`ThreadPoolExecutor`)**: golden test conversions run concurrently across available CPU threads, cutting execution time roughly in half
-3. **Page-Level PDF Parallel Chunking (`ThreadPoolExecutor`)**: PDF files with more than 4 pages are divided into page chunks and rendered concurrently in parallel threads before joining the resulting Markdown output
-4. **PyMuPDF4LLM Conversion Flags (`use_ocr=False`)**: OCR verification is bypassed during text extraction since embedded raster graphics are extracted directly via PyMuPDF XREF in milliseconds
-5. **Lazy Dependency Loading**: heavy third-party libraries (`pymupdf`, `python-docx`, `openpyxl`, `python-pptx`) are imported lazily on demand inside format-specific converter routines, allowing quick commands (`--version`, `--install`, `--help`) and plain text/CSV files to process instantly (<0.04s startup)
-6. **Concurrent Extracted Image Disk I/O (`ThreadPoolExecutor`)**: saving extracted images, vector charts, and base64 assets to disk is performed concurrently in background thread pools, keeping disk I/O from blocking the main parsing logic
+1. multi-process CPU workers (`ProcessPoolExecutor`) execute conversions in parallel when multiple documents are passed via the CLI (`hammerdown doc1.pdf doc2.docx doc3.pdf`)
+2. golden test conversions run concurrently across available CPU threads (`ThreadPoolExecutor`), cutting execution time roughly in half
+3. large PDF documents (>4 pages) are split into page chunks and rendered concurrently in background threads before assembling final Markdown
+4. text extraction bypasses OCR verification (`use_ocr=False`) because embedded raster graphics are extracted directly via PyMuPDF XREF in milliseconds
+5. heavy third-party libraries (`pymupdf`, `python-docx`, `openpyxl`, `python-pptx`) are loaded lazily on demand inside converter routines, letting quick commands (`--version`, `--install`, `--help`) and plain text files run instantly (<0.04s startup)
+6. saving extracted images, vector charts, and base64 assets to disk runs concurrently in background thread pools, keeping disk I/O from blocking parsing logic
 
 ### Benchmarks
 
 Empirical timings measured across test workloads demonstrate the impact of cascade parsing and concurrency:
 
-- **Pure-Python vs Headless LibreOffice**: parsing a standard Word document via in-memory `python-docx` takes ~172 ms, whereas spawning headless LibreOffice takes ~5,324 ms (`--` a 30.8x speedup for pure Python)
-- **Concurrent vs Sequential Batch Processing**: converting a batch of diverse test documents (PDF, DOCX, XLSX, CSV, TXT) sequentially takes ~43.7 s, while parallel multi-threaded conversion finishes in ~22.7 s (`--` a 1.9x speedup)
+- parsing a standard Word document via in-memory `python-docx` takes ~172 ms, whereas spawning headless LibreOffice takes ~5,324 ms (`--` a **30.8x speedup** for pure Python)
+- converting a batch of diverse test documents (PDF, DOCX, XLSX, CSV, TXT) sequentially takes ~43.7 s, while parallel multi-threaded conversion finishes in ~22.7 s (`--` a **1.9x speedup**)
 
 ## References and External Sources
 
-- **LaTeX Symbol Catalog**: based on the [Rice University LaTeX Symbols Reference](https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf) (local copy: [symbols.pdf](../symbols.pdf))
-- **PDF Engine**: powered by [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM)
-- **Office Document Parsers**: [python-docx](https://python-docx.readthedocs.io/) for Word, [openpyxl](https://openpyxl.readthedocs.io/) for Excel, and [python-pptx](https://python-pptx.readthedocs.io/) for PowerPoint
+- math symbols are referenced against the [Rice University LaTeX Symbols Reference](https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf) (local copy: [symbols.pdf](../symbols.pdf))
+- PDF rendering and extraction rely on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM)
+- office documents are parsed using [python-docx](https://python-docx.readthedocs.io/) for Word, [openpyxl](https://openpyxl.readthedocs.io/) for Excel, and [python-pptx](https://python-pptx.readthedocs.io/) for PowerPoint

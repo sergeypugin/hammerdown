@@ -42,4 +42,20 @@ Checklist before submitting changes:
 - markdown outputs have clean line endings without trailing whitespace
 - no broken character encodings appear in generated markdown files
 
+## Building executable for testing on Windows
+
+To package and test a standalone Windows executable (`hammerdown.exe`) locally using PyInstaller:
+
+1. Install PyInstaller alongside project dependencies:
+  ```sh
+  python -m pip install -r requirements.txt pyinstaller
+  ```
+
+2. Run PyInstaller build command:
+  ```sh
+  python -m PyInstaller --noconfirm --clean --onefile --name "hammerdown" --icon "assets/icon.ico" --collect-all pymupdf --collect-all pymupdf4llm --collect-all hammerdown src/hammerdown/cli.py
+  ```
+
+3. The generated executable will be saved in `dist/hammerdown.exe`. Test it.
+
 For full technical specifications and processing pipeline architecture, refer to [docs/TECHNICAL.md](docs/TECHNICAL.md).

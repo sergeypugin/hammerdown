@@ -102,6 +102,14 @@ Multi-threading is intentionally restricted to PDF documents and batch conversio
 - structured office documents (`.docx`, `.odt`, `.xlsx`) parse nearly instantaneously (<0.1s total), so introducing thread scheduling overhead would degrade rather than improve conversion speed
 - batch file execution across all formats automatically leverages multi-process concurrency (`ProcessPoolExecutor`) when multiple files are supplied to the CLI
 
+### Why Python Multi-threading is Real Parallelism Here
+
+Python's **Global Interpreter Lock (GIL)** limits parallel execution of Python bytecode within a process. `hammerdown` processes PDF page chunks in worker threads, while PyMuPDF and PyMuPDF4LLM perform much of the expensive parsing in compiled native code:
+
+- calls into those extensions can release the **GIL** during native operations such as layout parsing, font rasterization, and vector path decoding
+- separate page chunks are dispatched to worker threads by the PDF converter, allowing native parsing work to use multiple CPU cores
+- disk I/O bottlenecks are avoided by running image writes in a thread pool, reducing main-parser wait times
+
 For legacy binary office formats (`.doc`, `.xls`, `.ppt`), conversion timing depends on external application initialization times. The baseline ETA estimation uses a 10.0s baseline:
 
 $$\text{Estimated Time} = 10.0 + (\text{Size in MB} \times 2.0)$$
