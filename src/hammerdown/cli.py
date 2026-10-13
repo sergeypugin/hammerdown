@@ -892,7 +892,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     batch_ui = BatchUI(ui_files, quiet=args.quiet)
 
     if batch_ui.can_redraw:
-        batch_ui.render()
+        batch_ui.start()
 
     try:
         for idx, (f, error) in enumerate(targets):
@@ -931,6 +931,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             results.append(res)
     finally:
+        batch_ui.stop()
         if coordinator:
             coordinator.stop()
 
@@ -961,7 +962,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if should_wait:
         try:
-            input("\nConversion completed. Press Enter to exit... ")
+            if batch_ui.errors:
+                input("\nPress Enter to see error list... ")
+                print("\nError summary")
+                for file_name, reason in batch_ui.errors:
+                    print(f"\n[!] {file_name}\n    {reason}")
+            input("\nPress Enter to exit... ")
         except (EOFError, KeyboardInterrupt):
             pass
 

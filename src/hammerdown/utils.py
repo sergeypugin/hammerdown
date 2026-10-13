@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-import shutil
+
 import sys
 import time
 from pathlib import Path
@@ -84,64 +84,89 @@ class BatchUI:
         self.can_redraw = self.is_tty
         if self.is_tty:
             self.can_redraw = enable_vt_mode()
-            terminal_rows = shutil.get_terminal_size((80, 24)).lines
-            max_frame_rows = 2 * len(self.files) + 5
-            self.can_redraw = self.can_redraw and max_frame_rows < terminal_rows
-
         self.statuses: list[str] = ["[ ]"] * len(self.files)
         self.details: list[str] = [""] * len(self.files)
         self.current_idx: int = -1
-        self._rendered = False
         self._progress_started_at = 0.0
         self.errors: list[tuple[str, str]] = []
-        self._rendered_lines = 0
+        self.total_tokens = 0
+        self.skipped_count = 0
+        self.overwritten_count = 0
+        self._live = None
+        self._console = None
+
+    def start(self) -> None:
+        if not self.can_redraw:
+            return
+        from rich.console import Console
+        from rich.live import Live
+
+        self._console = Console()
+        self._live = Live(self._renderable(), console=self._console, refresh_per_second=8, transient=False)
+        self._live.start()
+
+    def stop(self) -> None:
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
 
     def render(self) -> None:
-        if self.quiet or not self.is_tty:
-            return
+        if self._live is not None:
+            self._live.update(self._renderable(), refresh=True)
 
-        header = f"Processing {len(self.files)} file{'s' if len(self.files) != 1 else ''}:"
-        lines = [header, ""]
-        for i, f in enumerate(self.files):
-            status = self.statuses[i]
-            detail = f" {self.details[i]}" if self.details[i] else ""
+    def _renderable(self):
+        from rich import box
+        from rich.console import Group
+        from rich.panel import Panel
+        from rich.progress_bar import ProgressBar
+        from rich.table import Table
+        from rich.text import Text
 
-            if status == "[x]":
-                marker = f"{COLOR_GREEN}[x]{COLOR_RESET}"
-                line = f"  {marker} {COLOR_GREEN}{f.name}{COLOR_RESET}{detail}"
-            elif status == "[!]":
-                marker = f"{COLOR_RED}[!]{COLOR_RESET}"
-                line = f"  {marker} {COLOR_RED}{f.name}{COLOR_RESET}{detail}"
-            elif status == "[>]":
-                marker = f"{COLOR_ORANGE}[>]{COLOR_RESET}"
-                line = f"  {marker} {COLOR_BOLD}{f.name}{COLOR_RESET}{detail}"
+        total = len(self.files)
+        completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
+        succeeded = sum(status == "[x]" for status in self.statuses)
+        failed = len(self.errors)
+        percent = completed / total if total else 0
+
+        summary = Table.grid(expand=True, padding=(0, 1))
+        summary.add_column(ratio=1)
+        summary.add_column(ratio=1)
+        summary.add_row(f"Processing {total} files", f"{percent:.0%}   {completed} / {total}")
+        summary.add_row(ProgressBar(total=100, completed=percent * 100, pulse=False), "")
+        summary.add_row(
+            f"Success: {succeeded}    Skipped: {self.skipped_count}    Errors: {failed}",
+            f"Tokens: ~{self.total_tokens}    Overwritten: {self.overwritten_count}",
+        )
+
+        queue = Table.grid(expand=True, padding=(0, 1))
+        queue.add_column(width=2, no_wrap=True)
+        queue.add_column(ratio=1, overflow="ellipsis")
+        if total:
+            if self.current_idx < 0:
+                start = 0
             else:
-                marker = f"{COLOR_DIM}[ ]{COLOR_RESET}"
-                line = f"  {marker} {COLOR_DIM}{f.name}{COLOR_RESET}"
-            lines.append(line)
-        lines.append("")  # Blank line after file queue list
+                start = max(0, min(self.current_idx - 2, total - 5))
+            end = min(total, start + 5)
+            for index in range(start, end):
+                state = self.statuses[index]
+                marker, style = {
+                    "[x]": ("✓", "green"),
+                    "[!]": ("!", "red"),
+                    "[>]": (">", "dark_orange"),
+                    "[ ]": (" ", "dim"),
+                }[state]
+                queue.add_row(Text(marker, style=style), Text(self.files[index].name, style=style))
+
+        sections = [Panel(Group(summary, queue), box=box.ROUNDED, padding=(0, 1))]
         if self.errors:
-            lines.append("Errors:")
-            for file_name, reason in self.errors:
-                lines.append(f"  {COLOR_RED}{file_name} -- {reason}{COLOR_RESET}")
-            lines.append("")
-
-        if self._rendered and not self.can_redraw:
-            return
-
-        if self._rendered:
-            sys.stdout.write(f"\033[{self._rendered_lines}A")
-        else:
-            sys.stdout.write("\n")
-
-        output = ""
-        for line in lines:
-            output += f"\r\033[K{line}\n"
-
-        sys.stdout.write(output)
-        sys.stdout.flush()
-        self._rendered = True
-        self._rendered_lines = len(lines)
+            recent = self.errors[-2:]
+            error_table = Table.grid(expand=True, padding=(0, 1))
+            error_table.add_column(style="red", no_wrap=True)
+            error_table.add_column(ratio=1)
+            for file_name, reason in recent:
+                error_table.add_row(f"[!] {file_name}", reason)
+            sections.append(Panel(error_table, title=f"Error summary (last {len(recent)} of {failed})", border_style="red"))
+        return Group(*sections)
 
     def start_file(self, index: int, hint: str = "") -> None:
         self.current_idx = index
@@ -185,6 +210,11 @@ class BatchUI:
     ) -> None:
         if success:
             self.statuses[index] = "[x]"
+            self.total_tokens += tokens
+            if "skipped" in info.lower():
+                self.skipped_count += 1
+            if "overwritten" in info.lower():
+                self.overwritten_count += 1
             token_info = f", ~{tokens} tokens" if tokens > 0 else ""
             img_info = f", {images} images" if images > 0 else ""
             extra_info = f", {info}" if info else ""
