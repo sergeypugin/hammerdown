@@ -70,12 +70,18 @@ def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
         file_path,
     ]
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         converted_file = Path(temp_dir) / f"{Path(file_path).stem}.{out_ext}"
         if converted_file.is_file():
             return str(converted_file)
-    except Exception:
-        pass
+        logger.warning("LibreOffice did not create the converted %s file for %s", out_ext, Path(file_path).name)
+        if result.stdout.strip() or result.stderr.strip():
+            logger.debug("LibreOffice output: %s", (result.stdout + " " + result.stderr).strip())
+    except subprocess.CalledProcessError as exc:
+        details = (exc.stdout or "") + " " + (exc.stderr or "")
+        logger.warning("LibreOffice failed to convert %s: %s", Path(file_path).name, details.strip() or exc)
+    except OSError as exc:
+        logger.warning("LibreOffice could not be started for %s: %s", Path(file_path).name, exc)
     return None
 
 
@@ -119,6 +125,7 @@ def _convert_via_ms_office_nt(file_path: str, out_ext: str) -> str | None:
     try {{
         $app = New-Object -ComObject {app_id}
         if ({str(hide_app).lower()}) {{ $app.Visible = $false }}
+        if ($app.PSObject.Properties['DisplayAlerts']) {{ $app.DisplayAlerts = 0 }}
         $source = {source}
         $destination = {destination}
         $document = {open_expression}
@@ -131,16 +138,25 @@ def _convert_via_ms_office_nt(file_path: str, out_ext: str) -> str | None:
     """
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
             capture_output=True,
+            text=True,
             check=True,
             timeout=120,
         )
         if temp_file.is_file():
             return str(temp_file)
-    except Exception as exc:
-        logger.debug("MS Office conversion via PowerShell failed: %s", exc)
+        logger.warning("Microsoft Office did not create the converted %s file for %s", out_ext, Path(file_path).name)
+        if result.stdout.strip() or result.stderr.strip():
+            logger.debug("Microsoft Office output: %s", (result.stdout + " " + result.stderr).strip())
+    except subprocess.CalledProcessError as exc:
+        details = (exc.stdout or "") + " " + (exc.stderr or "")
+        logger.warning("Microsoft Office failed to convert %s: %s", Path(file_path).name, details.strip() or exc)
+    except subprocess.TimeoutExpired:
+        logger.warning("Microsoft Office timed out while converting %s", Path(file_path).name)
+    except OSError as exc:
+        logger.warning("PowerShell could not start Microsoft Office conversion for %s: %s", Path(file_path).name, exc)
 
     return None
 
@@ -150,7 +166,21 @@ def _convert_legacy_office(file_path: str, out_ext: str) -> str | None:
         converted = _convert_via_ms_office_nt(file_path, out_ext)
         if converted:
             return converted
-    return _convert_via_soffice(file_path, out_ext)
+        logger.info(
+            "Microsoft Office conversion was unavailable or failed for %s; trying LibreOffice",
+            Path(file_path).name,
+        )
+
+    converted = _convert_via_soffice(file_path, out_ext)
+    if converted:
+        return converted
+
+    logger.error(
+        "Could not convert %s. Open it once in Microsoft Office to complete any first-run setup, "
+        "then retry, or install LibreOffice for headless conversion.",
+        Path(file_path).name,
+    )
+    return None
 
 
 def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str, str]:
@@ -447,7 +477,6 @@ def convert_doc(
     if converted:
         return convert_docx(converted, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
 
-    logger.error("Legacy .doc format requires LibreOffice or Microsoft Word to be installed for conversion. Tip: use modern .docx for native support.")
     return None, 0
 
 
@@ -469,7 +498,6 @@ def convert_xls(
     if converted:
         return convert_xlsx(converted, out_dir, progress_callback=progress_callback)
 
-    logger.error("Legacy .xls format requires LibreOffice or Microsoft Excel to be installed for conversion. Tip: use modern .xlsx for native support.")
     return None, 0
 
 
@@ -491,7 +519,6 @@ def convert_ppt(
     if converted:
         return convert_pptx(converted, out_dir, progress_callback=progress_callback)
 
-    logger.error("Legacy .ppt format requires LibreOffice or Microsoft PowerPoint to be installed for conversion. Tip: use modern .pptx for native support.")
     return None, 0
 
 
