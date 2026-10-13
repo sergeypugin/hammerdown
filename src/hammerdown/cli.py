@@ -727,14 +727,19 @@ def _select_files() -> Sequence[str]:
 
 
 
-def _expand_paths(paths: Sequence[str]) -> list[str]:
-    unique_files: list[str] = []
+def _expand_paths(paths: Sequence[str]) -> list[tuple[str, str | None]]:
+    targets: list[tuple[str, str | None]] = []
     seen_paths: set[Path] = set()
 
     for raw in paths:
         try:
             p = Path(normalize_path(raw)).resolve()
         except Exception:
+            targets.append((str(raw), "invalid path"))
+            continue
+
+        if not p.exists():
+            targets.append((str(raw), "file or directory not found"))
             continue
 
         if p.is_dir():
@@ -744,18 +749,19 @@ def _expand_paths(paths: Sequence[str]) -> list[str]:
                         continue
                     try:
                         file_path = (Path(root) / f).resolve()
-                        if file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
-                            if file_path not in seen_paths:
-                                seen_paths.add(file_path)
-                                unique_files.append(str(file_path))
-                    except Exception:
+                        if file_path.suffix.lower() in SUPPORTED_EXTENSIONS and file_path not in seen_paths:
+                            seen_paths.add(file_path)
+                            targets.append((str(file_path), None))
+                    except OSError:
                         continue
         elif p.is_file():
-            if p.suffix.lower() in SUPPORTED_EXTENSIONS:
-                if p not in seen_paths:
-                    seen_paths.add(p)
-                    unique_files.append(str(p))
-    return unique_files
+            if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                targets.append((str(p), "unsupported format"))
+            elif p not in seen_paths:
+                seen_paths.add(p)
+                targets.append((str(p), None))
+
+    return targets
 
 
 def _merge_converted_files(
@@ -843,12 +849,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not raw_files:
         return 0
 
-    files = _expand_paths(raw_files)
-    if not files:
+    targets = _expand_paths(raw_files)
+    if not targets:
         logger.info("No supported documents found to convert")
         return 0
 
-    files.sort()
+    targets.sort(key=lambda item: item[0].lower())
+    files = [path for path, error in targets if error is None]
+    ui_files = [path for path, _ in targets]
 
     use_ipc = args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
     options = {
@@ -880,22 +888,37 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     started_at = time.monotonic()
     results: list[bool] = []
-    batch_ui = BatchUI(files, quiet=args.quiet)
+    total_tokens = 0
+    batch_ui = BatchUI(ui_files, quiet=args.quiet)
 
     if batch_ui.is_tty:
         batch_ui.render()
 
     try:
-        for idx, f in enumerate(files):
+        for idx, (f, error) in enumerate(targets):
             f_path = Path(f)
+            if error:
+                batch_ui.fail_file(idx, error)
+                results.append(False)
+                continue
+
             estimate = get_conversion_estimate(f_path)
             batch_ui.start_file(idx, hint=estimate)
+            extension = f_path.suffix.lower()
+            output_path = f_path.parent / f"hm_{f_path.stem}_{extension.lstrip('.')}.md"
+            status_info = ""
+            if args.skip_existing and output_path.exists() and output_path != f_path:
+                status_info = f"skipped, existing output: {output_path.name}"
+            elif args.overwrite and extension in TEXT_EXTENSIONS:
+                status_info = "overwritten"
 
             def on_progress(current: int, total: int, unit: str = "pages") -> None:
                 batch_ui.update_progress(idx, current, total, unit)
 
             def on_complete(success: bool, dur: float, imgs: int, tokens: int) -> None:
-                batch_ui.complete_file(idx, success, format_duration(dur), imgs, tokens)
+                nonlocal total_tokens
+                total_tokens += tokens
+                batch_ui.complete_file(idx, success, format_duration(dur), imgs, tokens, status_info)
 
             res = convert_file(
                 f_path,
@@ -913,15 +936,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     failed_count = results.count(False)
     if args.merge and any(results):
-        _merge_converted_files(files, results, args.merge, overwrite_sources=args.overwrite)
+        successful_files = [f for (f, error), result in zip(targets, results) if error is None and result]
+        _merge_converted_files(successful_files, [True] * len(successful_files), args.merge, overwrite_sources=args.overwrite)
 
     if len(files) > 1 and not args.quiet:
         duration = time.monotonic() - started_at
         logger.info(
-            "Batch conversion finished in %s: %d succeeded, %d failed",
+            "Batch conversion finished in %s: %d succeeded, %d failed, ~%d total tokens",
             format_duration(duration),
-            len(files) - failed_count,
+            len(targets) - failed_count,
             failed_count,
+            total_tokens,
         )
 
     # Keep standalone and coordinator consoles open after conversion.

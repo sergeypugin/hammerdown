@@ -88,6 +88,8 @@ class BatchUI:
         self.current_idx: int = -1
         self._rendered = False
         self._progress_started_at = 0.0
+        self.errors: list[tuple[str, str]] = []
+        self._rendered_lines = 0
 
     def render(self) -> None:
         if self.quiet or not self.is_tty:
@@ -113,13 +115,15 @@ class BatchUI:
                 line = f"  {marker} {COLOR_DIM}{f.name}{COLOR_RESET}"
             lines.append(line)
         lines.append("")  # Blank line after file queue list
+        if self.errors:
+            lines.append("Errors:")
+            for file_name, reason in self.errors:
+                lines.append(f"  {COLOR_RED}{file_name} -- {reason}{COLOR_RESET}")
+            lines.append("")
 
-        # Move cursor up if we already rendered once
+        # Move over the exact number of lines from the previous render.
         if self._rendered:
-            # We move up by the number of lines we previously printed
-            # (header + empty line + N files + trailing empty line)
-            num_lines_to_move = len(self.files) + 3
-            sys.stdout.write(f"\033[{num_lines_to_move}A")
+            sys.stdout.write(f"\033[{self._rendered_lines}A")
         else:
             # First time rendering, add a newline to separate from previous prompt
             sys.stdout.write("\n")
@@ -132,6 +136,7 @@ class BatchUI:
         sys.stdout.write(output)
         sys.stdout.flush()
         self._rendered = True
+        self._rendered_lines = len(lines)
 
     def start_file(self, index: int, hint: str = "") -> None:
         self.current_idx = index
@@ -154,15 +159,34 @@ class BatchUI:
         if self.is_tty and time.monotonic() - self._progress_started_at >= PROGRESS_DISPLAY_DELAY:
             self.render()
 
-    def complete_file(self, index: int, success: bool, duration: str, images: int = 0, tokens: int = 0) -> None:
+    def fail_file(self, index: int, reason: str) -> None:
+        self.statuses[index] = "[!]"
+        self.details[index] = ""
+        self.errors.append((self.files[index].name, reason))
+        if self.is_tty:
+            self.render()
+        elif not self.quiet:
+            logger.error("%s -- %s", self.files[index].name, reason)
+
+    def complete_file(
+        self,
+        index: int,
+        success: bool,
+        duration: str,
+        images: int = 0,
+        tokens: int = 0,
+        info: str = "",
+    ) -> None:
         if success:
             self.statuses[index] = "[x]"
             token_info = f", ~{tokens} tokens" if tokens > 0 else ""
             img_info = f", {images} images" if images > 0 else ""
-            self.details[index] = f"({duration}{img_info}{token_info})"
+            extra_info = f", {info}" if info else ""
+            self.details[index] = f"({duration}{img_info}{token_info}{extra_info})"
         else:
             self.statuses[index] = "[!]"
-            self.details[index] = "(failed)"
+            self.details[index] = ""
+            self.errors.append((self.files[index].name, info or "conversion failed"))
         if self.is_tty:
             self.render()
         elif not self.quiet:
@@ -172,9 +196,11 @@ class BatchUI:
                     details.append(f"{images} images")
                 if tokens > 0:
                     details.append(f"~{tokens} tokens")
+                if info:
+                    details.append(info)
                 logger.info("Completed %s (%s)", self.files[index].name, ", ".join(details))
             else:
-                logger.info("Failed to convert %s", self.files[index].name)
+                logger.error("Failed to convert %s%s", self.files[index].name, f" -- {info}" if info else "")
 
 
 def format_progress_bar(current: int, total: int, unit: str = "pages", bar_length: int = 20) -> str:

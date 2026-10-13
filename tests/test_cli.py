@@ -69,6 +69,24 @@ def test_skip_existing_flag(tmp_path: Path):
     assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "line one\n"
 
 
+def test_skip_existing_and_overwrite_statuses(tmp_path: Path, caplog):
+    import logging
+
+    source = tmp_path / "notes.txt"
+    source.write_text("initial\n", encoding="utf-8")
+    assert hammerdown.cli.main([str(source)]) == 0
+    source.write_text("updated\n", encoding="utf-8")
+
+    with caplog.at_level(logging.INFO, logger="hammerdown"):
+        assert hammerdown.cli.main(["--skip-existing", str(source)]) == 0
+    assert "skipped" in caplog.text.lower()
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="hammerdown"):
+        assert hammerdown.cli.main(["--overwrite", str(source)]) == 0
+    assert "overwritten" in caplog.text.lower()
+
+
 def test_quiet_flag_suppresses_logs(tmp_path: Path, caplog):
     import logging
 
@@ -91,6 +109,21 @@ def test_unsupported_file_returns_failure(tmp_path: Path):
 
 def test_missing_file_returns_failure(tmp_path: Path):
     assert hammerdown.cli.main([str(tmp_path / "missing.pdf")]) == 1
+
+
+def test_mixed_existing_and_missing_files_continue(tmp_path: Path, caplog):
+    import logging
+
+    source = tmp_path / "valid.txt"
+    source.write_text("valid content\n", encoding="utf-8")
+    missing = tmp_path / "missing.txt"
+
+    with caplog.at_level(logging.INFO, logger="hammerdown"):
+        assert hammerdown.cli.main([str(missing), str(source)]) == 1
+
+    assert (tmp_path / "hm_valid_txt.md").is_file()
+    assert "missing.txt" in caplog.text
+    assert "file or directory not found" in caplog.text
 
 
 def test_version_option(capsys):

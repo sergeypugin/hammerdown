@@ -155,13 +155,18 @@ def convert_file(
 
     if skip_existing and out_md.exists() and out_md != source:
         logger.info("Skipping %s (output already exists: %s)", source.name, out_md.name)
+        if completion_callback:
+            completion_callback(True, 0.0, 0, 0)
         return True
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
     converter = CONVERTERS.get(extension)
     if converter is None:
-        logger.error("Unsupported format: %s", extension or "(no extension)")
+        reason = f"unsupported format: {extension or '(no extension)'}"
+        logger.error("%s", reason)
+        if completion_callback:
+            completion_callback(False, 0.0, 0, 0)
         return False
 
     est_hint = ""
