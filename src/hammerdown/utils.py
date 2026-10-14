@@ -101,8 +101,14 @@ class BatchUI:
         from rich.console import Console
         from rich.live import Live
 
-        self._console = Console()
-        self._live = Live(self._renderable(), console=self._console, refresh_per_second=8, transient=False)
+        self._console = Console(force_terminal=True)
+        self._live = Live(
+            self._renderable(),
+            console=self._console,
+            refresh_per_second=8,
+            transient=False,
+            vertical_overflow="crop",
+        )
         self._live.start()
 
     def stop(self) -> None:
@@ -158,14 +164,23 @@ class BatchUI:
                 queue.add_row(Text(marker, style=style), Text(self.files[index].name, style=style))
 
         sections = [Panel(Group(summary, queue), box=box.ROUNDED, padding=(0, 1))]
-        if self.errors:
-            recent = self.errors[-2:]
-            error_table = Table.grid(expand=True, padding=(0, 1))
-            error_table.add_column(style="red", no_wrap=True)
-            error_table.add_column(ratio=1)
-            for file_name, reason in recent:
+        recent = self.errors[-2:]
+        error_table = Table.grid(expand=True, padding=(0, 1))
+        error_table.add_column(style="red", no_wrap=True)
+        error_table.add_column(ratio=1)
+        for index in range(2):
+            if index < len(recent):
+                file_name, reason = recent[index]
                 error_table.add_row(f"[!] {file_name}", reason)
-            sections.append(Panel(error_table, title=f"Error summary (last {len(recent)} of {failed})", border_style="red"))
+            else:
+                error_table.add_row("", "")
+        sections.append(
+            Panel(
+                error_table,
+                title=f"Error summary (last {len(recent)} of {failed})",
+                border_style="red" if failed else "dim",
+            )
+        )
         return Group(*sections)
 
     def start_file(self, index: int, hint: str = "") -> None:
