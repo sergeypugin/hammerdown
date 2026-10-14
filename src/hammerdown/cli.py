@@ -911,6 +911,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 status_info = f"skipped, existing output: {output_path.name}"
             elif args.overwrite and extension in TEXT_EXTENSIONS:
                 status_info = "overwritten"
+            elif args.overwrite:
+                status_info = "overwrite ignored (binary file)"
 
             def on_progress(current: int, total: int, unit: str = "pages") -> None:
                 batch_ui.update_progress(idx, current, total, unit)
@@ -964,9 +966,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             if batch_ui.errors:
                 input("\nPress Enter to see error list... ")
-                print("\nError summary")
-                for file_name, reason in batch_ui.errors:
-                    print(f"\n[!] {file_name}\n    {reason}")
+                batch_ui.print_error_list()
             input("\nPress Enter to exit... ")
         except (EOFError, KeyboardInterrupt):
             pass

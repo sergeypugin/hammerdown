@@ -73,6 +73,27 @@ def test_batch_ui_error_panel_keeps_fixed_height(tmp_path: Path):
     assert len(before) == len(after)
 
 
+def test_batch_ui_final_error_list_uses_red_panel(tmp_path: Path):
+    from io import StringIO
+
+    from rich.console import Console
+
+    from hammerdown.utils import BATCH_UI_WIDTH, BatchUI
+
+    ui = BatchUI([str(tmp_path / "broken.doc")])
+    ui.errors.append(("broken.doc", "conversion failed: " + "details " * 30))
+    output_stream = StringIO()
+    ui._console = Console(file=output_stream, width=BATCH_UI_WIDTH, force_terminal=True, color_system="standard")
+
+    ui.print_error_list()
+
+    output = output_stream.getvalue()
+    assert "Error list (1)" in output
+    assert "broken.doc" in output
+    assert "conversion failed:" in output
+    assert "\u001b[31m" in output
+
+
 def test_batch_ui_completion_logs_token_count(tmp_path: Path, caplog):
     import logging
     from hammerdown.utils import BatchUI

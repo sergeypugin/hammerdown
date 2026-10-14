@@ -118,6 +118,34 @@ class BatchUI:
         if self._live is not None:
             self._live.stop()
             self._live = None
+            if self._console is not None:
+                self._console.print(self._renderable())
+
+    def print_error_list(self) -> None:
+        if not self.errors:
+            return
+        from rich import box
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.console import Console
+
+        if self._console is None:
+            self._console = Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+
+        error_table = Table.grid(expand=True, padding=(0, 1))
+        error_table.add_column(style="bold red")
+        error_table.add_column(ratio=1, style="red")
+        for file_name, reason in self.errors:
+            error_table.add_row(f"[!] {file_name}", reason)
+        self._console.print(
+            Panel(
+                error_table,
+                title=f"Error list ({len(self.errors)})",
+                border_style="red",
+                box=box.ROUNDED,
+                width=BATCH_UI_WIDTH,
+            )
+        )
 
     def render(self) -> None:
         if self._live is not None:

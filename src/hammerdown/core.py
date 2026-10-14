@@ -150,7 +150,7 @@ def convert_file(
     if overwrite:
         if is_text:
             out_md = source
-        else:
+        elif not batch_mode:
             logger.warning("Overwrite flag ignored for binary format: %s", extension)
 
     if skip_existing and out_md.exists() and out_md != source:
