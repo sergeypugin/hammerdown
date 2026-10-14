@@ -263,6 +263,7 @@ def run_batch(args: argparse.Namespace) -> int:
             results.append(res)
     finally:
         batch_ui.stop()
+        batch_ui.print_final()
         if coordinator:
             coordinator.stop()
 
@@ -302,7 +303,7 @@ def run_batch(args: argparse.Namespace) -> int:
     if should_wait:
         try:
             if batch_ui.errors:
-                choice = input("\nType e and press Enter to extend the error list, or press Enter to exit: ")
+                choice = input("\nType `e` and press Enter to extend the error list, or press Enter to exit: ")
                 if choice.strip().lower() == "e":
                     batch_ui.print_error_list()
                     input("\nPress Enter to exit... ")

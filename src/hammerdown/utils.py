@@ -19,7 +19,11 @@ COLOR_BOLD = "\033[1m"
 PROGRESS_DISPLAY_DELAY = 0.5
 BATCH_UI_WIDTH = 80
 BATCH_UI_VISIBLE_FILES = 5
-BATCH_UI_VISIBLE_ERRORS = 3
+PROCESS_RUNNING_COLOR = "#ec7c39"
+PROCESS_COMPLETE_COLOR = "#729c1f"
+SUMMARY_COLOR = "#58bdf9"
+QUEUE_MARKER_WIDTH = 4
+QUEUE_DETAILS_WIDTH = 35
 
 
 def enable_vt_mode() -> bool:
@@ -130,7 +134,7 @@ class BatchUI:
             console=self._console,
             screen=False,
             refresh_per_second=8,
-            transient=False,
+            transient=True,
             vertical_overflow="crop",
         )
         self._live.start()
@@ -160,55 +164,49 @@ class BatchUI:
         self._console.print(
             Panel(
                 error_table,
-                title=Text(f"Error list ({len(self.errors)})", style="white"),
+                title=Text(f"Error list ({len(self.errors)})", style="red"),
                 border_style="red",
                 box=box.ROUNDED,
                 width=BATCH_UI_WIDTH,
             )
         )
 
+    def print_final(self) -> None:
+        if not self.can_redraw:
+            return
+        if self._console is None:
+            from rich.console import Console
+
+            self._console = Console(width=BATCH_UI_WIDTH, force_terminal=True)
+        self._console.print(self._process_renderable(final=True))
+        self._console.print()
+        self._console.print(self._summary_renderable())
+
     def render(self) -> None:
         if self._live is not None:
             self._live.update(_LiveBatchRenderable(self), refresh=True)
 
     def _renderable(self):
+        return self._process_renderable()
+
+    def _process_renderable(self, final: bool = False):
         from rich import box
-        from rich.console import Group
         from rich.panel import Panel
-        from rich.progress_bar import ProgressBar
         from rich.table import Table
         from rich.text import Text
 
         total = len(self.files)
         completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
-        succeeded = sum(status == "[x]" for status in self.statuses)
-        failed = len(self.errors)
         percent = completed / total if total else 0
-
-        summary = Table.grid(expand=True, padding=(0, 1))
-        summary.add_column(ratio=1, no_wrap=True)
-        summary.add_row(f"Processing {total} files    {percent:.0%}    {completed} / {total}")
-        summary.add_row(ProgressBar(total=100, completed=percent * 100, pulse=False))
-
-        elapsed = time.monotonic() - self._batch_started_at if self._batch_started_at is not None else 0.0
-        estimated_total = sum(value for value in self.estimates if value is not None)
-        estimated_label = f"Estimated total: ~{format_duration(estimated_total)}" if estimated_total else ""
-        timing = Table.grid(expand=True, padding=(0, 1))
-        timing.add_column(ratio=1, no_wrap=True)
-        timing.add_column(ratio=1, no_wrap=True)
-        timing.add_row(f"Time passed: {format_duration(elapsed)}", estimated_label)
-
-        stats = Table.grid(expand=True, padding=(0, 1))
-        stats.add_column(ratio=1, no_wrap=True)
-        stats.add_column(ratio=1, no_wrap=True)
-        stats.add_column(ratio=1, no_wrap=True)
-        stats.add_row(f"Success: {succeeded}", f"Skipped: {self.skipped_count}", f"Errors: {failed}")
-        stats.add_row(f"Tokens: ~{self.total_tokens:_}", f"Overwritten: {self.overwritten_count}", "")
+        title = Text(
+            f"Processing {total} files    {percent:.0%} ({completed} / {total})",
+            style=PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR,
+        )
 
         queue = Table.grid(expand=True, padding=(0, 1))
-        queue.add_column(width=2, no_wrap=True)
-        queue.add_column(ratio=1, max_width=BATCH_UI_WIDTH - 26, overflow="ellipsis", no_wrap=True)
-        queue.add_column(width=20, overflow="ellipsis", no_wrap=True, justify="right", style="dim")
+        queue.add_column(width=QUEUE_MARKER_WIDTH, no_wrap=True)
+        queue.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
+        queue.add_column(width=QUEUE_DETAILS_WIDTH, overflow="ellipsis", no_wrap=True, justify="right")
         if self.current_idx < 0:
             start = 0
         else:
@@ -217,10 +215,10 @@ class BatchUI:
         for index in range(start, end):
             state = self.statuses[index]
             marker, style = {
-                "[x]": ("✓", "green"),
-                "[!]": ("!", "red"),
-                "[>]": (">", "dark_orange"),
-                "[ ]": (" ", "dim"),
+                "[x]": ("[✓]", "green"),
+                "[!]": ("[!]", "red"),
+                "[>]": ("[>]", "dark_orange"),
+                "[ ]": ("[ ]", "dim"),
             }[state]
             if state == "[ ]":
                 detail = self._estimate_label(index)
@@ -233,33 +231,49 @@ class BatchUI:
             else:
                 detail = self.details[index]
             queue.add_row(
-                Text(marker, style=style),
+                Text(marker, style=style, no_wrap=True),
                 Text(self.files[index].name, style=style, no_wrap=True, overflow="ellipsis"),
                 Text(detail, style="dim" if state == "[ ]" else style, no_wrap=True, overflow="ellipsis"),
             )
         for _ in range(BATCH_UI_VISIBLE_FILES - (end - start)):
             queue.add_row("", "", "")
 
-        sections = [Panel(Group(summary, timing, stats, queue), box=box.ROUNDED, padding=(0, 1), width=BATCH_UI_WIDTH)]
-        recent = self.errors[-BATCH_UI_VISIBLE_ERRORS:]
-        error_table = Table.grid(expand=True, padding=(0, 1))
-        error_table.add_column(style="white", no_wrap=True, overflow="ellipsis")
-        error_table.add_column(ratio=1, style="white", no_wrap=True, overflow="ellipsis")
-        for index in range(BATCH_UI_VISIBLE_ERRORS):
-            if index < len(recent):
-                file_name, reason = recent[index]
-                error_table.add_row(f"[!] {file_name}", reason)
-            else:
-                error_table.add_row("", "")
-        sections.append(
-            Panel(
-                error_table,
-                title=f"Error summary (last {len(recent)} of {failed})",
-                border_style="red" if failed else "dim",
-                width=BATCH_UI_WIDTH,
-            )
+        border_style = PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR
+        return Panel(
+            queue,
+            title=title,
+            title_align="center",
+            border_style=border_style,
+            box=box.ROUNDED,
+            width=BATCH_UI_WIDTH,
         )
-        return Group(*sections)
+
+    def _summary_renderable(self):
+        from rich import box
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        elapsed = time.monotonic() - self._batch_started_at if self._batch_started_at is not None else 0.0
+        estimated_total = sum(value for value in self.estimates if value is not None)
+        timing = Table.grid(expand=True, padding=(0, 1))
+        timing.add_column(width=28, no_wrap=True)
+        timing.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
+        timing.add_row(
+            f"Time passed: {format_duration(elapsed)}",
+            f"Estimated total: ~{format_duration(estimated_total)}" if estimated_total else "",
+        )
+        timing.add_row(f"Tokens: ~{self.total_tokens:_}", f"Overwritten: {self.overwritten_count}")
+        if self.skipped_count:
+            timing.add_row(f"Skipped: {self.skipped_count}", "")
+        return Panel(
+            timing,
+            title=Text("Summary", style=SUMMARY_COLOR),
+            title_align="center",
+            border_style=SUMMARY_COLOR,
+            box=box.ROUNDED,
+            width=BATCH_UI_WIDTH,
+        )
 
     def _estimate_label(self, index: int) -> str:
         estimate = self.estimates[index]
