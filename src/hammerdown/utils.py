@@ -76,12 +76,31 @@ def format_duration(seconds: float) -> str:
     return f"{hours}h{rem_minutes}m" if rem_minutes else f"{hours}h"
 
 
+class _LiveBatchRenderable:
+    def __init__(self, batch_ui: BatchUI):
+        self.batch_ui = batch_ui
+
+    def __rich_console__(self, console, options):
+        yield self.batch_ui._renderable()
+
+
 class BatchUI:
     """Helper for managing an in-place updating batch conversion queue."""
 
-    def __init__(self, file_paths: list[str], quiet: bool = False):
+    def __init__(
+        self,
+        file_paths: list[str],
+        quiet: bool = False,
+        estimates: list[float | None] | None = None,
+    ):
         self.files = [Path(p) for p in file_paths]
         self.quiet = quiet
+        self.estimates = estimates or [None] * len(self.files)
+        if len(self.estimates) != len(self.files):
+            raise ValueError("estimates must match file_paths")
+        self._file_started_at: list[float | None] = [None] * len(self.files)
+        self._batch_started_at: float | None = None
+        self._progress_details: list[str] = [""] * len(self.files)
         self.is_tty = sys.stdout.isatty() and not quiet
         self.can_redraw = self.is_tty
         if self.is_tty:
@@ -104,8 +123,9 @@ class BatchUI:
         from rich.live import Live
 
         self._console = Console(width=BATCH_UI_WIDTH, force_terminal=True)
+        self._batch_started_at = self._batch_started_at or time.monotonic()
         self._live = Live(
-            self._renderable(),
+            _LiveBatchRenderable(self),
             console=self._console,
             screen=True,
             refresh_per_second=8,
@@ -149,7 +169,7 @@ class BatchUI:
 
     def render(self) -> None:
         if self._live is not None:
-            self._live.update(self._renderable(), refresh=True)
+            self._live.update(_LiveBatchRenderable(self), refresh=True)
 
     def _renderable(self):
         from rich import box
@@ -169,12 +189,19 @@ class BatchUI:
         summary.add_column(ratio=1)
         summary.add_row(f"Processing {total} files    {percent:.0%}    {completed} / {total}")
         summary.add_row(ProgressBar(total=100, completed=percent * 100, pulse=False))
+        elapsed = time.monotonic() - self._batch_started_at if self._batch_started_at is not None else 0.0
+        estimated_total = sum(value for value in self.estimates if value is not None)
+        elapsed_summary = f"Elapsed: {format_duration(elapsed)}"
+        if estimated_total:
+            elapsed_summary += f"    Estimated total: ~{format_duration(estimated_total)}"
+        summary.add_row(elapsed_summary)
         summary.add_row(f"Success: {succeeded}    Skipped: {self.skipped_count}    Errors: {failed}")
         summary.add_row(f"Tokens: ~{self.total_tokens}    Overwritten: {self.overwritten_count}")
 
         queue = Table.grid(expand=True, padding=(0, 1))
         queue.add_column(width=2, no_wrap=True)
         queue.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
+        queue.add_column(width=20, overflow="ellipsis", no_wrap=True, justify="right", style="dim")
         if self.current_idx < 0:
             start = 0
         else:
@@ -188,9 +215,23 @@ class BatchUI:
                 "[>]": (">", "dark_orange"),
                 "[ ]": (" ", "dim"),
             }[state]
-            queue.add_row(Text(marker, style=style), Text(self.files[index].name, style=style, no_wrap=True))
+            if state == "[ ]":
+                detail = self._estimate_label(index)
+            elif state == "[>]":
+                started_at = self._file_started_at[index]
+                elapsed_file = time.monotonic() - started_at if started_at is not None else 0.0
+                detail = " ".join(
+                    value for value in (self._progress_details[index], format_duration(elapsed_file)) if value
+                )
+            else:
+                detail = self.details[index]
+            queue.add_row(
+                Text(marker, style=style),
+                Text(self.files[index].name, style=style, no_wrap=True),
+                Text(detail, style="dim" if state == "[ ]" else style, no_wrap=True),
+            )
         for _ in range(BATCH_UI_VISIBLE_FILES - (end - start)):
-            queue.add_row("", "")
+            queue.add_row("", "", "")
 
         sections = [Panel(Group(summary, queue), box=box.ROUNDED, padding=(0, 1), width=BATCH_UI_WIDTH)]
         recent = self.errors[-2:]
@@ -213,9 +254,16 @@ class BatchUI:
         )
         return Group(*sections)
 
+    def _estimate_label(self, index: int) -> str:
+        estimate = self.estimates[index]
+        return f"~{format_duration(estimate)}" if estimate is not None else ""
+
     def start_file(self, index: int, hint: str = "") -> None:
         self.current_idx = index
         self._progress_started_at = time.monotonic()
+        self._batch_started_at = self._batch_started_at or self._progress_started_at
+        self._file_started_at[index] = self._progress_started_at
+        self._progress_details[index] = ""
         self.statuses[index] = "[>]"
         self.details[index] = hint
         if self.can_redraw:
@@ -227,10 +275,10 @@ class BatchUI:
         if total <= 0:
             return
         pct = int((current / total) * 100)
-        bar_len = 10
+        bar_len = 6
         filled = int(round(bar_len * current / float(total)))
         bar = "█" * filled + "░" * (bar_len - filled)
-        self.details[index] = f"[{bar}] {pct}% ({current}/{total} {unit})"
+        self._progress_details[index] = f"{bar} {pct}%"
         if self.can_redraw and time.monotonic() - self._progress_started_at >= PROGRESS_DISPLAY_DELAY:
             self.render()
 
@@ -266,7 +314,7 @@ class BatchUI:
             self.details[index] = f"({duration}{img_info}{token_info}{extra_info})"
         else:
             self.statuses[index] = "[!]"
-            self.details[index] = ""
+            self.details[index] = duration
             self.errors.append((self.files[index].name, info or "conversion failed"))
         if self.can_redraw:
             self.render()

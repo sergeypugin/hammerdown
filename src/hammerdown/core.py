@@ -64,62 +64,82 @@ def to_markdown(
         return converter(str(source), target_dir_path)
 
 
-def get_conversion_estimate(file_path: Path) -> str:
-    """Calculate an estimated conversion duration hint."""
+def get_conversion_estimate_seconds(file_path: Path) -> float | None:
+    """Estimate conversion time from lightweight document metadata."""
     extension = file_path.suffix.lower()
     if extension in {".pdf", ".epub", ".mobi", ".fb2", ".xps"}:
         try:
             import pymupdf
             with pymupdf.open(str(file_path)) as doc:
-                page_count = len(doc)
-            est_seconds = max(1.0, page_count * 0.9)
-            return f"(est. ~{format_duration(est_seconds)})"
+                return max(1.0, len(doc) * 0.9)
         except Exception:
-            return ""
-    elif extension == ".docx":
+            return None
+    if extension == ".docx":
         try:
-            import zipfile
             import re
-            with zipfile.ZipFile(str(file_path)) as z:
+            import zipfile
+
+            with zipfile.ZipFile(str(file_path)) as archive:
                 try:
-                    app_xml = z.read("docProps/app.xml").decode("utf-8")
+                    app_xml = archive.read("docProps/app.xml").decode("utf-8")
                     match = re.search(r"<Pages>(\d+)</Pages>", app_xml)
                     if match:
-                        page_count = int(match.group(1))
-                        est_seconds = max(1.0, page_count * 0.4)
-                        return f"(est. ~{format_duration(est_seconds)})"
+                        return max(1.0, int(match.group(1)) * 0.4)
+                    document_size = archive.getinfo("word/document.xml").file_size
+                    return max(1.0, document_size / 50000)
                 except Exception:
                     pass
         except Exception:
-            pass
-    elif extension == ".pptx":
+            return None
+        return None
+    if extension == ".pptx":
         try:
             import zipfile
-            import re
-            with zipfile.ZipFile(str(file_path)) as z:
-                slides = [name for name in z.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml")]
-                slide_count = len(slides)
-                est_seconds = max(1.0, slide_count * 0.2)
-                return f"(est. ~{format_duration(est_seconds)})"
+
+            with zipfile.ZipFile(str(file_path)) as archive:
+                slides = [
+                    name for name in archive.namelist()
+                    if name.startswith("ppt/slides/slide") and name.endswith(".xml")
+                ]
+                return max(1.0, len(slides) * 0.2)
         except Exception:
-            pass
-    elif extension == ".xlsx":
+            return None
+    if extension == ".odt":
         try:
             import zipfile
-            with zipfile.ZipFile(str(file_path)) as z:
-                sheets = [name for name in z.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")]
-                sheet_count = len(sheets)
-                est_seconds = max(1.0, sheet_count * 0.5)
-                return f"(est. ~{format_duration(est_seconds)})"
+
+            with zipfile.ZipFile(str(file_path)) as archive:
+                content_size = archive.getinfo("content.xml").file_size
+                return max(1.0, content_size / 50000)
         except Exception:
-            pass
-    elif extension in {".doc", ".xls", ".ppt"}:
-        size_mb = file_path.stat().st_size / (1024 * 1024)
-        est_seconds = 10.0 + (size_mb * 2.0)
-        return f"(est. ~{format_duration(est_seconds)})"
-    elif extension in {".txt", ".md", ".log", ".csv"}:
-        return "(fast conversion)"
-    return ""
+            return None
+    if extension == ".xlsx":
+        try:
+            import zipfile
+
+            with zipfile.ZipFile(str(file_path)) as archive:
+                sheets = [
+                    name for name in archive.namelist()
+                    if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
+                ]
+                return max(1.0, len(sheets) * 0.5)
+        except Exception:
+            return None
+    if extension in {".doc", ".xls", ".ppt"}:
+        try:
+            size_mb = file_path.stat().st_size / (1024 * 1024)
+            return 10.0 + size_mb * 2.0
+        except OSError:
+            return None
+    if extension in {".txt", ".md", ".log", ".csv"}:
+        return 0.5
+    return None
+
+
+def get_conversion_estimate(file_path: Path) -> str:
+    """Return a display hint for the estimated conversion duration."""
+    estimate = get_conversion_estimate_seconds(file_path)
+    return f"~{format_duration(estimate)}" if estimate is not None else ""
 
 
 def convert_file(

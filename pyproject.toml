@@ -24,7 +24,12 @@ hammerdown = "hammerdown.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["hammerdown", "hammerdown.parsers"]
+packages = [
+    "hammerdown",
+    "hammerdown.parsers",
+    "hammerdown.integrations",
+    "hammerdown.parsers.office",
+]
 
 [tool.setuptools.package-data]
 hammerdown = ["icon.ico", "icon.png", "parsers/symbols.json"]
