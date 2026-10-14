@@ -7,3 +7,5 @@ onnxruntime
 tiktoken
 rich
 pytest-xdist
+pytest
+pyright

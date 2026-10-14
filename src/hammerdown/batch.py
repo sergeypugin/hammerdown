@@ -16,9 +16,13 @@ from hammerdown.utils import BatchUI, format_duration, normalize_path
 logger = logging.getLogger("hammerdown")
 
 
-def _expand_paths(paths: Sequence[str]) -> list[tuple[str, str | None]]:
+def _expand_paths(
+    paths: Sequence[str],
+    excluded_dir: Path | None = None,
+) -> list[tuple[str, str | None]]:
     targets: list[tuple[str, str | None]] = []
     seen_paths: set[Path] = set()
+    excluded_dir = excluded_dir.resolve() if excluded_dir is not None else None
 
     for raw in paths:
         try:
@@ -32,7 +36,12 @@ def _expand_paths(paths: Sequence[str]) -> list[tuple[str, str | None]]:
             continue
 
         if p.is_dir():
-            for root, _, filenames in os.walk(p):
+            for root, dirnames, filenames in os.walk(p):
+                if excluded_dir is not None:
+                    dirnames[:] = [
+                        name for name in dirnames
+                        if not (Path(root) / name).resolve().is_relative_to(excluded_dir)
+                    ]
                 for f in sorted(filenames):
                     if f.startswith("~$") or f.startswith("."):
                         continue
@@ -58,16 +67,18 @@ def _merge_converted_files(
     results: Sequence[bool],
     merge_target: str,
     overwrite_sources: bool = False,
-) -> None:
+    output_paths: Sequence[Path] | None = None,
+    skip_existing: bool = False,
+) -> bool:
     merged_sections: list[str] = []
-    for file_path, succeeded in zip(files, results):
+    for index, (file_path, succeeded) in enumerate(zip(files, results)):
         if not succeeded:
             continue
         source = Path(normalize_path(file_path))
         stem = source.stem
         ext_clean = source.suffix.lower().lstrip(".")
         out_md_name = f"hm_{stem}_{ext_clean}.md" if ext_clean else f"hm_{stem}.md"
-        out_md = source.parent / out_md_name
+        out_md = output_paths[index] if output_paths is not None else source.parent / out_md_name
         if overwrite_sources and source.suffix.lower() in TEXT_EXTENSIONS:
             out_md = source
         if out_md.is_file():
@@ -75,11 +86,18 @@ def _merge_converted_files(
             section = f"# {source.name}\n\n{content}" if content else f"# {source.name}"
             merged_sections.append(section)
 
-    if merged_sections:
-        dest = Path(normalize_path(merge_target))
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text("\n\n".join(merged_sections) + "\n", encoding="utf-8", newline="\n")
-        logger.info("Merged %d documents into %s", len(merged_sections), dest.name)
+    if not merged_sections:
+        return False
+
+    dest = Path(normalize_path(merge_target))
+    if skip_existing and dest.exists():
+        logger.info("Skipping merge (output already exists: %s)", dest)
+        return True
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("\n\n".join(merged_sections) + "\n", encoding="utf-8", newline="\n")
+    logger.info("Merged %d documents into %s", len(merged_sections), dest.name)
+    return True
 
 
 def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool:
@@ -96,18 +114,72 @@ def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool
     )
 
 
+def _output_paths(
+    raw_files: Sequence[str],
+    targets: Sequence[tuple[str, str | None]],
+    output_root: Path,
+) -> list[Path]:
+    roots: list[Path] = []
+    for raw in raw_files:
+        try:
+            path = Path(normalize_path(raw)).resolve()
+        except (OSError, ValueError):
+            continue
+        if path.is_dir():
+            roots.append(path)
+
+    output_paths: list[Path] = []
+    for path, _ in targets:
+        source = Path(path).resolve()
+        matching_roots = [root for root in roots if source.is_relative_to(root)]
+        if matching_roots:
+            relative = source.relative_to(max(matching_roots, key=lambda root: len(root.parts)))
+        else:
+            relative = Path(source.name)
+        ext_clean = source.suffix.lower().lstrip(".")
+        output_name = f"hm_{source.stem}_{ext_clean}.md" if ext_clean else f"hm_{source.stem}.md"
+        output_paths.append(output_root / relative.parent / output_name)
+
+    collisions: dict[Path, list[Path]] = {}
+    for (source, error), output in zip(targets, output_paths):
+        if error is None:
+            collisions.setdefault(output, []).append(Path(source))
+    duplicates = {output: sources for output, sources in collisions.items() if len(sources) > 1}
+    if duplicates:
+        details = "; ".join(
+            f"{output}: {', '.join(str(source) for source in sources)}"
+            for output, sources in duplicates.items()
+        )
+        raise ValueError(f"output filename collision: {details}")
+    return output_paths
+
+
 def run_batch(args: argparse.Namespace) -> int:
     raw_files = args.files
     if not raw_files:
         logger.info("No supported documents found to convert")
         return 0
 
-    targets = _expand_paths(raw_files)
+    output_dir = getattr(args, "output_dir", None)
+    output_root = Path(output_dir).resolve() if output_dir else None
+    if output_root is not None and output_root.exists() and not output_root.is_dir():
+        logger.error("output directory path is not a directory: %s", output_root)
+        return 1
+    targets = _expand_paths(raw_files, excluded_dir=output_root)
     if not targets:
         logger.info("No supported documents found to convert")
         return 0
 
     targets.sort(key=lambda item: item[0].lower())
+    try:
+        output_paths = (
+            _output_paths(raw_files, targets, output_root)
+            if output_root is not None
+            else [Path(path).parent / f"hm_{Path(path).stem}_{Path(path).suffix.lower().lstrip('.')}.md" for path, _ in targets]
+        )
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 1
     files = [path for path, error in targets if error is None]
     ui_files = [path for path, _ in targets]
 
@@ -161,7 +233,7 @@ def run_batch(args: argparse.Namespace) -> int:
             hint = f"~{format_duration(estimate)}" if estimate is not None else ""
             batch_ui.start_file(idx, hint=hint)
             extension = f_path.suffix.lower()
-            output_path = f_path.parent / f"hm_{f_path.stem}_{extension.lstrip('.')}.md"
+            output_path = output_paths[idx]
             status_info = ""
             if args.skip_existing and output_path.exists() and output_path != f_path:
                 status_info = f"skipped, existing output: {output_path.name}"
@@ -186,6 +258,7 @@ def run_batch(args: argparse.Namespace) -> int:
                 progress_callback=on_progress,
                 completion_callback=on_complete,
                 batch_mode=True,
+                target_dir=output_path.parent if output_root is not None else None,
             )
             results.append(res)
     finally:
@@ -195,17 +268,26 @@ def run_batch(args: argparse.Namespace) -> int:
 
     failed_count = results.count(False)
     if args.merge and any(results):
-        successful_files = [f for (f, error), result in zip(targets, results) if error is None and result]
-        _merge_converted_files(successful_files, [True] * len(successful_files), args.merge, overwrite_sources=args.overwrite)
+        successful_indexes = [index for index, ((_, error), result) in enumerate(zip(targets, results)) if error is None and result]
+        successful_files = [targets[index][0] for index in successful_indexes]
+        successful_outputs = [output_paths[index] for index in successful_indexes]
+        _merge_converted_files(
+            successful_files,
+            [True] * len(successful_files),
+            args.merge,
+            overwrite_sources=args.overwrite,
+            output_paths=successful_outputs,
+            skip_existing=args.skip_existing,
+        )
 
     if len(files) > 1 and not args.quiet:
         duration = time.monotonic() - started_at
         logger.info(
-            "Batch conversion finished in %s: %d succeeded, %d failed, ~%d total tokens",
+            "Batch conversion finished in %s: %d succeeded, %d failed, ~%s total tokens",
             format_duration(duration),
             len(targets) - failed_count,
             failed_count,
-            total_tokens,
+            f"{total_tokens:_}",
         )
 
     should_wait = (
@@ -220,9 +302,12 @@ def run_batch(args: argparse.Namespace) -> int:
     if should_wait:
         try:
             if batch_ui.errors:
-                input("\nPress Enter to see error list... ")
-                batch_ui.print_error_list()
-            input("\nPress Enter to exit... ")
+                choice = input("\nType e and press Enter to extend the error list, or press Enter to exit: ")
+                if choice.strip().lower() == "e":
+                    batch_ui.print_error_list()
+                    input("\nPress Enter to exit... ")
+            else:
+                input("\nPress Enter to exit... ")
         except (EOFError, KeyboardInterrupt):
             pass
 

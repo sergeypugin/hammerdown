@@ -32,6 +32,8 @@ def test_batch_ui_shows_cached_estimates_and_total(tmp_path: Path):
     assert "~1s" in output.getvalue()
     assert "~2s" in output.getvalue()
     assert "Estimated total: ~3s" in output.getvalue()
+    assert "Time passed:" in output.getvalue()
+    assert "Elapsed:" not in output.getvalue()
 
 
 def test_run_batch_precomputes_all_estimates_before_conversion(tmp_path: Path, monkeypatch):
@@ -100,3 +102,35 @@ def test_batch_ui_shows_active_progress(tmp_path: Path):
 
     assert "active.pdf" in output.getvalue()
     assert "75%" in output.getvalue()
+
+
+def test_batch_ui_error_summary_shows_last_three_errors(tmp_path: Path):
+    ui = BatchUI([str(tmp_path / f"file_{index}.txt") for index in range(5)], quiet=True)
+    for index in range(5):
+        ui.errors.append((f"file_{index}.txt", f"failure {index}"))
+
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._renderable())
+    rendered = output.getvalue()
+
+    assert "Error summary (last 3 of 5)" in rendered
+    assert "file_2.txt" in rendered
+    assert "file_3.txt" in rendered
+    assert "file_4.txt" in rendered
+    summary_start = rendered.index("Error summary")
+    summary = rendered[summary_start:]
+    assert "file_1.txt" not in summary
+
+
+def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
+    filename = "document_" + "x" * 160 + ".txt"
+    ui = BatchUI([str(tmp_path / filename)], quiet=True)
+    ui.total_tokens = 1234567
+    ui.start_file(0)
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._renderable())
+
+    rendered = output.getvalue()
+    assert "Tokens: ~1_234_567" in rendered
+    assert "…" in rendered
+    assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH

@@ -45,14 +45,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     action.add_argument("--install", action="store_true", help="Install the file-manager integration")
     action.add_argument("--uninstall", action="store_true", help="Remove the file-manager integration")
     parser.add_argument("--update", action="store_true", help="Update hammerdown to the latest version")
-    parser.add_argument("-i", "--in-place", "--in_place", action="store_true", help="Save output Markdown and images in the same directory as the input file")
-    parser.add_argument("-w", "--overwrite", action="store_true", help="Overwrite input text file in-place instead of creating a copy")
-    parser.add_argument("-s", "--skip-existing", "--skip_existing", action="store_true", help="Skip conversion if target markdown file already exists")
+    parser.add_argument("-i", "--in-place", "--in_place", action="store_true", help="Deprecated compatibility flag; output already defaults beside each source")
+    parser.add_argument(
+        "-w",
+        "--overwrite",
+        action="store_true",
+        help="Overwrite plain-text source files in-place instead of creating a copy",
+    )
+    existing_output = parser.add_mutually_exclusive_group()
+    existing_output.add_argument("-f", "--force", action="store_true", help="Compatibility flag; output files are overwritten by default")
+    existing_output.add_argument("-s", "--skip-existing", "--skip_existing", action="store_true", help="Skip conversion if target Markdown file already exists")
+    parser.add_argument("-o", "--output-dir", action="append", metavar="DIR", help="Save Markdown and extracted images under DIR")
     parser.add_argument("-m", "--merge", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress routine conversion messages")
     parser.add_argument("--coordinator", action="store_true", help="Enable single-instance coordinator mode for batch invocation")
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(argv)
+    output_dirs = {os.path.normcase(os.path.abspath(path)) for path in args.output_dir or []}
+    if len(output_dirs) > 1:
+        parser.error("-o/--output-dir may be repeated only with the same directory")
+    args.output_dir = next(iter(output_dirs), None)
+    if args.output_dir and args.in_place:
+        parser.error("-i/--in-place cannot be combined with -o/--output-dir")
+    if args.output_dir and args.overwrite:
+        parser.error("-w/--overwrite cannot be combined with -o/--output-dir")
+    if args.overwrite and args.skip_existing:
+        parser.error("-w/--overwrite cannot be combined with -s/--skip-existing")
+    if args.output_dir and (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"):
+        parser.error("-o/--output-dir cannot be used in coordinator mode")
 
     if not logger.handlers:
         logging.basicConfig(level=logging.INFO, format="%(message)s")

@@ -19,6 +19,7 @@ COLOR_BOLD = "\033[1m"
 PROGRESS_DISPLAY_DELAY = 0.5
 BATCH_UI_WIDTH = 80
 BATCH_UI_VISIBLE_FILES = 5
+BATCH_UI_VISIBLE_ERRORS = 3
 
 
 def enable_vt_mode() -> bool:
@@ -127,7 +128,7 @@ class BatchUI:
         self._live = Live(
             _LiveBatchRenderable(self),
             console=self._console,
-            screen=True,
+            screen=False,
             refresh_per_second=8,
             transient=False,
             vertical_overflow="crop",
@@ -138,8 +139,6 @@ class BatchUI:
         if self._live is not None:
             self._live.stop()
             self._live = None
-            if self._console is not None:
-                self._console.print(self._renderable())
 
     def print_error_list(self) -> None:
         if not self.errors:
@@ -148,19 +147,20 @@ class BatchUI:
         from rich.panel import Panel
         from rich.table import Table
         from rich.console import Console
+        from rich.text import Text
 
         if self._console is None:
             self._console = Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
 
         error_table = Table.grid(expand=True, padding=(0, 1))
-        error_table.add_column(style="bold red")
-        error_table.add_column(ratio=1, style="red")
+        error_table.add_column(style="white", no_wrap=True, overflow="ellipsis")
+        error_table.add_column(ratio=1, style="white", overflow="ellipsis")
         for file_name, reason in self.errors:
             error_table.add_row(f"[!] {file_name}", reason)
         self._console.print(
             Panel(
                 error_table,
-                title=f"Error list ({len(self.errors)})",
+                title=Text(f"Error list ({len(self.errors)})", style="white"),
                 border_style="red",
                 box=box.ROUNDED,
                 width=BATCH_UI_WIDTH,
@@ -186,21 +186,28 @@ class BatchUI:
         percent = completed / total if total else 0
 
         summary = Table.grid(expand=True, padding=(0, 1))
-        summary.add_column(ratio=1)
+        summary.add_column(ratio=1, no_wrap=True)
         summary.add_row(f"Processing {total} files    {percent:.0%}    {completed} / {total}")
         summary.add_row(ProgressBar(total=100, completed=percent * 100, pulse=False))
+
         elapsed = time.monotonic() - self._batch_started_at if self._batch_started_at is not None else 0.0
         estimated_total = sum(value for value in self.estimates if value is not None)
-        elapsed_summary = f"Elapsed: {format_duration(elapsed)}"
-        if estimated_total:
-            elapsed_summary += f"    Estimated total: ~{format_duration(estimated_total)}"
-        summary.add_row(elapsed_summary)
-        summary.add_row(f"Success: {succeeded}    Skipped: {self.skipped_count}    Errors: {failed}")
-        summary.add_row(f"Tokens: ~{self.total_tokens}    Overwritten: {self.overwritten_count}")
+        estimated_label = f"Estimated total: ~{format_duration(estimated_total)}" if estimated_total else ""
+        timing = Table.grid(expand=True, padding=(0, 1))
+        timing.add_column(ratio=1, no_wrap=True)
+        timing.add_column(ratio=1, no_wrap=True)
+        timing.add_row(f"Time passed: {format_duration(elapsed)}", estimated_label)
+
+        stats = Table.grid(expand=True, padding=(0, 1))
+        stats.add_column(ratio=1, no_wrap=True)
+        stats.add_column(ratio=1, no_wrap=True)
+        stats.add_column(ratio=1, no_wrap=True)
+        stats.add_row(f"Success: {succeeded}", f"Skipped: {self.skipped_count}", f"Errors: {failed}")
+        stats.add_row(f"Tokens: ~{self.total_tokens:_}", f"Overwritten: {self.overwritten_count}", "")
 
         queue = Table.grid(expand=True, padding=(0, 1))
         queue.add_column(width=2, no_wrap=True)
-        queue.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
+        queue.add_column(ratio=1, max_width=BATCH_UI_WIDTH - 26, overflow="ellipsis", no_wrap=True)
         queue.add_column(width=20, overflow="ellipsis", no_wrap=True, justify="right", style="dim")
         if self.current_idx < 0:
             start = 0
@@ -227,18 +234,18 @@ class BatchUI:
                 detail = self.details[index]
             queue.add_row(
                 Text(marker, style=style),
-                Text(self.files[index].name, style=style, no_wrap=True),
-                Text(detail, style="dim" if state == "[ ]" else style, no_wrap=True),
+                Text(self.files[index].name, style=style, no_wrap=True, overflow="ellipsis"),
+                Text(detail, style="dim" if state == "[ ]" else style, no_wrap=True, overflow="ellipsis"),
             )
         for _ in range(BATCH_UI_VISIBLE_FILES - (end - start)):
             queue.add_row("", "", "")
 
-        sections = [Panel(Group(summary, queue), box=box.ROUNDED, padding=(0, 1), width=BATCH_UI_WIDTH)]
-        recent = self.errors[-2:]
+        sections = [Panel(Group(summary, timing, stats, queue), box=box.ROUNDED, padding=(0, 1), width=BATCH_UI_WIDTH)]
+        recent = self.errors[-BATCH_UI_VISIBLE_ERRORS:]
         error_table = Table.grid(expand=True, padding=(0, 1))
-        error_table.add_column(style="red", no_wrap=True, overflow="ellipsis")
-        error_table.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
-        for index in range(2):
+        error_table.add_column(style="white", no_wrap=True, overflow="ellipsis")
+        error_table.add_column(ratio=1, style="white", no_wrap=True, overflow="ellipsis")
+        for index in range(BATCH_UI_VISIBLE_ERRORS):
             if index < len(recent):
                 file_name, reason = recent[index]
                 error_table.add_row(f"[!] {file_name}", reason)
@@ -308,7 +315,7 @@ class BatchUI:
                 self.skipped_count += 1
             if "overwritten" in info.lower():
                 self.overwritten_count += 1
-            token_info = f", ~{tokens} tokens" if tokens > 0 else ""
+            token_info = f", ~{tokens:_} tokens" if tokens > 0 else ""
             img_info = f", {images} images" if images > 0 else ""
             extra_info = f", {info}" if info else ""
             self.details[index] = f"({duration}{img_info}{token_info}{extra_info})"
@@ -324,7 +331,7 @@ class BatchUI:
                 if images > 0:
                     details.append(f"{images} images")
                 if tokens > 0:
-                    details.append(f"~{tokens} tokens")
+                    details.append(f"~{tokens:_} tokens")
                 if info:
                     details.append(info)
                 logger.info("Completed %s (%s)", self.files[index].name, ", ".join(details))

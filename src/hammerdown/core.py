@@ -150,6 +150,7 @@ def convert_file(
     progress_callback: ProgressCallback | None = None,
     completion_callback: CompletionCallback | None = None,
     batch_mode: bool = False,
+    target_dir: str | os.PathLike[str] | None = None,
 ) -> bool:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
@@ -161,13 +162,16 @@ def convert_file(
     extension = source.suffix.lower()
     ext_clean = extension.lstrip(".")
 
-    out_dir = source.parent
+    out_dir = Path(normalize_path(target_dir)) if target_dir is not None else source.parent
     out_md_name = f"hm_{stem}_{ext_clean}.md" if ext_clean else f"hm_{stem}.md"
     out_md = out_dir / out_md_name
 
     # Handle explicit source overwrite for text-like files
     is_text = extension in TEXT_EXTENSIONS
     if overwrite:
+        if target_dir is not None:
+            logger.error("--overwrite cannot be combined with an output directory")
+            return False
         if is_text:
             out_md = source
         elif not batch_mode:
@@ -335,7 +339,7 @@ def convert_file(
         if completion_callback:
             completion_callback(True, duration, saved_images, token_count)
 
-        token_info = f", ~{token_count} tokens" if token_count > 0 else ""
+        token_info = f", ~{token_count:_} tokens" if token_count > 0 else ""
         if is_tty:
             print(f"[x] Completed {source.name} in {format_duration(duration)} ({saved_images} images{token_info})")
         elif not batch_mode:
