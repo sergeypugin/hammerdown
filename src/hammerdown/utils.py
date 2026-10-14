@@ -17,6 +17,8 @@ COLOR_RED = "\033[38;2;157;47;52m"     # #9d2f34
 COLOR_DIM = "\033[90m"                  # Dim gray
 COLOR_BOLD = "\033[1m"
 PROGRESS_DISPLAY_DELAY = 0.5
+BATCH_UI_WIDTH = 80
+BATCH_UI_VISIBLE_FILES = 5
 
 
 def enable_vt_mode() -> bool:
@@ -101,10 +103,11 @@ class BatchUI:
         from rich.console import Console
         from rich.live import Live
 
-        self._console = Console(force_terminal=True)
+        self._console = Console(width=BATCH_UI_WIDTH, force_terminal=True)
         self._live = Live(
             self._renderable(),
             console=self._console,
+            screen=True,
             refresh_per_second=8,
             transient=False,
             vertical_overflow="crop",
@@ -136,38 +139,36 @@ class BatchUI:
 
         summary = Table.grid(expand=True, padding=(0, 1))
         summary.add_column(ratio=1)
-        summary.add_column(ratio=1)
-        summary.add_row(f"Processing {total} files", f"{percent:.0%}   {completed} / {total}")
-        summary.add_row(ProgressBar(total=100, completed=percent * 100, pulse=False), "")
-        summary.add_row(
-            f"Success: {succeeded}    Skipped: {self.skipped_count}    Errors: {failed}",
-            f"Tokens: ~{self.total_tokens}    Overwritten: {self.overwritten_count}",
-        )
+        summary.add_row(f"Processing {total} files    {percent:.0%}    {completed} / {total}")
+        summary.add_row(ProgressBar(total=100, completed=percent * 100, pulse=False))
+        summary.add_row(f"Success: {succeeded}    Skipped: {self.skipped_count}    Errors: {failed}")
+        summary.add_row(f"Tokens: ~{self.total_tokens}    Overwritten: {self.overwritten_count}")
 
         queue = Table.grid(expand=True, padding=(0, 1))
         queue.add_column(width=2, no_wrap=True)
-        queue.add_column(ratio=1, overflow="ellipsis")
-        if total:
-            if self.current_idx < 0:
-                start = 0
-            else:
-                start = max(0, min(self.current_idx - 2, total - 5))
-            end = min(total, start + 5)
-            for index in range(start, end):
-                state = self.statuses[index]
-                marker, style = {
-                    "[x]": ("✓", "green"),
-                    "[!]": ("!", "red"),
-                    "[>]": (">", "dark_orange"),
-                    "[ ]": (" ", "dim"),
-                }[state]
-                queue.add_row(Text(marker, style=style), Text(self.files[index].name, style=style))
+        queue.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
+        if self.current_idx < 0:
+            start = 0
+        else:
+            start = max(0, min(self.current_idx - 2, total - BATCH_UI_VISIBLE_FILES))
+        end = min(total, start + BATCH_UI_VISIBLE_FILES)
+        for index in range(start, end):
+            state = self.statuses[index]
+            marker, style = {
+                "[x]": ("✓", "green"),
+                "[!]": ("!", "red"),
+                "[>]": (">", "dark_orange"),
+                "[ ]": (" ", "dim"),
+            }[state]
+            queue.add_row(Text(marker, style=style), Text(self.files[index].name, style=style, no_wrap=True))
+        for _ in range(BATCH_UI_VISIBLE_FILES - (end - start)):
+            queue.add_row("", "")
 
-        sections = [Panel(Group(summary, queue), box=box.ROUNDED, padding=(0, 1))]
+        sections = [Panel(Group(summary, queue), box=box.ROUNDED, padding=(0, 1), width=BATCH_UI_WIDTH)]
         recent = self.errors[-2:]
         error_table = Table.grid(expand=True, padding=(0, 1))
-        error_table.add_column(style="red", no_wrap=True)
-        error_table.add_column(ratio=1)
+        error_table.add_column(style="red", no_wrap=True, overflow="ellipsis")
+        error_table.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
         for index in range(2):
             if index < len(recent):
                 file_name, reason = recent[index]
@@ -179,6 +180,7 @@ class BatchUI:
                 error_table,
                 title=f"Error summary (last {len(recent)} of {failed})",
                 border_style="red" if failed else "dim",
+                width=BATCH_UI_WIDTH,
             )
         )
         return Group(*sections)

@@ -54,18 +54,22 @@ def test_convert_file_package(tmp_path: Path):
 
 
 def test_batch_ui_error_panel_keeps_fixed_height(tmp_path: Path):
-    from hammerdown.utils import BatchUI
-
-    ui = BatchUI([str(tmp_path / "one.txt"), str(tmp_path / "two.txt")])
-    from rich.console import Console
     from io import StringIO
 
-    output = StringIO()
-    console = Console(file=output, width=100, force_terminal=False)
-    before = console.render_lines(ui._renderable())
-    ui.fail_file(0, "missing file")
-    after = console.render_lines(ui._renderable())
+    from rich.console import Console
 
+    from hammerdown.utils import BATCH_UI_WIDTH, BatchUI
+
+    ui = BatchUI([str(tmp_path / "one.txt"), str(tmp_path / "two.txt")])
+    console = Console(file=StringIO(), width=120, force_terminal=False)
+    before_renderable = ui._renderable()
+    before = console.render_lines(before_renderable)
+    ui.errors.append(("one.txt", "missing file " * 80))
+    after_renderable = ui._renderable()
+    after = console.render_lines(after_renderable)
+
+    assert console.measure(before_renderable).maximum == BATCH_UI_WIDTH
+    assert console.measure(after_renderable).maximum == BATCH_UI_WIDTH
     assert len(before) == len(after)
 
 
