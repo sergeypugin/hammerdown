@@ -138,7 +138,7 @@ class BatchUI:
             console=self._console,
             screen=False,
             refresh_per_second=8,
-            transient=True,
+            transient=False,
             redirect_stdout=False,
             redirect_stderr=False,
             vertical_overflow="crop",
@@ -153,10 +153,10 @@ class BatchUI:
             logger.disabled = self._logger_was_disabled
 
     def finish(self) -> None:
-        if not self.can_redraw:
+        if not self.can_redraw or self._live is None:
             return
+        self._live.update(_LiveBatchRenderable(self, final=True), refresh=False)
         self.stop()
-        self.print_final()
 
     def print_error_list(self) -> None:
         if not self.errors:
@@ -187,17 +187,6 @@ class BatchUI:
 
     def add_summary_message(self, message: str) -> None:
         self.summary_messages.append(message)
-
-    def print_final(self) -> None:
-        if not self.can_redraw:
-            return
-        if self._console is None:
-            from rich.console import Console
-
-            self._console = Console(width=BATCH_UI_WIDTH, force_terminal=True)
-        self._console.print(self._summary_renderable())
-        self._console.print()
-        self._console.print(self._process_renderable(final=True))
 
     def render(self) -> None:
         if self._live is not None:
