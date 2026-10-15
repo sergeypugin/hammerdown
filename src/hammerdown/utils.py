@@ -82,11 +82,12 @@ def format_duration(seconds: float) -> str:
 
 
 class _LiveBatchRenderable:
-    def __init__(self, batch_ui: BatchUI):
+    def __init__(self, batch_ui: BatchUI, final: bool = False):
         self.batch_ui = batch_ui
+        self.final = final
 
     def __rich_console__(self, console, options):
-        yield self.batch_ui._renderable()
+        yield self.batch_ui._renderable(final=self.final)
 
 
 class BatchUI:
@@ -118,6 +119,8 @@ class BatchUI:
         self.total_tokens = 0
         self.skipped_count = 0
         self.overwritten_count = 0
+        self.summary_messages: list[str] = []
+        self._logger_was_disabled = False
         self._live = None
         self._console = None
 
@@ -127,14 +130,17 @@ class BatchUI:
         from rich.console import Console
         from rich.live import Live
 
+        self._logger_was_disabled = logger.disabled
+        logger.disabled = True
         self._console = Console(width=BATCH_UI_WIDTH, force_terminal=True)
-        self._batch_started_at = self._batch_started_at or time.monotonic()
         self._live = Live(
             _LiveBatchRenderable(self),
             console=self._console,
             screen=False,
             refresh_per_second=8,
             transient=True,
+            redirect_stdout=False,
+            redirect_stderr=False,
             vertical_overflow="crop",
         )
         self._live.start()
@@ -143,6 +149,14 @@ class BatchUI:
         if self._live is not None:
             self._live.stop()
             self._live = None
+        if self.can_redraw:
+            logger.disabled = self._logger_was_disabled
+
+    def finish(self) -> None:
+        if not self.can_redraw:
+            return
+        self.stop()
+        self.print_final()
 
     def print_error_list(self) -> None:
         if not self.errors:
@@ -157,10 +171,10 @@ class BatchUI:
             self._console = Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
 
         error_table = Table.grid(expand=True, padding=(0, 1))
-        error_table.add_column(style="white", no_wrap=True, overflow="ellipsis")
+        error_table.add_column(no_wrap=True, overflow="ellipsis")
         error_table.add_column(ratio=1, style="white", overflow="ellipsis")
         for file_name, reason in self.errors:
-            error_table.add_row(f"[!] {file_name}", reason)
+            error_table.add_row(Text(f"[!] {file_name}", style="red"), Text(reason, style="white"))
         self._console.print(
             Panel(
                 error_table,
@@ -171,6 +185,9 @@ class BatchUI:
             )
         )
 
+    def add_summary_message(self, message: str) -> None:
+        self.summary_messages.append(message)
+
     def print_final(self) -> None:
         if not self.can_redraw:
             return
@@ -178,16 +195,18 @@ class BatchUI:
             from rich.console import Console
 
             self._console = Console(width=BATCH_UI_WIDTH, force_terminal=True)
-        self._console.print(self._process_renderable(final=True))
-        self._console.print()
         self._console.print(self._summary_renderable())
+        self._console.print()
+        self._console.print(self._process_renderable(final=True))
 
     def render(self) -> None:
         if self._live is not None:
             self._live.update(_LiveBatchRenderable(self), refresh=True)
 
-    def _renderable(self):
-        return self._process_renderable()
+    def _renderable(self, final: bool = False):
+        from rich.console import Group
+
+        return Group(self._summary_renderable(), self._process_renderable(final=final))
 
     def _process_renderable(self, final: bool = False):
         from rich import box
@@ -199,7 +218,7 @@ class BatchUI:
         completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
         percent = completed / total if total else 0
         title = Text(
-            f"Processing {total} files    {percent:.0%} ({completed} / {total})",
+            f"Processing {total} files {percent:.0%} ({completed} / {total})",
             style=PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR,
         )
 
@@ -210,7 +229,9 @@ class BatchUI:
         if self.current_idx < 0:
             start = 0
         else:
-            start = max(0, min(self.current_idx - 2, total - BATCH_UI_VISIBLE_FILES))
+            remaining = max(0, total - self.current_idx - 1)
+            target_position = 4 - min(remaining, 2)
+            start = max(0, min(self.current_idx - target_position, total - BATCH_UI_VISIBLE_FILES))
         end = min(total, start + BATCH_UI_VISIBLE_FILES)
         for index in range(start, end):
             state = self.statuses[index]
@@ -249,25 +270,38 @@ class BatchUI:
         )
 
     def _summary_renderable(self):
+        from rich.console import Group
         from rich import box
         from rich.panel import Panel
         from rich.table import Table
         from rich.text import Text
-
         elapsed = time.monotonic() - self._batch_started_at if self._batch_started_at is not None else 0.0
         estimated_total = sum(value for value in self.estimates if value is not None)
         timing = Table.grid(expand=True, padding=(0, 1))
         timing.add_column(width=28, no_wrap=True)
         timing.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
+        timing.add_column(width=16, no_wrap=True, overflow="ellipsis")
+        completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
+        failed = len(self.errors)
+        error_label = Text(f"Errors: {failed}", style="red") if failed else Text("")
         timing.add_row(
             f"Time passed: {format_duration(elapsed)}",
             f"Estimated total: ~{format_duration(estimated_total)}" if estimated_total else "",
+            error_label,
         )
-        timing.add_row(f"Tokens: ~{self.total_tokens:_}", f"Overwritten: {self.overwritten_count}")
+        timing.add_row(f"Completed: {completed}", f"Tokens: ~{self.total_tokens:_}", f"Overwritten: {self.overwritten_count}")
         if self.skipped_count:
-            timing.add_row(f"Skipped: {self.skipped_count}", "")
+            timing.add_row(f"Skipped: {self.skipped_count}", "", "")
+        summary_parts = [timing]
+        if self.summary_messages:
+            messages = Table.grid(expand=True, padding=(0, 1))
+            messages.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
+            for message in self.summary_messages:
+                messages.add_row(Text("---", style=SUMMARY_COLOR))
+                messages.add_row(Text(message, style=SUMMARY_COLOR))
+            summary_parts.append(messages)
         return Panel(
-            timing,
+            Group(*summary_parts),
             title=Text("Summary", style=SUMMARY_COLOR),
             title_align="center",
             border_style=SUMMARY_COLOR,
@@ -331,7 +365,7 @@ class BatchUI:
                 self.overwritten_count += 1
             token_info = f", ~{tokens:_} tokens" if tokens > 0 else ""
             img_info = f", {images} images" if images > 0 else ""
-            extra_info = f", {info}" if info else ""
+            extra_info = ""
             self.details[index] = f"({duration}{img_info}{token_info}{extra_info})"
         else:
             self.statuses[index] = "[!]"

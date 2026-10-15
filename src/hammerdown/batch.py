@@ -91,12 +91,10 @@ def _merge_converted_files(
 
     dest = Path(normalize_path(merge_target))
     if skip_existing and dest.exists():
-        logger.info("Skipping merge (output already exists: %s)", dest)
         return True
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text("\n\n".join(merged_sections) + "\n", encoding="utf-8", newline="\n")
-    logger.info("Merged %d documents into %s", len(merged_sections), dest.name)
     return True
 
 
@@ -216,6 +214,7 @@ def run_batch(args: argparse.Namespace) -> int:
     started_at = time.monotonic()
     results: list[bool] = []
     total_tokens = 0
+    conversion_finished = False
     batch_ui = BatchUI(ui_files, quiet=args.quiet, estimates=estimates)
 
     if batch_ui.can_redraw:
@@ -261,9 +260,10 @@ def run_batch(args: argparse.Namespace) -> int:
                 target_dir=output_path.parent if output_root is not None else None,
             )
             results.append(res)
+        conversion_finished = True
     finally:
-        batch_ui.stop()
-        batch_ui.print_final()
+        if not conversion_finished:
+            batch_ui.stop()
         if coordinator:
             coordinator.stop()
 
@@ -272,7 +272,9 @@ def run_batch(args: argparse.Namespace) -> int:
         successful_indexes = [index for index, ((_, error), result) in enumerate(zip(targets, results)) if error is None and result]
         successful_files = [targets[index][0] for index in successful_indexes]
         successful_outputs = [output_paths[index] for index in successful_indexes]
-        _merge_converted_files(
+        merge_target = Path(normalize_path(args.merge))
+        merge_was_existing = args.skip_existing and merge_target.exists()
+        merge_completed = _merge_converted_files(
             successful_files,
             [True] * len(successful_files),
             args.merge,
@@ -280,16 +282,12 @@ def run_batch(args: argparse.Namespace) -> int:
             output_paths=successful_outputs,
             skip_existing=args.skip_existing,
         )
+        if merge_was_existing:
+            batch_ui.add_summary_message(f"Merge skipped: {merge_target.name} already exists")
+        elif merge_completed:
+            batch_ui.add_summary_message(f"Merged {len(successful_files)} documents into {merge_target.name}")
 
-    if len(files) > 1 and not args.quiet:
-        duration = time.monotonic() - started_at
-        logger.info(
-            "Batch conversion finished in %s: %d succeeded, %d failed, ~%s total tokens",
-            format_duration(duration),
-            len(targets) - failed_count,
-            failed_count,
-            f"{total_tokens:_}",
-        )
+    batch_ui.finish()
 
     should_wait = (
         os.name == "nt"

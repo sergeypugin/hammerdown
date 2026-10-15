@@ -125,15 +125,35 @@ def test_batch_ui_summary_contains_compact_stats(tmp_path: Path):
     ui.total_tokens = 1234567
     ui.overwritten_count = 2
     ui.skipped_count = 1
+    ui.errors.append(("broken.txt", "file or directory not found"))
+    ui.add_summary_message("Merged 4 documents into TODELETE.md")
 
     output = StringIO()
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._summary_renderable())
     rendered = output.getvalue()
 
     assert "Summary" in rendered
+    assert "Errors: 1" in rendered
     assert "Tokens: ~1_234_567" in rendered
     assert "Overwritten: 2" in rendered
     assert "Skipped: 1" in rendered
+    assert "Merged 4 documents into TODELETE.md" in rendered
+    assert "---" in rendered
+
+
+def test_batch_ui_places_current_file_by_remaining_queue(tmp_path: Path):
+    files = [str(tmp_path / f"file_{index}.txt") for index in range(5)]
+    ui = BatchUI(files, quiet=True)
+    ui.current_idx = 3
+    ui.statuses[3] = "[>]"
+
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._process_renderable())
+    rendered = output.getvalue()
+
+    assert rendered.index("file_3.txt") > rendered.index("file_0.txt")
+    assert rendered.index("file_3.txt") > rendered.index("file_2.txt")
+    assert "file_4.txt" in rendered
 
 
 def test_batch_ui_final_render_contains_one_process_and_summary(tmp_path: Path):
@@ -148,6 +168,7 @@ def test_batch_ui_final_render_contains_one_process_and_summary(tmp_path: Path):
 
     assert rendered.count("Processing 1 files") == 1
     assert rendered.count("Summary") == 1
+
 
 def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
     filename = "document_" + "x" * 160 + ".txt"
