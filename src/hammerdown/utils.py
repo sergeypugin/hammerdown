@@ -17,13 +17,17 @@ COLOR_RED = "\033[38;2;157;47;52m"     # #9d2f34
 COLOR_DIM = "\033[90m"                  # Dim gray
 COLOR_BOLD = "\033[1m"
 PROGRESS_DISPLAY_DELAY = 0.5
-BATCH_UI_WIDTH = 80
+BATCH_UI_WIDTH = 64
 BATCH_UI_VISIBLE_FILES = 5
 PROCESS_RUNNING_COLOR = "#ec7c39"
 PROCESS_COMPLETE_COLOR = "#729c1f"
 SUMMARY_COLOR = "#58bdf9"
-QUEUE_MARKER_WIDTH = 4
-QUEUE_DETAILS_WIDTH = 35
+QUEUE_MARKER_WIDTH = 10
+QUEUE_TIME_WIDTH = 8
+QUEUE_IMAGES_WIDTH = 7
+QUEUE_TOKENS_WIDTH = 12
+SUMMARY_SEPARATOR_WIDTH = 58
+PROGRESS_BAR_WIDTH = 6
 
 
 def enable_vt_mode() -> bool:
@@ -67,18 +71,15 @@ def get_images_dir_name(file_path: str | os.PathLike[str]) -> str:
 
 
 def format_duration(seconds: float) -> str:
-    if seconds < 1.0:
-        return f"{seconds:.2f}s"
-    total_seconds = int(round(seconds))
-    if total_seconds < 60:
-        return f"{total_seconds}s"
-    if total_seconds < 3600:
-        minutes = total_seconds // 60
-        rem_seconds = total_seconds % 60
-        return f"{minutes}m{rem_seconds}s" if rem_seconds else f"{minutes}m"
-    hours = total_seconds // 3600
-    rem_minutes = int(round((total_seconds % 3600) / 60))
-    return f"{hours}h{rem_minutes}m" if rem_minutes else f"{hours}h"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    total_minutes = int(seconds // 60)
+    rem_seconds = seconds - total_minutes * 60
+    if total_minutes < 60:
+        return f"{total_minutes}m {rem_seconds:.1f}s"
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    return f"{hours}h {minutes}m {rem_seconds:.1f}s"
 
 
 class _LiveBatchRenderable:
@@ -107,6 +108,11 @@ class BatchUI:
         self._file_started_at: list[float | None] = [None] * len(self.files)
         self._batch_started_at: float | None = None
         self._progress_details: list[str] = [""] * len(self.files)
+        self._progress_current: list[int] = [0] * len(self.files)
+        self._progress_total: list[int] = [0] * len(self.files)
+        self._file_durations: list[str] = [""] * len(self.files)
+        self._file_images: list[int] = [0] * len(self.files)
+        self._file_tokens: list[int] = [0] * len(self.files)
         self.is_tty = sys.stdout.isatty() and not quiet
         self.can_redraw = self.is_tty
         if self.is_tty:
@@ -207,14 +213,24 @@ class BatchUI:
         completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
         percent = completed / total if total else 0
         title = Text(
-            f"Processing {total} files {percent:.0%} ({completed} / {total})",
+            f"Processing {total} files {percent:.0%} ({completed}/{total}) "
+            "╱ time │ images │ tokens ╲",
             style=PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR,
         )
 
         queue = Table.grid(expand=True, padding=(0, 1))
         queue.add_column(width=QUEUE_MARKER_WIDTH, no_wrap=True)
         queue.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
-        queue.add_column(width=QUEUE_DETAILS_WIDTH, overflow="ellipsis", no_wrap=True, justify="right")
+        queue.add_column(width=QUEUE_TIME_WIDTH, no_wrap=True, justify="right")
+        queue.add_column(width=QUEUE_IMAGES_WIDTH, no_wrap=True, justify="right")
+        queue.add_column(width=QUEUE_TOKENS_WIDTH, no_wrap=True, justify="right")
+        queue.add_row(
+            Text("state", style="dim", no_wrap=True),
+            Text("file", style="dim", no_wrap=True),
+            Text("time", style="dim", no_wrap=True),
+            Text("images", style="dim", no_wrap=True),
+            Text("tokens", style="dim", no_wrap=True),
+        )
         if self.current_idx < 0:
             start = 0
         else:
@@ -224,29 +240,30 @@ class BatchUI:
         end = min(total, start + BATCH_UI_VISIBLE_FILES)
         for index in range(start, end):
             state = self.statuses[index]
-            marker, style = {
-                "[x]": ("[✓]", "green"),
-                "[!]": ("[!]", "red"),
-                "[>]": ("[>]", "dark_orange"),
-                "[ ]": ("[ ]", "dim"),
-            }[state]
+            marker, style = self._marker_for(index, state)
             if state == "[ ]":
-                detail = self._estimate_label(index)
+                duration = self._estimate_label(index)
+                images = ""
+                tokens = ""
             elif state == "[>]":
                 started_at = self._file_started_at[index]
                 elapsed_file = time.monotonic() - started_at if started_at is not None else 0.0
-                detail = " ".join(
-                    value for value in (self._progress_details[index], format_duration(elapsed_file)) if value
-                )
+                duration = format_duration(elapsed_file)
+                images = ""
+                tokens = ""
             else:
-                detail = self.details[index]
+                duration = self._file_durations[index]
+                images = str(self._file_images[index]) if self._file_images[index] else ""
+                tokens = f"~{self._file_tokens[index]:_}" if self._file_tokens[index] else ""
             queue.add_row(
                 Text(marker, style=style, no_wrap=True),
                 Text(self.files[index].name, style=style, no_wrap=True, overflow="ellipsis"),
-                Text(detail, style="dim" if state == "[ ]" else style, no_wrap=True, overflow="ellipsis"),
+                Text(duration, style="dim" if state == "[ ]" else style, no_wrap=True),
+                Text(images, style="dim" if state == "[ ]" else style, no_wrap=True),
+                Text(tokens, style="dim" if state == "[ ]" else style, no_wrap=True),
             )
         for _ in range(BATCH_UI_VISIBLE_FILES - (end - start)):
-            queue.add_row("", "", "")
+            queue.add_row("", "", "", "", "")
 
         border_style = PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR
         return Panel(
@@ -267,7 +284,7 @@ class BatchUI:
         elapsed = time.monotonic() - self._batch_started_at if self._batch_started_at is not None else 0.0
         estimated_total = sum(value for value in self.estimates if value is not None)
         timing = Table.grid(expand=True, padding=(0, 1))
-        timing.add_column(width=28, no_wrap=True)
+        timing.add_column(width=20, no_wrap=True, overflow="ellipsis")
         timing.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
         timing.add_column(width=16, no_wrap=True, overflow="ellipsis")
         completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
@@ -286,7 +303,7 @@ class BatchUI:
             messages = Table.grid(expand=True, padding=(0, 1))
             messages.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
             for message in self.summary_messages:
-                messages.add_row(Text("---", style=SUMMARY_COLOR))
+                messages.add_row(Text("─" * SUMMARY_SEPARATOR_WIDTH, style=SUMMARY_COLOR))
                 messages.add_row(Text(message, style=SUMMARY_COLOR))
             summary_parts.append(messages)
         return Panel(
@@ -298,6 +315,19 @@ class BatchUI:
             width=BATCH_UI_WIDTH,
         )
 
+    def _marker_for(self, index: int, state: str) -> tuple[str, str]:
+        if state == "[x]":
+            return "[✓]", "green"
+        if state == "[!]":
+            return "[!]", "red"
+        if state == "[>]":
+            total = self._progress_total[index]
+            current = self._progress_current[index]
+            filled = int(round(PROGRESS_BAR_WIDTH * current / total)) if total else 0
+            bar = "█" * filled + "░" * (PROGRESS_BAR_WIDTH - filled)
+            return f"[{bar}]", "dark_orange"
+        return "[ ]", "dim"
+
     def _estimate_label(self, index: int) -> str:
         estimate = self.estimates[index]
         return f"~{format_duration(estimate)}" if estimate is not None else ""
@@ -308,6 +338,11 @@ class BatchUI:
         self._batch_started_at = self._batch_started_at or self._progress_started_at
         self._file_started_at[index] = self._progress_started_at
         self._progress_details[index] = ""
+        self._progress_current[index] = 0
+        self._progress_total[index] = 0
+        self._file_durations[index] = ""
+        self._file_images[index] = 0
+        self._file_tokens[index] = 0
         self.statuses[index] = "[>]"
         self.details[index] = hint
         if self.can_redraw:
@@ -318,8 +353,10 @@ class BatchUI:
     def update_progress(self, index: int, current: int, total: int, unit: str = "pages") -> None:
         if total <= 0:
             return
+        self._progress_current[index] = current
+        self._progress_total[index] = total
         pct = int((current / total) * 100)
-        bar_len = 6
+        bar_len = PROGRESS_BAR_WIDTH
         filled = int(round(bar_len * current / float(total)))
         bar = "█" * filled + "░" * (bar_len - filled)
         self._progress_details[index] = f"{bar} {pct}%"
@@ -329,6 +366,7 @@ class BatchUI:
     def fail_file(self, index: int, reason: str) -> None:
         self.statuses[index] = "[!]"
         self.details[index] = ""
+        self._file_durations[index] = ""
         self.errors.append((self.files[index].name, reason))
         if self.can_redraw:
             self.render()
@@ -347,6 +385,9 @@ class BatchUI:
     ) -> None:
         if success:
             self.statuses[index] = "[x]"
+            self._file_durations[index] = duration
+            self._file_images[index] = images
+            self._file_tokens[index] = tokens
             self.total_tokens += tokens
             if "skipped" in info.lower():
                 self.skipped_count += 1
@@ -358,6 +399,9 @@ class BatchUI:
             self.details[index] = f"({duration}{img_info}{token_info}{extra_info})"
         else:
             self.statuses[index] = "[!]"
+            self._file_durations[index] = duration
+            self._file_images[index] = images
+            self._file_tokens[index] = tokens
             self.details[index] = duration
             self.errors.append((self.files[index].name, info or "conversion failed"))
         if self.can_redraw:

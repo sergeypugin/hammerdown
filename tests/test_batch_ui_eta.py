@@ -21,7 +21,7 @@ def test_text_file_estimate_is_approximate(tmp_path: Path):
     source.write_text("brief text", encoding="utf-8")
 
     assert get_conversion_estimate_seconds(source) == 0.5
-    assert get_conversion_estimate(source) == "~0.50s"
+    assert get_conversion_estimate(source) == "~0.5s"
 
 
 def test_batch_ui_shows_cached_estimates_and_total(tmp_path: Path):
@@ -35,9 +35,9 @@ def test_batch_ui_shows_cached_estimates_and_total(tmp_path: Path):
     summary_output = StringIO()
     Console(file=summary_output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._summary_renderable())
 
-    assert "~1s" in process_output.getvalue()
-    assert "~2s" in process_output.getvalue()
-    assert "Estimated total: ~3s" in summary_output.getvalue()
+    assert "~1.0s" in process_output.getvalue()
+    assert "~2.0s" in process_output.getvalue()
+    assert "~3.0s" in summary_output.getvalue()
     assert "Time passed:" in summary_output.getvalue()
     assert "Elapsed:" not in summary_output.getvalue()
 
@@ -92,7 +92,7 @@ def test_batch_live_renderable_refreshes_elapsed_time(tmp_path: Path):
         return output.getvalue()
 
     before = render()
-    time.sleep(0.03)
+    time.sleep(0.11)
     after = render()
 
     assert "active.pdf" in before
@@ -107,7 +107,18 @@ def test_batch_ui_shows_active_progress(tmp_path: Path):
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._renderable())
 
     assert "active.pdf" in output.getvalue()
-    assert "75%" in output.getvalue()
+    rendered = output.getvalue()
+    assert "[████░░]" in rendered
+    assert "time" in rendered
+    assert "images" in rendered
+    assert "tokens" in rendered
+
+
+def test_format_duration_uses_one_decimal_for_all_units():
+    assert utils.format_duration(0.5) == "0.5s"
+    assert utils.format_duration(1.0) == "1.0s"
+    assert utils.format_duration(65.25) == "1m 5.2s"
+    assert utils.format_duration(3665.25) == "1h 1m 5.2s"
 
 
 def test_batch_ui_process_shows_bracketed_markers_without_error_summary(tmp_path: Path):
@@ -138,11 +149,11 @@ def test_batch_ui_summary_contains_compact_stats(tmp_path: Path):
 
     assert "Summary" in rendered
     assert "Errors: 1" in rendered
-    assert "Tokens: ~1_234_567" in rendered
+    assert "1_234_567" in rendered
     assert "Overwritten: 2" in rendered
     assert "Skipped: 1" in rendered
     assert "Merged 4 documents into TODELETE.md" in rendered
-    assert "---" in rendered
+    assert "─" in rendered
 
 
 def test_batch_ui_places_current_file_by_remaining_queue(tmp_path: Path):
@@ -292,7 +303,7 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(instances[0]._summary_renderable())
     rendered = output.getvalue()
     assert "Errors: 2" in rendered
-    assert rendered.index("---") < rendered.index(message)
+    assert rendered.index("─") < rendered.index(message)
 
 
 def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
