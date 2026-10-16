@@ -49,6 +49,14 @@ def validate_filter_patterns(parser: argparse.ArgumentParser, values: Sequence[s
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        print("\nCancelled.", file=sys.stderr)
+        return 130
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     actual_argv = list(argv) if argv is not None else sys.argv[1:]
     if os.name == "nt" and ("--coordinator" in actual_argv or "--right-click" in actual_argv):
         import ctypes

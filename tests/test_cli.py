@@ -7,6 +7,16 @@ import hammerdown.core
 import hammerdown.utils
 import os
 
+def test_keyboard_interrupt_is_reported_as_cancellation(monkeypatch, capsys):
+    def interrupt(_argv):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(hammerdown.cli, "_main", interrupt)
+
+    assert hammerdown.cli.main([]) == 130
+    assert "Cancelled." in capsys.readouterr().err
+
+
 def test_normalize_wsl_windows_path():
     normalized = hammerdown.utils.normalize_path(r"C:\Users\someone\document.pdf")
     if os.name == "nt":
