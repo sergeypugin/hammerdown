@@ -212,6 +212,20 @@ def test_batch_ui_uses_aligned_placeholders_and_lowercase_results(tmp_path: Path
     assert "overwritten text sources" in results_rendered
     assert "#d2a6ff" not in results_rendered
 
+
+def test_batch_ui_error_panel_border_is_red(tmp_path: Path):
+    ui = BatchUI([str(tmp_path / "broken.txt")])
+    ui.fail_file(0, "conversion failed")
+    output = StringIO()
+    console = Console(file=output, width=BATCH_UI_WIDTH, force_terminal=True, color_system="standard")
+
+    ui._console = console
+    ui.print_error_list()
+
+    first_line = output.getvalue().splitlines()[0]
+    assert first_line.startswith(("\x1b[31m╭─", "\x1b[31m┌─"))
+
+
 @pytest.mark.parametrize("logger_was_disabled", [False, True])
 def test_batch_ui_suppresses_and_restores_logger_during_live(
     tmp_path: Path, monkeypatch, logger_was_disabled: bool

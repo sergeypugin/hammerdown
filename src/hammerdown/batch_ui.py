@@ -132,6 +132,7 @@ class BatchUI:
                 error_table,
                 title=_panel_title(f"Error list ({len(self.errors)})", "red"),
                 title_align="left",
+                border_style="red",
                 box=box.ROUNDED,
                 width=BATCH_UI_WIDTH,
             )
