@@ -232,7 +232,7 @@ def run_batch(args: argparse.Namespace) -> int:
             def on_complete(success: bool, dur: float, imgs: int, tokens: int) -> None:
                 nonlocal total_tokens
                 total_tokens += tokens
-                batch_ui.complete_file(idx, success, format_duration(dur), imgs, tokens, status_info)
+                batch_ui.complete_file(idx, success, dur, imgs, tokens, status_info)
 
             res = convert_file(
                 f_path,
@@ -284,34 +284,21 @@ def run_batch(args: argparse.Namespace) -> int:
             or getattr(sys, "frozen", False)
         )
     )
+    if not args.quiet:
+        if batch_ui.errors:
+            batch_ui.print_error_list()
+        batch_ui.print_summary_messages()
+
     if should_wait:
         from rich.console import Console
         from rich.text import Text
 
         try:
-            if batch_ui.errors:
-                prompt = Text("\nType ")
-                prompt.append("e", style="orange1")
-                prompt.append(" and press ")
-                prompt.append("Enter", style="orange1")
-                prompt.append(" to extend the error list, or press ")
-                prompt.append("Enter", style="orange1")
-                prompt.append(" to exit: ")
-                Console().print(prompt, end="")
-                choice = input()
-                if choice.strip().lower() == "e":
-                    batch_ui.print_error_list()
-                    follow_up = Text("\nPress ")
-                    follow_up.append("Enter", style="orange1")
-                    follow_up.append(" to exit... ")
-                    Console().print(follow_up, end="")
-                    input()
-            else:
-                follow_up = Text("\nPress ")
-                follow_up.append("Enter", style="orange1")
-                follow_up.append(" to exit... ")
-                Console().print(follow_up, end="")
-                input()
+            follow_up = Text("\nPress ")
+            follow_up.append("Enter", style="orange1")
+            follow_up.append(" to exit... ")
+            Console().print(follow_up, end="")
+            input()
         except (EOFError, KeyboardInterrupt):
             pass
 

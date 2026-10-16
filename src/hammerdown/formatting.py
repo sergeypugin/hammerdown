@@ -10,7 +10,7 @@ def format_duration(seconds: float) -> str:
         return f"{total_minutes}m {rem_seconds:.1f}s"
     hours = total_minutes // 60
     minutes = total_minutes % 60
-    return f"{hours}h {minutes}m {rem_seconds:.1f}s"
+    return f"{hours}h {minutes}m"
 
 
 def format_progress_bar(current: int, total: int, unit: str = "pages", bar_length: int = 20) -> str:

@@ -21,7 +21,6 @@ from hammerdown.ui_constants import (
     QUEUE_TIME_WIDTH,
     QUEUE_TOKENS_WIDTH,
     SUMMARY_COLOR,
-    SUMMARY_SEPARATOR_WIDTH,
 )
 from hammerdown.formatting import format_duration
 from hammerdown.path_utils import enable_vt_mode
@@ -144,6 +143,26 @@ class BatchUI:
     def add_summary_message(self, message: str) -> None:
         self.summary_messages.append(message)
 
+    def print_summary_messages(self) -> None:
+        if not self.summary_messages:
+            return
+        from rich.console import Console
+        from rich.text import Text
+
+        if self._console is None:
+            self._console = Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+
+        content_width = BATCH_UI_WIDTH - 4
+        border_width = BATCH_UI_WIDTH - 2
+        self._console.print()
+        for message in self.summary_messages:
+            if cell_len(message) > content_width:
+                message = f"{message[:content_width - 1]}…"
+            padding = " " * max(0, content_width - cell_len(message))
+            self._console.print(Text(f"├{'─' * border_width}┤", style=SUMMARY_COLOR))
+            self._console.print(Text(f"│ {message}{padding} │", style=SUMMARY_COLOR))
+            self._console.print(Text(f"└{'─' * border_width}┘", style=SUMMARY_COLOR))
+
     def render(self) -> None:
         if self._live is not None:
             self._live.update(_LiveBatchRenderable(self), refresh=True)
@@ -233,29 +252,22 @@ class BatchUI:
 
         elapsed = time.monotonic() - self._batch_started_at if self._batch_started_at is not None else 0.0
         estimated_total = sum(value for value in self.estimates if value is not None)
-        timing = Table.grid(expand=True, padding=(0, 1))
-        timing.add_column(width=18, no_wrap=True, overflow="ellipsis")
-        timing.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
-        timing.add_column(width=14, no_wrap=True, overflow="ellipsis")
+        timing = Table.grid(expand=True, padding=(0, 0))
+        timing.add_column(width=22, no_wrap=True, overflow="ellipsis")
+        timing.add_column(width=22, no_wrap=True, overflow="ellipsis")
+        timing.add_column(width=16, no_wrap=True, overflow="ellipsis")
         completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
         failed = len(self.errors)
         error_label = Text(f"Errors: {failed}", style="red") if failed else Text("")
         timing.add_row(
             f"Time passed: {format_duration(elapsed)}",
-            f"Estimated total: ~{format_duration(estimated_total)}" if estimated_total else "",
+            f"Estimated: ~{format_duration(estimated_total)}" if estimated_total else "",
             error_label,
         )
         timing.add_row(f"Completed: {completed}", f"Tokens: ~{self.total_tokens:_}", f"Overwritten: {self.overwritten_count}")
         if self.skipped_count:
             timing.add_row(f"Skipped: {self.skipped_count}", "", "")
         summary_parts = [timing]
-        if self.summary_messages:
-            messages = Table.grid(expand=True, padding=(0, 1))
-            messages.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
-            for message in self.summary_messages:
-                messages.add_row(Text("─" * SUMMARY_SEPARATOR_WIDTH, style=SUMMARY_COLOR))
-                messages.add_row(Text(message, style=SUMMARY_COLOR))
-            summary_parts.append(messages)
         return Panel(
             Group(*summary_parts),
             title=Text("Summary", style=SUMMARY_COLOR),
@@ -328,14 +340,15 @@ class BatchUI:
         self,
         index: int,
         success: bool,
-        duration: str,
+        duration: str | float,
         images: int = 0,
         tokens: int = 0,
         info: str = "",
     ) -> None:
+        duration_text = format_duration(duration) if isinstance(duration, (int, float)) else duration
         if success:
             self.statuses[index] = "[x]"
-            self._file_durations[index] = duration
+            self._file_durations[index] = duration_text
             self._file_images[index] = images
             self._file_tokens[index] = tokens
             self.total_tokens += tokens
@@ -346,19 +359,19 @@ class BatchUI:
             token_info = f", ~{tokens:_} tokens" if tokens > 0 else ""
             img_info = f", {images} images" if images > 0 else ""
             extra_info = ""
-            self.details[index] = f"({duration}{img_info}{token_info}{extra_info})"
+            self.details[index] = f"({duration_text}{img_info}{token_info}{extra_info})"
         else:
             self.statuses[index] = "[!]"
-            self._file_durations[index] = duration
+            self._file_durations[index] = duration_text
             self._file_images[index] = images
             self._file_tokens[index] = tokens
-            self.details[index] = duration
+            self.details[index] = duration_text
             self.errors.append((self.files[index].name, info or "conversion failed"))
         if self.can_redraw:
             self.render()
         elif not self.quiet:
             if success:
-                details = [duration]
+                details = [duration_text]
                 if images > 0:
                     details.append(f"{images} images")
                 if tokens > 0:

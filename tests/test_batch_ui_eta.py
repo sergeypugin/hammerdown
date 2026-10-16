@@ -38,6 +38,8 @@ def test_batch_ui_shows_cached_estimates_and_total(tmp_path: Path):
     assert "~1.0s" in process_output.getvalue()
     assert "~2.0s" in process_output.getvalue()
     assert "~3.0s" in summary_output.getvalue()
+    assert "Estimated: ~3.0s" in summary_output.getvalue()
+    assert "Estimated total:" not in summary_output.getvalue()
     assert "Time passed:" in summary_output.getvalue()
     assert "Elapsed:" not in summary_output.getvalue()
 
@@ -118,7 +120,9 @@ def test_format_duration_uses_one_decimal_for_all_units():
     assert utils.format_duration(0.5) == "0.5s"
     assert utils.format_duration(1.0) == "1.0s"
     assert utils.format_duration(65.25) == "1m 5.2s"
-    assert utils.format_duration(3665.25) == "1h 1m 5.2s"
+    assert utils.format_duration(3600.0) == "1h 0m"
+    assert utils.format_duration(3665.25) == "1h 1m"
+    assert utils.format_duration(3600 * 5 + 60 * 4) == "5h 4m"
 
 
 def test_batch_ui_process_shows_bracketed_markers_without_error_summary(tmp_path: Path):
@@ -147,13 +151,22 @@ def test_batch_ui_summary_contains_compact_stats(tmp_path: Path):
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._summary_renderable())
     rendered = output.getvalue()
 
+    assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
     assert "Summary" in rendered
     assert "Errors: 1" in rendered
     assert "1_234_567" in rendered
     assert "Overwritten: 2" in rendered
     assert "Skipped: 1" in rendered
-    assert "Merged 4 documents into TODELETE.md" in rendered
-    assert "─" in rendered
+    assert "Merged 4 documents into TODELETE.md" not in rendered
+
+    msg_output = StringIO()
+    ui._console = Console(file=msg_output, width=BATCH_UI_WIDTH, force_terminal=False)
+    ui.print_summary_messages()
+    message_output = msg_output.getvalue()
+    assert message_output.startswith("\n")
+    assert "Merged 4 documents into TODELETE.md" in message_output
+    assert "├" in message_output
+    assert "└" in message_output
 
 
 def test_batch_ui_places_current_file_by_remaining_queue(tmp_path: Path):
@@ -260,6 +273,13 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
             events.append(("finish",))
             super().finish()
 
+        def print_error_list(self):
+            events.append(("print_errors",))
+
+        def print_summary_messages(self):
+            events.append(("print_messages",))
+            super().print_summary_messages()
+
     def convert_file(file_path, **kwargs):
         events.append(("convert", Path(file_path).name))
         if Path(file_path) == failed:
@@ -279,7 +299,7 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
         in_place=False,
         overwrite=False,
         skip_existing=False,
-        quiet=True,
+        quiet=False,
         merge=str(merged),
     )
 
@@ -296,6 +316,8 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
         ("complete", "z-failed.txt", False),
         ("summary", message),
         ("finish",),
+        ("print_errors",),
+        ("print_messages",),
     ]
     assert "FILE: b-success.txt" in merged.read_text(encoding="utf-8")
     assert "# b-success.txt" not in merged.read_text(encoding="utf-8")
@@ -305,8 +327,13 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(instances[0]._summary_renderable())
     rendered = output.getvalue()
     assert "Errors: 2" in rendered
-    assert "─" in rendered
-    assert rendered.index("─") < rendered.index(message)
+    assert "Estimated: ~" in rendered
+    assert message not in rendered
+
+    msg_output = StringIO()
+    instances[0]._console = Console(file=msg_output, width=BATCH_UI_WIDTH, force_terminal=False)
+    instances[0].print_summary_messages()
+    assert message in msg_output.getvalue()
 
 
 def test_batch_ui_summary_preserves_seconds_for_minute_estimates(tmp_path: Path):
@@ -316,7 +343,8 @@ def test_batch_ui_summary_preserves_seconds_for_minute_estimates(tmp_path: Path)
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._summary_renderable())
 
     rendered = output.getvalue()
-    assert "Estimated total: ~1m 5.2s" in rendered
+    assert "Estimated: ~1m 5.2s" in rendered
+    assert "Estimated total:" not in rendered
     assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
 
 
@@ -330,4 +358,45 @@ def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
     rendered = output.getvalue()
     assert "Tokens: ~1_234_567" not in rendered
     assert "….txt" in rendered
+    assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
+
+
+def test_batch_ui_process_formats_long_durations_and_keeps_them_visible(tmp_path: Path):
+    ui = BatchUI([str(tmp_path / "long_running.txt")], quiet=True)
+    ui.statuses = ["[x]"]
+    ui.complete_file(0, True, 54 * 60, images=1, tokens=144840)
+
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._process_renderable(final=True))
+    rendered = output.getvalue()
+
+    assert "54m 0.0s" in rendered
+    assert "~144_840" in rendered
+    assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
+
+    ui.complete_file(0, True, 5 * 3600 + 4 * 60 + 59, images=1, tokens=144840)
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._process_renderable(final=True))
+    rendered = output.getvalue()
+
+    assert "5h 4m" in rendered
+    assert "5h 4m 59" not in rendered
+    assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
+
+
+def test_batch_ui_summary_fits_three_digit_overwritten(tmp_path: Path):
+    ui = BatchUI([str(tmp_path / "file.txt")], quiet=True, estimates=[103.2])
+    ui._batch_started_at = time.monotonic() - 65.2
+    ui.total_tokens = 144840
+    ui.overwritten_count = 999
+    ui.errors = [("broken.txt", "failed")]
+
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._summary_renderable())
+    rendered = output.getvalue()
+
+    assert "Overwritten: 999" in rendered
+    assert "Time passed: 1m 5." in rendered
+    assert "Estimated: ~1m 43.2s" in rendered
+    assert "…" not in rendered.splitlines()[2]
     assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
