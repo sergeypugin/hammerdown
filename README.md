@@ -114,21 +114,25 @@ hammerdown report.docx workbook.xlsx slides.pptx
 ```
 
 Options:
-- `-i`, `--in-place` -- save output Markdown and extracted images in the same directory as the source file
+- `-i`, `--include REGEX` -- only process files whose normalized relative path matches REGEX; may be repeated
+- `-e`, `--exclude REGEX` -- skip files whose normalized relative path matches REGEX; may be repeated; exclusions always take priority
 - `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`, `.log`, `.csv`) in-place instead of creating a copy
-- `-s`, `--skip-existing` -- skip conversion if target Markdown file already exists (overwriting is enabled by default)
+- `-s`, `--skip-existing` -- skip conversion if the target Markdown file already exists (overwriting is enabled by default)
+- `-o`, `--output-dir DIR` -- save Markdown output and extracted images under DIR
 - `-m`, `--merge OUTPUT_MD` -- merge all converted Markdown documents into a single target Markdown file; the output starts with a directory tree and uses `FILE: relative/path` blocks for each document
-- `-q`, `--quiet` -- suppress routine status output
+- `--stdout` -- write merged Markdown to stdout; diagnostics and errors are written to stderr
+- `--confirm` -- with `--stdout`, show an approximate preflight and continue only after an exact `y` response
 - `-v`, `--version` -- display version information
 
 > [!note]
-> The `-f` / `--force` flag has been removed in 2.0.0 because overwriting target Markdown output files is now default behavior.
+> The `-f` / `--force`, `--in-place`, and `--quiet` flags are not supported. Long option names use hyphens, so `--skip_existing` is rejected; use `--skip-existing` instead.
 
 ```sh
-hammerdown -i document.pdf
+hammerdown -i 'reports/.*' -e '/draft/' folder/
 hammerdown -s document.pdf
 hammerdown -m summary.md file1.pdf file2.docx
-hammerdown folder/
+hammerdown --stdout folder/ > summary.md
+hammerdown --stdout --confirm folder/ > summary.md
 ```
 
 ### Logging and Progress Tracking
@@ -162,10 +166,10 @@ hammerdown.convert_file("document.pdf", progress_callback=on_progress)
 
 ### Extracting Base64 Images from Markdown
 
-If you have a Markdown file with embedded base64 images, running `hammerdown` with `--in-place` will extract each image using its MIME type (`png`, `jpeg`, `webp`, `gif`, `svg` and other supported image subtypes) into `hm_images_<stem>_<ext>/` and replace inline base64 data URIs with clean relative links. The image is not converted to PNG: PNG is used only when the source data URI says `image/png`.
+If you have a Markdown file with embedded base64 images, running `hammerdown` with `--overwrite` will extract each image using its MIME type (`png`, `jpeg`, `webp`, `gif`, `svg` and other supported image subtypes) into `hm_images_<stem>_<ext>/` and replace inline base64 data URIs with clean relative links. The image is not converted to PNG: PNG is used only when the source data URI says `image/png`.
 
 ```sh
-hammerdown document.md --in-place
+hammerdown document.md --overwrite
 ```
 
 ### Python Library Quickstart

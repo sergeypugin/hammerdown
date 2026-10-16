@@ -61,6 +61,17 @@ def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path, d
     run_dir.mkdir(parents=True, exist_ok=True)
     target_input = run_dir / file_path.name
     shutil.copy2(file_path, target_input)
+    source_links: list[str] = []
+    if file_path.suffix.lower() in {".md", ".txt"}:
+        source_links = re.findall(r"!\[.*?\]\(([^)]+)\)", file_path.read_text(encoding="utf-8"))
+    for link in source_links:
+        if link.startswith(("http://", "https://", "data:")):
+            continue
+        source_resource = file_path.parent / link
+        target_resource = run_dir / link
+        if source_resource.is_file():
+            target_resource.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_resource, target_resource)
 
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(Path("src").resolve()), os.environ.get("PYTHONPATH", "")]))}
     cmd = [sys.executable, "-m", "hammerdown.cli", str(target_input)]
@@ -103,7 +114,8 @@ def test_golden_conversion(tmp_path: Path):
 
     test_files = [
         f for f in inputs_dir.glob("*.*")
-        if f.suffix.lower() in SUPPORTED_EXTENSIONS and not f.name.startswith("~$")
+        if f.suffix.lower() in SUPPORTED_EXTENSIONS
+        and not f.name.startswith(("~$", "hm_"))
     ]
     assert len(test_files) > 0, "No test input files found"
 

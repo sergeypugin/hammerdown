@@ -18,8 +18,8 @@ from hammerdown.ui_constants import (
     QUEUE_FILE_WIDTH,
     QUEUE_IMAGES_WIDTH,
     QUEUE_MARKER_WIDTH,
-    QUEUE_TIME_WIDTH,
     QUEUE_TOKENS_WIDTH,
+    RESULTS_COLOR,
     SUMMARY_COLOR,
 )
 from hammerdown.formatting import format_duration
@@ -43,14 +43,8 @@ class _LiveBatchRenderable:
 class BatchUI:
     """Helper for managing an in-place updating batch conversion queue."""
 
-    def __init__(
-        self,
-        file_paths: list[str],
-        quiet: bool = False,
-        estimates: list[float | None] | None = None,
-    ):
+    def __init__(self, file_paths: list[str], estimates: list[float | None] | None = None):
         self.files = [Path(path) for path in file_paths]
-        self.quiet = quiet
         self.estimates = estimates or [None] * len(self.files)
         if len(self.estimates) != len(self.files):
             raise ValueError("estimates must match file_paths")
@@ -62,7 +56,7 @@ class BatchUI:
         self._file_durations: list[str] = [""] * len(self.files)
         self._file_images: list[int] = [0] * len(self.files)
         self._file_tokens: list[int] = [0] * len(self.files)
-        self.is_tty = sys.stdout.isatty() and not quiet
+        self.is_tty = sys.stdout.isatty()
         self.can_redraw = self.is_tty
         if self.is_tty:
             self.can_redraw = enable_vt_mode()
@@ -74,7 +68,9 @@ class BatchUI:
         self.total_tokens = 0
         self.skipped_count = 0
         self.overwritten_count = 0
-        self.summary_messages: list[str] = []
+        self.results: list[tuple[str, int]] = []
+        self.converted_count = 0
+        self.image_count = 0
         self._logger_was_disabled = False
         self._live = None
         self._console: Console | None = None
@@ -122,46 +118,63 @@ class BatchUI:
         from rich.table import Table
         from rich.text import Text
 
-        if self._console is None:
-            self._console = Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
-
-        error_table = Table.grid(expand=True, padding=(0, 1))
-        error_table.add_column(no_wrap=True, overflow="ellipsis")
-        error_table.add_column(ratio=1, style="white", overflow="ellipsis")
+        self._console = self._console or Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+        error_table = Table.grid(expand=True, padding=(0, 0))
+        _add_status_file_columns(error_table)
         for file_name, reason in self.errors:
-            error_table.add_row(Text(f"[!] {file_name}", style="red"), Text(reason, style="white"))
+            error_table.add_row(
+                Text("[!]", style="red"),
+                Text(_truncate_filename(file_name, QUEUE_FILE_WIDTH), style="red", no_wrap=True),
+                Text(reason, style="white"),
+            )
         self._console.print(
             Panel(
                 error_table,
-                title=Text(f"Error list ({len(self.errors)})", style="red"),
-                border_style="red",
+                title=_panel_title(f"Error list ({len(self.errors)})", "red"),
+                title_align="left",
                 box=box.ROUNDED,
                 width=BATCH_UI_WIDTH,
             )
         )
 
-    def add_summary_message(self, message: str) -> None:
-        self.summary_messages.append(message)
+    def add_result(self, label: str, count: int) -> None:
+        if count > 0:
+            self.results.append((label, count))
 
-    def print_summary_messages(self) -> None:
-        if not self.summary_messages:
-            return
+    def print_summary(self) -> None:
         from rich.console import Console
+
+        if self._console is None:
+            self._console = Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+        self._console.print(self._summary_renderable())
+
+    def print_results(self) -> None:
+        from rich import box
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
         from rich.text import Text
 
         if self._console is None:
             self._console = Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+        table = Table.grid(expand=True, padding=(0, 0))
+        _add_result_columns(table)
+        for label, count in self.results:
+            table.add_row(
+                Text(f"{count:_}", style=RESULTS_COLOR),
+                Text(label.lower(), style="white"),
+            )
+        self._console.print(
+            Panel(
+                table,
+                title=_panel_title("Results", RESULTS_COLOR),
+                title_align="left",
+                border_style=RESULTS_COLOR,
+                box=box.ROUNDED,
+                width=BATCH_UI_WIDTH,
+            )
+        )
 
-        content_width = BATCH_UI_WIDTH - 4
-        border_width = BATCH_UI_WIDTH - 2
-        self._console.print()
-        for message in self.summary_messages:
-            if cell_len(message) > content_width:
-                message = f"{message[:content_width - 1]}…"
-            padding = " " * max(0, content_width - cell_len(message))
-            self._console.print(Text(f"├{'─' * border_width}┤", style=SUMMARY_COLOR))
-            self._console.print(Text(f"│ {message}{padding} │", style=SUMMARY_COLOR))
-            self._console.print(Text(f"└{'─' * border_width}┘", style=SUMMARY_COLOR))
 
     def render(self) -> None:
         if self._live is not None:
@@ -181,17 +194,13 @@ class BatchUI:
         total = len(self.files)
         completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
         percent = completed / total if total else 0
-        title = Text(
+        title = _panel_title(
             f"Processing {total} files {percent:.0%} ({completed}/{total})",
-            style=PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR,
+            PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR,
         )
 
-        queue = Table.grid(expand=True, padding=(0, 1))
-        queue.add_column(width=QUEUE_MARKER_WIDTH, no_wrap=True)
-        queue.add_column(width=QUEUE_FILE_WIDTH, overflow="ellipsis", no_wrap=True)
-        queue.add_column(width=QUEUE_TIME_WIDTH, no_wrap=True, justify="right")
-        queue.add_column(width=QUEUE_IMAGES_WIDTH, no_wrap=True, justify="right")
-        queue.add_column(width=QUEUE_TOKENS_WIDTH, no_wrap=True, justify="right")
+        queue = Table.grid(expand=True, padding=(0, 0))
+        _add_queue_columns(queue)
         queue.add_row(
             Text("state", style="dim", no_wrap=True),
             Text("file", style="dim", no_wrap=True),
@@ -219,9 +228,13 @@ class BatchUI:
                 duration = format_duration(elapsed_file)
                 images = ""
                 tokens = ""
+            elif state == "[!]":
+                duration = "-"
+                images = "-"
+                tokens = "-"
             else:
                 duration = self._file_durations[index]
-                images = str(self._file_images[index]) if self._file_images[index] else ""
+                images = str(self._file_images[index]) if self._file_images[index] else "-"
                 tokens = f"~{self._file_tokens[index]:_}" if self._file_tokens[index] else ""
             queue.add_row(
                 Text(marker, style=style, no_wrap=True),
@@ -237,7 +250,7 @@ class BatchUI:
         return Panel(
             queue,
             title=title,
-            title_align="center",
+            title_align="left",
             border_style=border_style,
             box=box.ROUNDED,
             width=BATCH_UI_WIDTH,
@@ -270,8 +283,8 @@ class BatchUI:
         summary_parts = [timing]
         return Panel(
             Group(*summary_parts),
-            title=Text("Summary", style=SUMMARY_COLOR),
-            title_align="center",
+            title=_panel_title("Summary", SUMMARY_COLOR),
+            title_align="left",
             border_style=SUMMARY_COLOR,
             box=box.ROUNDED,
             width=BATCH_UI_WIDTH,
@@ -309,7 +322,7 @@ class BatchUI:
         self.details[index] = hint
         if self.can_redraw:
             self.render()
-        elif not self.quiet:
+        else:
             logger.info("Processing %s%s...", self.files[index].name, f" {hint}" if hint else "")
 
     def update_progress(self, index: int, current: int, total: int, unit: str = "pages") -> None:
@@ -327,14 +340,13 @@ class BatchUI:
 
     def fail_file(self, index: int, reason: str) -> None:
         self.statuses[index] = "[!]"
-        self.details[index] = ""
-        self._file_durations[index] = ""
+        self.details[index] = "-"
+        self._file_durations[index] = "-"
+        self._file_images[index] = 0
+        self._file_tokens[index] = 0
         self.errors.append((self.files[index].name, reason))
         if self.can_redraw:
             self.render()
-        elif not self.quiet:
-            logger.error("\033[38;2;157;47;52m[!] %s\033[0m", self.files[index].name)
-            logger.error("Errors:\n  %s -- %s", self.files[index].name, reason)
 
     def complete_file(
         self,
@@ -351,7 +363,10 @@ class BatchUI:
             self._file_durations[index] = duration_text
             self._file_images[index] = images
             self._file_tokens[index] = tokens
+            self.image_count += images
             self.total_tokens += tokens
+            if "skipped" not in info.lower():
+                self.converted_count += 1
             if "skipped" in info.lower():
                 self.skipped_count += 1
             if "overwritten" in info.lower():
@@ -362,25 +377,47 @@ class BatchUI:
             self.details[index] = f"({duration_text}{img_info}{token_info}{extra_info})"
         else:
             self.statuses[index] = "[!]"
-            self._file_durations[index] = duration_text
-            self._file_images[index] = images
-            self._file_tokens[index] = tokens
-            self.details[index] = duration_text
+            self._file_durations[index] = "-"
+            self._file_images[index] = 0
+            self._file_tokens[index] = 0
+            self.details[index] = "-"
             self.errors.append((self.files[index].name, info or "conversion failed"))
         if self.can_redraw:
             self.render()
-        elif not self.quiet:
-            if success:
-                details = [duration_text]
-                if images > 0:
-                    details.append(f"{images} images")
-                if tokens > 0:
-                    details.append(f"~{tokens:_} tokens")
-                if info:
-                    details.append(info)
-                logger.info("Completed %s (%s)", self.files[index].name, ", ".join(details))
-            else:
-                logger.error("Failed to convert %s%s", self.files[index].name, f" -- {info}" if info else "")
+        elif success:
+            details = [duration_text]
+            if images > 0:
+                details.append(f"{images} images")
+            if tokens > 0:
+                details.append(f"~{tokens:_} tokens")
+            if info:
+                details.append(info)
+            logger.info("Completed %s (%s)", self.files[index].name, ", ".join(details))
+
+
+def _add_status_file_columns(table) -> None:
+    table.add_column(width=QUEUE_MARKER_WIDTH, justify="center", no_wrap=True)
+    table.add_column(width=QUEUE_FILE_WIDTH, overflow="ellipsis", no_wrap=True)
+    table.add_column(ratio=1, no_wrap=False, overflow="fold")
+
+
+def _add_result_columns(table) -> None:
+    table.add_column(width=QUEUE_MARKER_WIDTH, justify="center", no_wrap=True)
+    table.add_column(ratio=1, no_wrap=False, overflow="fold")
+
+
+def _add_queue_columns(table) -> None:
+    table.add_column(width=QUEUE_MARKER_WIDTH, justify="center", no_wrap=True)
+    table.add_column(width=QUEUE_FILE_WIDTH, overflow="ellipsis", no_wrap=True)
+    table.add_column(ratio=1, no_wrap=True, justify="right")
+    table.add_column(width=QUEUE_IMAGES_WIDTH, no_wrap=True, justify="right")
+    table.add_column(width=QUEUE_TOKENS_WIDTH, no_wrap=True, justify="right")
+
+
+def _panel_title(label: str, style: str):
+    from rich.text import Text
+
+    return Text(label, style=style)
 
 
 def _truncate_filename(filename: str, max_width: int) -> str:

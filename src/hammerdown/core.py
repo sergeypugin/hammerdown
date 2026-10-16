@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import base64
 import logging
+import mimetypes
 import os
+from dataclasses import dataclass
 from pathlib import Path
 import sys
+import tempfile
 import time
 from typing import Callable
 from hammerdown.parsers import CONVERTERS
@@ -34,10 +38,55 @@ APP_DESCRIPTION: str = "Convert PDF and office documents to Markdown"
 SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(CONVERTERS)
 TEXT_EXTENSIONS: tuple[str, ...] = (".txt", ".md")
 
-DEFAULT_IN_PLACE: bool = False
 DEFAULT_OVERWRITE: bool = True
 DEFAULT_SKIP_EXISTING: bool = False
-DEFAULT_QUIET: bool = False
+
+
+@dataclass(frozen=True)
+class ConversionResult:
+    success: bool
+    markdown: str | None = None
+    images: int = 0
+    tokens: int = 0
+    duration: float = 0.0
+    error: str | None = None
+    output_path: Path | None = None
+
+    def __bool__(self) -> bool:
+        return self.success
+
+
+def _embed_temporary_resources(markdown: str, temporary_dir: Path) -> str:
+    resources: dict[str, str] = {}
+    for resource in temporary_dir.rglob("*"):
+        if not resource.is_file():
+            continue
+        relative = resource.relative_to(temporary_dir).as_posix()
+        mime_type = mimetypes.guess_type(resource.name)[0] or "application/octet-stream"
+        encoded = base64.b64encode(resource.read_bytes()).decode("ascii")
+        resources[relative] = f"data:{mime_type};base64,{encoded}"
+
+    embedded = markdown
+    for relative, data_uri in sorted(resources.items(), key=lambda item: len(item[0]), reverse=True):
+        embedded = embedded.replace(relative, data_uri)
+        embedded = embedded.replace(relative.replace("/", "\\"), data_uri)
+    return embedded
+
+
+def _token_count(markdown: str) -> int:
+    try:
+        if getattr(sys, "frozen", False) and not os.environ.get("TIKTOKEN_CACHE_DIR"):
+            bundle_dir = getattr(sys, "_MEIPASS", None)
+            bundled_cache = Path(bundle_dir) / "data-gym-cache" if bundle_dir else None
+            if bundled_cache and bundled_cache.is_dir():
+                os.environ["TIKTOKEN_CACHE_DIR"] = str(bundled_cache)
+
+        import tiktoken
+        encoding = tiktoken.get_encoding("cl100k_base")
+        return len(encoding.encode(markdown, disallowed_special=()))
+    except Exception as exc:
+        logger.warning("Token counting unavailable: %s", exc)
+        return 0
 
 
 def to_markdown(
@@ -144,34 +193,53 @@ def get_conversion_estimate(file_path: Path) -> str:
 
 def convert_file(
     file_path: str | os.PathLike[str],
-    in_place: bool = True,
     overwrite: bool = False,
     skip_existing: bool = False,
     progress_callback: ProgressCallback | None = None,
     completion_callback: CompletionCallback | None = None,
     batch_mode: bool = False,
     target_dir: str | os.PathLike[str] | None = None,
-) -> bool:
+    stdout: bool = False,
+) -> ConversionResult:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
     if not source.is_file():
-        logger.error("File not found: %s", normalized_path)
-        return False
+        reason = f"file not found: {normalized_path}"
+        logger.error("%s", reason)
+        if completion_callback:
+            completion_callback(False, 0.0, 0, 0)
+        return ConversionResult(False, error=reason)
 
     stem = source.stem
     extension = source.suffix.lower()
     ext_clean = extension.lstrip(".")
 
-    out_dir = Path(normalize_path(target_dir)) if target_dir is not None else source.parent
+    if stdout and (overwrite or skip_existing or target_dir is not None):
+        reason = "stdout mode cannot be combined with overwrite, skip-existing, or an output directory"
+        logger.error("%s", reason)
+        if completion_callback:
+            completion_callback(False, 0.0, 0, 0)
+        return ConversionResult(False, error=reason)
+
+    temporary_dir: tempfile.TemporaryDirectory[str] | None = None
+    if stdout:
+        temporary_dir = tempfile.TemporaryDirectory(prefix="hammerdown-stdout-")
+        out_dir = Path(temporary_dir.name)
+    else:
+        out_dir = Path(normalize_path(target_dir)) if target_dir is not None else source.parent
+
     out_md_name = f"hm_{stem}_{ext_clean}.md" if ext_clean else f"hm_{stem}.md"
     out_md = out_dir / out_md_name
-
     # Handle explicit source overwrite for text-like files
+
     is_text = extension in TEXT_EXTENSIONS
     if overwrite:
         if target_dir is not None:
-            logger.error("--overwrite cannot be combined with an output directory")
-            return False
+            reason = "--overwrite cannot be combined with an output directory"
+            logger.error("%s", reason)
+            if completion_callback:
+                completion_callback(False, 0.0, 0, 0)
+            return ConversionResult(False, error=reason)
         if is_text:
             out_md = source
         elif not batch_mode:
@@ -181,7 +249,7 @@ def convert_file(
         logger.info("Skipping %s (output already exists: %s)", source.name, out_md.name)
         if completion_callback:
             completion_callback(True, 0.0, 0, 0)
-        return True
+        return ConversionResult(True, duration=0.0, output_path=out_md)
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -191,9 +259,10 @@ def convert_file(
         logger.error("%s", reason)
         if completion_callback:
             completion_callback(False, 0.0, 0, 0)
-        return False
+        if temporary_dir is not None:
+            temporary_dir.cleanup()
+        return ConversionResult(False, error=reason)
 
-    est_hint = ""
     if extension in {".pdf", ".epub", ".mobi", ".fb2", ".xps"}:
         try:
             import pymupdf  # type: ignore
@@ -309,30 +378,37 @@ def convert_file(
             sys.stdout.flush()
 
         if md_text is None:
+            reason = f"conversion failed for {source.name}"
             if is_tty:
                 print(f"[x] Failed to convert {source.name}")
             if completion_callback:
                 completion_callback(False, time.monotonic() - started_at, 0, 0)
-            return False
+            if temporary_dir is not None:
+                temporary_dir.cleanup()
+            return ConversionResult(False, error=reason)
 
         # Trim trailing whitespace on each line and ensure a single final newline
         normalized_text = md_text.replace("\r\n", "\n").replace("\r", "\n")
         trimmed_lines = [line.rstrip() for line in normalized_text.split("\n")]
         cleaned_md = "\n".join(trimmed_lines).rstrip() + "\n"
 
-        token_count = 0
-        try:
-            if getattr(sys, "frozen", False) and not os.environ.get("TIKTOKEN_CACHE_DIR"):
-                bundle_dir = getattr(sys, "_MEIPASS", None)
-                bundled_cache = Path(bundle_dir) / "data-gym-cache" if bundle_dir else None
-                if bundled_cache and bundled_cache.is_dir():
-                    os.environ["TIKTOKEN_CACHE_DIR"] = str(bundled_cache)
+        if stdout and temporary_dir is not None:
+            cleaned_md = _embed_temporary_resources(cleaned_md, Path(temporary_dir.name))
 
-            import tiktoken
-            encoding = tiktoken.get_encoding("cl100k_base")
-            token_count = len(encoding.encode(cleaned_md, disallowed_special=()))
-        except Exception as exc:
-            logger.warning("Token counting unavailable for %s: %s", source.name, exc)
+        token_count = _token_count(cleaned_md)
+
+        if stdout:
+            duration = time.monotonic() - started_at
+            if completion_callback:
+                completion_callback(True, duration, saved_images, token_count)
+            temporary_dir.cleanup()
+            return ConversionResult(
+                True,
+                markdown=cleaned_md,
+                images=saved_images,
+                tokens=token_count,
+                duration=duration,
+            )
 
         out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
         duration = time.monotonic() - started_at
@@ -350,7 +426,14 @@ def convert_file(
                 saved_images,
                 token_info,
             )
-        return True
+        return ConversionResult(
+            True,
+            markdown=cleaned_md,
+            images=saved_images,
+            tokens=token_count,
+            duration=duration,
+            output_path=out_md,
+        )
     except Exception:
         duration = time.monotonic() - started_at
         if completion_callback:
@@ -360,5 +443,6 @@ def convert_file(
             sys.stdout.flush()
         if is_tty:
             print(f"[x] Failed to convert {source.name}")
-        logger.exception("Failed to convert %s", source.name)
-        return False
+        if temporary_dir is not None:
+            temporary_dir.cleanup()
+        return ConversionResult(False, duration=duration, error=f"failed to convert {source.name}")

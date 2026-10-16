@@ -3,10 +3,9 @@ from __future__ import annotations
 from hammerdown.core import (
     APP_DESCRIPTION,
     APP_NAME,
-    DEFAULT_IN_PLACE,
     DEFAULT_OVERWRITE,
-    DEFAULT_QUIET,
     DEFAULT_SKIP_EXISTING,
+    ConversionResult,
     SUPPORTED_EXTENSIONS,
     TEXT_EXTENSIONS,
     convert_csv,
@@ -26,20 +25,21 @@ from hammerdown.core import (
     render_table_regions,
     to_markdown,
 )
+from hammerdown.batch import convert_files
 
-__version__ = "2.1.0"
+__version__ = "3.0.0"
 
 __all__ = [
     "APP_NAME",
     "APP_DESCRIPTION",
     "SUPPORTED_EXTENSIONS",
     "TEXT_EXTENSIONS",
-    "DEFAULT_IN_PLACE",
     "DEFAULT_OVERWRITE",
     "DEFAULT_SKIP_EXISTING",
-    "DEFAULT_QUIET",
+    "ConversionResult",
     "to_markdown",
     "convert_file",
+    "convert_files",
     "convert_docx",
     "convert_doc",
     "convert_odt",

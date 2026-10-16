@@ -27,7 +27,6 @@ def test_text_file_estimate_is_approximate(tmp_path: Path):
 def test_batch_ui_shows_cached_estimates_and_total(tmp_path: Path):
     ui = BatchUI(
         [str(tmp_path / "one.pdf"), str(tmp_path / "two.pdf")],
-        quiet=True,
         estimates=[1.0, 2.0],
     )
     process_output = StringIO()
@@ -66,10 +65,8 @@ def test_run_batch_precomputes_all_estimates_before_conversion(tmp_path: Path, m
     args = argparse.Namespace(
         files=[str(first), str(second)],
         coordinator=False,
-        in_place=False,
         overwrite=False,
         skip_existing=False,
-        quiet=True,
         merge=None,
     )
 
@@ -83,7 +80,7 @@ def test_run_batch_precomputes_all_estimates_before_conversion(tmp_path: Path, m
 
 
 def test_batch_live_renderable_refreshes_elapsed_time(tmp_path: Path):
-    ui = BatchUI([str(tmp_path / "active.pdf")], quiet=True)
+    ui = BatchUI([str(tmp_path / "active.pdf")])
     ui.start_file(0)
     renderable = _LiveBatchRenderable(ui)
     console = Console(width=BATCH_UI_WIDTH, force_terminal=False)
@@ -102,7 +99,7 @@ def test_batch_live_renderable_refreshes_elapsed_time(tmp_path: Path):
 
 
 def test_batch_ui_shows_active_progress(tmp_path: Path):
-    ui = BatchUI([str(tmp_path / "active.pdf")], quiet=True, estimates=[5.0])
+    ui = BatchUI([str(tmp_path / "active.pdf")], estimates=[5.0])
     ui.start_file(0)
     ui.update_progress(0, 3, 4, "pages")
     output = StringIO()
@@ -110,7 +107,7 @@ def test_batch_ui_shows_active_progress(tmp_path: Path):
 
     assert "active.pdf" in output.getvalue()
     rendered = output.getvalue()
-    assert "[████░░]" in rendered
+    assert "[████░]" in rendered
     assert "time" in rendered
     assert "images" in rendered
     assert "tokens" in rendered
@@ -126,7 +123,7 @@ def test_format_duration_uses_one_decimal_for_all_units():
 
 
 def test_batch_ui_process_shows_bracketed_markers_without_error_summary(tmp_path: Path):
-    ui = BatchUI([str(tmp_path / "done.txt"), str(tmp_path / "broken.txt")], quiet=True)
+    ui = BatchUI([str(tmp_path / "done.txt"), str(tmp_path / "broken.txt")])
     ui.statuses = ["[x]", "[!]"]
     ui.errors.append(("broken.txt", "conversion failed"))
 
@@ -140,38 +137,36 @@ def test_batch_ui_process_shows_bracketed_markers_without_error_summary(tmp_path
 
 
 def test_batch_ui_summary_contains_compact_stats(tmp_path: Path):
-    ui = BatchUI([str(tmp_path / "done.txt")], quiet=True)
+    ui = BatchUI([str(tmp_path / "done.txt")])
     ui.total_tokens = 1234567
     ui.overwritten_count = 2
     ui.skipped_count = 1
     ui.errors.append(("broken.txt", "file or directory not found"))
-    ui.add_summary_message("Merged 4 documents into TODELETE.md")
-
+    ui.add_result("Converted files", 1)
+    ui.add_result("Overwritten text sources", 3)
     output = StringIO()
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._summary_renderable())
     rendered = output.getvalue()
 
     assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
-    assert "Summary" in rendered
+    assert "─ Summary" in rendered
     assert "Errors: 1" in rendered
     assert "1_234_567" in rendered
     assert "Overwritten: 2" in rendered
     assert "Skipped: 1" in rendered
-    assert "Merged 4 documents into TODELETE.md" not in rendered
 
-    msg_output = StringIO()
-    ui._console = Console(file=msg_output, width=BATCH_UI_WIDTH, force_terminal=False)
-    ui.print_summary_messages()
-    message_output = msg_output.getvalue()
-    assert message_output.startswith("\n")
-    assert "Merged 4 documents into TODELETE.md" in message_output
-    assert "├" in message_output
-    assert "└" in message_output
+    result_output = StringIO()
+    ui._console = Console(file=result_output, width=BATCH_UI_WIDTH, force_terminal=False)
+    ui.print_results()
+    results_rendered = result_output.getvalue()
+    assert "─ Results" in results_rendered
+    assert "overwritten text sources" in results_rendered
+    assert "broken.txt" not in results_rendered
 
 
 def test_batch_ui_places_current_file_by_remaining_queue(tmp_path: Path):
     files = [str(tmp_path / f"file_{index}.txt") for index in range(5)]
-    ui = BatchUI(files, quiet=True)
+    ui = BatchUI(files)
     ui.current_idx = 3
     ui.statuses[3] = "[>]"
 
@@ -182,7 +177,40 @@ def test_batch_ui_places_current_file_by_remaining_queue(tmp_path: Path):
     assert rendered.index("file_3.txt") > rendered.index("file_0.txt")
     assert rendered.index("file_3.txt") > rendered.index("file_2.txt")
     assert "file_4.txt" in rendered
+def test_batch_ui_uses_aligned_placeholders_and_lowercase_results(tmp_path: Path):
+    ui = BatchUI([str(tmp_path / "done.txt"), str(tmp_path / "broken.txt")])
+    ui.complete_file(0, True, 1.2, images=0, tokens=0)
+    ui.fail_file(1, "conversion failed")
+    ui.add_result("Converted files", 1)
+    ui.add_result("Overwritten text sources", 3)
+    process_output = StringIO()
+    Console(file=process_output, width=BATCH_UI_WIDTH, force_terminal=False).print(
+        ui._process_renderable(final=True)
+    )
+    process_lines = process_output.getvalue().splitlines()
+    broken_line = next(line for line in process_lines if "broken.txt" in line)
+    assert "-" in broken_line
+    assert broken_line.count("-") >= 3
 
+    error_output = StringIO()
+    ui._console = Console(file=error_output, width=BATCH_UI_WIDTH, force_terminal=False)
+    ui.print_error_list()
+    error_rendered = error_output.getvalue()
+    assert "─ Error list (1)" in error_rendered
+    error_lines = error_rendered.splitlines()
+    error_line = next(line for line in error_lines if "broken.txt" in line)
+    process_file_start = next(line.index("broken.txt") for line in process_lines if "broken.txt" in line)
+    assert error_line.index("broken.txt") == process_file_start
+
+    result_output = StringIO()
+    ui._console = Console(file=result_output, width=BATCH_UI_WIDTH, force_terminal=False)
+    ui.print_results()
+    results_rendered = result_output.getvalue()
+    result_line = next(line for line in results_rendered.splitlines() if "converted files" in line)
+    assert result_line.index("converted files") >= result_line.index("1")
+    assert "─ Results" in results_rendered
+    assert "overwritten text sources" in results_rendered
+    assert "#d2a6ff" not in results_rendered
 
 @pytest.mark.parametrize("logger_was_disabled", [False, True])
 def test_batch_ui_suppresses_and_restores_logger_during_live(
@@ -213,7 +241,7 @@ def test_batch_ui_suppresses_and_restores_logger_during_live(
 
 
 def test_batch_ui_finish_stages_final_frame_before_stopping(tmp_path: Path):
-    ui = BatchUI([str(tmp_path / "done.txt")], quiet=True)
+    ui = BatchUI([str(tmp_path / "done.txt")])
     ui.can_redraw = True
 
     class FakeLive:
@@ -263,22 +291,18 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
             events.append(("complete", self.files[index].name, success))
             super().complete_file(index, success, duration, images, tokens, info)
 
-        def add_summary_message(self, message):
-            assert merged.is_file()
-            assert "converted content" in merged.read_text(encoding="utf-8")
-            events.append(("summary", message))
-            super().add_summary_message(message)
-
         def finish(self):
             events.append(("finish",))
             super().finish()
 
+        def print_summary(self):
+            events.append(("print_summary",))
+
         def print_error_list(self):
             events.append(("print_errors",))
 
-        def print_summary_messages(self):
-            events.append(("print_messages",))
-            super().print_summary_messages()
+        def print_results(self):
+            events.append(("print_results",))
 
     def convert_file(file_path, **kwargs):
         events.append(("convert", Path(file_path).name))
@@ -296,16 +320,19 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
     args = argparse.Namespace(
         files=[str(successful), str(failed), str(missing)],
         coordinator=False,
-        in_place=False,
         overwrite=False,
         skip_existing=False,
-        quiet=False,
+        output_dir=None,
+        include=[],
+        exclude=[],
+        stdout=False,
+        confirm=False,
+        right_click=False,
         merge=str(merged),
     )
 
     assert batch.run_batch(args) == 1
 
-    message = "Merged 1 documents into combined.md"
     assert events == [
         ("error", "a-missing.txt"),
         ("start", "b-success.txt"),
@@ -314,10 +341,10 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
         ("start", "z-failed.txt"),
         ("convert", "z-failed.txt"),
         ("complete", "z-failed.txt", False),
-        ("summary", message),
         ("finish",),
+        ("print_summary",),
         ("print_errors",),
-        ("print_messages",),
+        ("print_results",),
     ]
     assert "FILE: b-success.txt" in merged.read_text(encoding="utf-8")
     assert "# b-success.txt" not in merged.read_text(encoding="utf-8")
@@ -328,16 +355,13 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
     rendered = output.getvalue()
     assert "Errors: 2" in rendered
     assert "Estimated: ~" in rendered
-    assert message not in rendered
+    assert "broken.txt" not in rendered
+    assert instances[0].results == [("Merged documents", 1), ("Converted files", 1)]
 
-    msg_output = StringIO()
-    instances[0]._console = Console(file=msg_output, width=BATCH_UI_WIDTH, force_terminal=False)
-    instances[0].print_summary_messages()
-    assert message in msg_output.getvalue()
 
 
 def test_batch_ui_summary_preserves_seconds_for_minute_estimates(tmp_path: Path):
-    ui = BatchUI([str(tmp_path / "document.pdf")], quiet=True, estimates=[65.2])
+    ui = BatchUI([str(tmp_path / "document.pdf")], estimates=[65.2])
 
     output = StringIO()
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._summary_renderable())
@@ -350,7 +374,7 @@ def test_batch_ui_summary_preserves_seconds_for_minute_estimates(tmp_path: Path)
 
 def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
     filename = "document_" + "x" * 160 + ".txt"
-    ui = BatchUI([str(tmp_path / filename)], quiet=True)
+    ui = BatchUI([str(tmp_path / filename)])
     ui.start_file(0)
     output = StringIO()
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._renderable())
@@ -362,7 +386,7 @@ def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
 
 
 def test_batch_ui_process_formats_long_durations_and_keeps_them_visible(tmp_path: Path):
-    ui = BatchUI([str(tmp_path / "long_running.txt")], quiet=True)
+    ui = BatchUI([str(tmp_path / "long_running.txt")])
     ui.statuses = ["[x]"]
     ui.complete_file(0, True, 54 * 60, images=1, tokens=144840)
 
@@ -385,7 +409,7 @@ def test_batch_ui_process_formats_long_durations_and_keeps_them_visible(tmp_path
 
 
 def test_batch_ui_summary_fits_three_digit_overwritten(tmp_path: Path):
-    ui = BatchUI([str(tmp_path / "file.txt")], quiet=True, estimates=[103.2])
+    ui = BatchUI([str(tmp_path / "file.txt")], estimates=[103.2])
     ui._batch_started_at = time.monotonic() - 65.2
     ui.total_tokens = 144840
     ui.overwritten_count = 999

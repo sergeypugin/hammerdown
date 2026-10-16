@@ -3,16 +3,22 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
-import time
 from pathlib import Path
 from typing import Sequence
 
-from hammerdown import SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS
-from hammerdown.core import convert_file, get_conversion_estimate_seconds
+from hammerdown.core import (
+    ConversionResult,
+    SUPPORTED_EXTENSIONS,
+    TEXT_EXTENSIONS,
+    convert_file,
+    get_conversion_estimate_seconds,
+)
 from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
-from hammerdown.merge import merge_converted_files, merge_root_for_inputs
-from hammerdown.utils import BatchUI, format_duration, normalize_path
+from hammerdown.merge import merge_converted_files, merge_root_for_inputs, render_merged_markdown
+from hammerdown.batch_ui import BatchUI
+from hammerdown.utils import format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
 
@@ -20,10 +26,24 @@ logger = logging.getLogger("hammerdown")
 def _expand_paths(
     paths: Sequence[str],
     excluded_dir: Path | None = None,
+    include_patterns: Sequence[re.Pattern[str]] = (),
+    exclude_patterns: Sequence[re.Pattern[str]] = (),
 ) -> list[tuple[str, str | None]]:
     targets: list[tuple[str, str | None]] = []
     seen_paths: set[Path] = set()
     excluded_dir = excluded_dir.resolve() if excluded_dir is not None else None
+
+    def matches(path: Path, root: Path | None) -> bool:
+        if root is not None:
+            try:
+                relative = path.relative_to(root).as_posix()
+            except ValueError:
+                relative = path.name
+        else:
+            relative = path.name
+        if include_patterns and not any(pattern.search(relative) for pattern in include_patterns):
+            return False
+        return not any(pattern.search(relative) for pattern in exclude_patterns)
 
     for raw in paths:
         try:
@@ -44,11 +64,19 @@ def _expand_paths(
                         if not (Path(root) / name).resolve().is_relative_to(excluded_dir)
                     ]
                 for f in sorted(filenames):
-                    if f.startswith("~$") or f.startswith("."):
+                    if (
+                        f.startswith("~$")
+                        or f.startswith(".")
+                        or (f.startswith("hm_") and f.lower().endswith(".md"))
+                    ):
                         continue
                     try:
                         file_path = (Path(root) / f).resolve()
-                        if file_path.suffix.lower() in SUPPORTED_EXTENSIONS and file_path not in seen_paths:
+                        if (
+                            file_path.suffix.lower() in SUPPORTED_EXTENSIONS
+                            and file_path not in seen_paths
+                            and matches(file_path, p)
+                        ):
                             seen_paths.add(file_path)
                             targets.append((str(file_path), None))
                     except OSError:
@@ -56,7 +84,7 @@ def _expand_paths(
         elif p.is_file():
             if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 targets.append((str(p), "unsupported format"))
-            elif p not in seen_paths:
+            elif p not in seen_paths and matches(p, None):
                 seen_paths.add(p)
                 targets.append((str(p), None))
 
@@ -83,15 +111,12 @@ def _merge_converted_files(
     )
 
 
-def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool:
-    file_path, in_place, quiet, overwrite, skip_existing = args_tuple
+def _process_single_file(args_tuple: tuple[str, bool, bool]) -> ConversionResult:
+    file_path, overwrite, skip_existing = args_tuple
     if not logger.handlers:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
-    if quiet:
-        logger.setLevel(logging.ERROR)
     return convert_file(
         file_path,
-        in_place=in_place,
         overwrite=overwrite,
         skip_existing=skip_existing,
     )
@@ -137,6 +162,69 @@ def _output_paths(
     return output_paths
 
 
+def _approximate_tokens(paths: Sequence[str]) -> int | None:
+    total_bytes = 0
+    try:
+        for path in paths:
+            total_bytes += Path(path).stat().st_size
+    except OSError:
+        return None
+    return max(1, total_bytes // 4) if paths else 0
+
+
+def _confirm_stdout(paths: Sequence[str], estimates: Sequence[float | None]) -> bool:
+    token_estimate = _approximate_tokens(paths)
+    known_estimates = [value for value in estimates if value is not None]
+    seconds = sum(known_estimates) if len(known_estimates) == len(paths) and paths else (0.0 if not paths else None)
+    token_text = f"~{token_estimate:_}" if token_estimate is not None else "unknown"
+    duration_text = f"~{format_duration(seconds)}" if seconds is not None else "unknown"
+    print(
+        f"Preflight: {len(paths)} files, approximately {token_text} tokens, estimated time {duration_text}.",
+        file=sys.stderr,
+    )
+    if not sys.stdin.isatty():
+        print("Confirmation requires interactive stdin; cancelled.", file=sys.stderr)
+        return False
+    try:
+        print("Continue and write Markdown to stdout? [y/N] ", end="", file=sys.stderr, flush=True)
+        answer = sys.stdin.readline().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("Cancelled.", file=sys.stderr)
+        return False
+    if answer != "y":
+        print("Cancelled.", file=sys.stderr)
+        return False
+    return True
+
+
+def _run_stdout_conversion(files: Sequence[str], raw_inputs: Sequence[str]) -> int:
+    if not files:
+        return 0
+    converted: list[tuple[str, str]] = []
+    failed = False
+    for file_path in files:
+        logger_was_disabled = logger.disabled
+        logger.disabled = True
+        try:
+            result = convert_file(
+                file_path,
+                batch_mode=True,
+                target_dir=None,
+                stdout=True,
+            )
+        finally:
+            logger.disabled = logger_was_disabled
+        if result.success and result.markdown is not None:
+            converted.append((file_path, result.markdown))
+        else:
+            failed = True
+            print(f"[!] {Path(file_path).name}: {result.error or 'conversion failed'}", file=sys.stderr)
+    if converted:
+        root = merge_root_for_inputs(raw_inputs, [Path(path) for path, _ in converted])
+        sys.stdout.write(render_merged_markdown(converted, root))
+    return 1 if failed else 0
+
+
 def run_batch(args: argparse.Namespace) -> int:
     raw_files = args.files
     if not raw_files:
@@ -148,12 +236,39 @@ def run_batch(args: argparse.Namespace) -> int:
     if output_root is not None and output_root.exists() and not output_root.is_dir():
         logger.error("output directory path is not a directory: %s", output_root)
         return 1
-    targets = _expand_paths(raw_files, excluded_dir=output_root)
+
+    include_patterns = [re.compile(pattern) for pattern in getattr(args, "include", [])]
+    exclude_patterns = [re.compile(pattern) for pattern in getattr(args, "exclude", [])]
+    targets = _expand_paths(
+        raw_files,
+        excluded_dir=output_root,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+    )
     if not targets:
         logger.info("No supported documents found to convert")
         return 0
 
     targets.sort(key=lambda item: item[0].lower())
+    files = [path for path, error in targets if error is None]
+    ui_files = [path for path, _ in targets]
+    estimates = [
+        get_conversion_estimate_seconds(Path(path)) if error is None else None
+        for path, error in targets
+    ]
+
+    if getattr(args, "stdout", False):
+        initial_errors = [(path, error) for path, error in targets if error is not None]
+        for path, error in initial_errors:
+            print(f"[!] {Path(path).name}: {error}", file=sys.stderr)
+        file_estimates = [estimate for (_, error), estimate in zip(targets, estimates) if error is None]
+        if getattr(args, "confirm", False) and files and not _confirm_stdout(files, file_estimates):
+            return 1
+        if not files:
+            return 1 if initial_errors else 0
+        conversion_status = _run_stdout_conversion(files, raw_files)
+        return 1 if initial_errors or conversion_status else 0
+
     try:
         output_paths = (
             _output_paths(raw_files, targets, output_root)
@@ -163,18 +278,14 @@ def run_batch(args: argparse.Namespace) -> int:
     except ValueError as exc:
         logger.error("%s", exc)
         return 1
-    files = [path for path, error in targets if error is None]
-    ui_files = [path for path, _ in targets]
 
-    use_ipc = args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
+    use_ipc = getattr(args, "coordinator", False) or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
     options = {
-        "in_place": args.in_place,
-        "overwrite": args.overwrite,
-        "skip_existing": args.skip_existing,
-        "quiet": args.quiet,
+        "overwrite": getattr(args, "overwrite", False),
+        "skip_existing": getattr(args, "skip_existing", False),
     }
 
-    if use_ipc and try_delegate_to_coordinator(files, options):
+    if use_ipc and files and not any(error for _, error in targets) and try_delegate_to_coordinator(files, options):
         logger.info("Delegated %d files to active hammerdown coordinator", len(files))
         return 0
 
@@ -188,23 +299,49 @@ def run_batch(args: argparse.Namespace) -> int:
                 ctypes.windll.user32.ShowWindow(hwnd, 5)
                 ctypes.windll.user32.SetForegroundWindow(hwnd)
 
-        files = coordinator.collect_files(files, assembly_timeout=0.35)
+        initial_errors = [target for target in targets if target[1] is not None]
+        collected_files = coordinator.collect_files(files, assembly_timeout=0.35)
+        targets = _expand_paths(
+            [*raw_files, *collected_files],
+            excluded_dir=output_root,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
+        targets.extend(
+            target for target in initial_errors if target not in targets
+        )
+        targets.sort(key=lambda item: item[0].lower())
+        files = [path for path, error in targets if error is None]
+        ui_files = [path for path, _ in targets]
+        estimates = [
+            get_conversion_estimate_seconds(Path(path)) if error is None else None
+            for path, error in targets
+        ]
+        output_path_inputs = [*raw_files, *collected_files]
     elif use_ipc:
         return 0
+    else:
+        output_path_inputs = raw_files
 
-    estimates = [
-        get_conversion_estimate_seconds(Path(path)) if error is None else None
-        for path, error in targets
-    ]
-    started_at = time.monotonic()
+    try:
+        output_paths = (
+            _output_paths(output_path_inputs, targets, output_root)
+            if output_root is not None
+            else [Path(path).parent / f"hm_{Path(path).stem}_{Path(path).suffix.lower().lstrip('.')}.md" for path, _ in targets]
+        )
+    except ValueError as exc:
+        logger.error("%s", exc)
+        if coordinator:
+            coordinator.stop()
+        return 1
+
     results: list[bool] = []
-    total_tokens = 0
-    conversion_finished = False
-    batch_ui = BatchUI(ui_files, quiet=args.quiet, estimates=estimates)
+    batch_ui = BatchUI(ui_files, estimates=estimates)
 
     if batch_ui.can_redraw:
         batch_ui.start()
 
+    conversion_finished = False
     try:
         for idx, (f, error) in enumerate(targets):
             f_path = Path(f)
@@ -230,21 +367,32 @@ def run_batch(args: argparse.Namespace) -> int:
                 batch_ui.update_progress(idx, current, total, unit)
 
             def on_complete(success: bool, dur: float, imgs: int, tokens: int) -> None:
-                nonlocal total_tokens
-                total_tokens += tokens
                 batch_ui.complete_file(idx, success, dur, imgs, tokens, status_info)
 
-            res = convert_file(
-                f_path,
-                in_place=args.in_place,
-                overwrite=args.overwrite,
-                skip_existing=args.skip_existing,
-                progress_callback=on_progress,
-                completion_callback=on_complete,
-                batch_mode=True,
-                target_dir=output_path.parent if output_root is not None else None,
-            )
-            results.append(res)
+            error_count_before = len(batch_ui.errors)
+            logger_was_disabled = logger.disabled
+            logger.disabled = True
+            try:
+                res = convert_file(
+                    f_path,
+                    overwrite=args.overwrite,
+                    skip_existing=args.skip_existing,
+                    progress_callback=on_progress,
+                    completion_callback=on_complete,
+                    batch_mode=True,
+                    target_dir=output_path.parent if output_root is not None else None,
+                )
+            finally:
+                logger.disabled = logger_was_disabled
+            succeeded = bool(res)
+            if not succeeded:
+                reason = getattr(res, "error", None)
+                if len(batch_ui.errors) > error_count_before:
+                    name, previous_reason = batch_ui.errors[-1]
+                    batch_ui.errors[-1] = (name, reason or previous_reason)
+                else:
+                    batch_ui.errors.append((f_path.name, reason or "conversion failed"))
+            results.append(succeeded)
         conversion_finished = True
     finally:
         if not conversion_finished:
@@ -252,44 +400,49 @@ def run_batch(args: argparse.Namespace) -> int:
         if coordinator:
             coordinator.stop()
 
-    failed_count = results.count(False)
+    failed_count = sum(not result for result in results)
+    merge_failed = False
     if args.merge and any(results):
         successful_indexes = [index for index, ((_, error), result) in enumerate(zip(targets, results)) if error is None and result]
         successful_files = [targets[index][0] for index in successful_indexes]
         successful_outputs = [output_paths[index] for index in successful_indexes]
         merge_target = Path(normalize_path(args.merge))
         merge_was_existing = args.skip_existing and merge_target.exists()
-        merge_completed = _merge_converted_files(
-            successful_files,
-            [True] * len(successful_files),
-            args.merge,
-            overwrite_sources=args.overwrite,
-            output_paths=successful_outputs,
-            skip_existing=args.skip_existing,
-            merge_root=merge_root_for_inputs(raw_files, [Path(path) for path in successful_files]),
-        )
-        if merge_was_existing:
-            batch_ui.add_summary_message(f"Merge skipped: {merge_target.name} already exists")
-        elif merge_completed:
-            batch_ui.add_summary_message(f"Merged {len(successful_files)} documents into {merge_target.name}")
+        try:
+            merge_completed = _merge_converted_files(
+                successful_files,
+                [True] * len(successful_files),
+                args.merge,
+                overwrite_sources=args.overwrite,
+                output_paths=successful_outputs,
+                skip_existing=args.skip_existing,
+                merge_root=merge_root_for_inputs(output_path_inputs, [Path(path) for path in successful_files]),
+            )
+        except Exception as exc:
+            merge_failed = True
+            batch_ui.errors.append((merge_target.name, str(exc)))
+            merge_completed = False
+        if merge_was_existing and not merge_failed:
+            batch_ui.skipped_count += 1
+        elif merge_completed and not merge_failed:
+            batch_ui.add_result("Merged documents", len(successful_files))
+        elif not merge_failed:
+            merge_failed = True
+            batch_ui.errors.append((merge_target.name, "merge did not produce an output file"))
 
     batch_ui.finish()
+    batch_ui.add_result("Converted files", batch_ui.converted_count)
+    batch_ui.add_result("Extracted images", batch_ui.image_count)
+    batch_ui.add_result("Skipped existing outputs", batch_ui.skipped_count)
+    batch_ui.add_result("Overwritten text sources", batch_ui.overwritten_count)
 
-    should_wait = (
-        os.name == "nt"
-        and not args.quiet
-        and (
-            args.coordinator
-            or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
-            or getattr(sys, "frozen", False)
-        )
-    )
-    if not args.quiet:
-        if batch_ui.errors:
-            batch_ui.print_error_list()
-        batch_ui.print_summary_messages()
+    if not batch_ui.can_redraw:
+        batch_ui.print_summary()
+    if batch_ui.errors:
+        batch_ui.print_error_list()
+    batch_ui.print_results()
 
-    if should_wait:
+    if getattr(args, "right_click", False):
         from rich.console import Console
         from rich.text import Text
 
@@ -302,4 +455,61 @@ def run_batch(args: argparse.Namespace) -> int:
         except (EOFError, KeyboardInterrupt):
             pass
 
-    return 1 if failed_count else 0
+    return 1 if failed_count or merge_failed else 0
+
+
+def convert_files(
+    files: Sequence[str | os.PathLike[str]],
+    *,
+    include: Sequence[str] = (),
+    exclude: Sequence[str] = (),
+    overwrite: bool = False,
+    skip_existing: bool = False,
+    output_dir: str | os.PathLike[str] | None = None,
+    merge: str | os.PathLike[str] | None = None,
+    stdout: bool = False,
+    confirm: bool = False,
+) -> int:
+    """Convert selected files using the same public options as the CLI."""
+    if confirm and not stdout:
+        raise ValueError("confirm can only be used with stdout")
+    if stdout and (merge is not None or output_dir is not None or overwrite or skip_existing):
+        raise ValueError("stdout cannot be combined with merge, output_dir, overwrite, or skip_existing")
+    if overwrite and skip_existing:
+        raise ValueError("overwrite cannot be combined with skip_existing")
+    if overwrite and output_dir is not None:
+        raise ValueError("overwrite cannot be combined with output_dir")
+    include_patterns = []
+    for pattern in include:
+        normalized = pattern.strip()
+        if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {"'", '"'}:
+            normalized = normalized[1:-1]
+        try:
+            re.compile(normalized)
+        except re.error as exc:
+            raise ValueError(f"include invalid regular expression {pattern!r}: {exc}") from exc
+        include_patterns.append(normalized)
+    exclude_patterns = []
+    for pattern in exclude:
+        normalized = pattern.strip()
+        if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {"'", '"'}:
+            normalized = normalized[1:-1]
+        try:
+            re.compile(normalized)
+        except re.error as exc:
+            raise ValueError(f"exclude invalid regular expression {pattern!r}: {exc}") from exc
+        exclude_patterns.append(normalized)
+    namespace = argparse.Namespace(
+        files=[os.fspath(path) for path in files],
+        include=include_patterns,
+        exclude=exclude_patterns,
+        overwrite=overwrite,
+        skip_existing=skip_existing,
+        output_dir=os.fspath(output_dir) if output_dir is not None else None,
+        merge=os.fspath(merge) if merge is not None else None,
+        stdout=stdout,
+        confirm=confirm,
+        coordinator=False,
+        right_click=False,
+    )
+    return run_batch(namespace)

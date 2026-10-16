@@ -81,12 +81,12 @@ Any fixes or subsequent updates must always increment the version number (e.g. `
 > 2. `pip install --no-cache-dir hammerdown`
 > 3. `hammerdown --install` (to refresh OS integrations)
 
-Starting from version `2.0.0`, overwriting existing target Markdown files is the default behavior. The `--force` flag has been completely removed in favor of `--skip-existing` (`-s`) to skip already converted files.
+Starting from version `2.0.0`, overwriting existing target Markdown files is the default behavior. The `--force` flag remains removed in favor of `--skip-existing` (`-s`) when existing output should be preserved. Version `3.0.0` accepts only hyphenated long option names, so `--skip_existing` is rejected.
 
-## Architecture and File Conventions in v2.0.0
+## Architecture and File Conventions in v3.0.0
 
 ### Output Naming Convention
-To prevent collisions between documents with the same name across different formats or subfolders, `hammerdown` 2.0.0 enforces:
+To prevent collisions between documents with the same name across different formats or subfolders, `hammerdown` 3.0.0 enforces:
 - Output Markdown filename: `hm_<stem>_<ext>.md` (e.g. `hm_report_docx.md` or `hm_notes_txt.md`)
 - Extracted images directory: `hm_images_<stem>_<ext>/` (e.g. `hm_images_report_docx/`)
 

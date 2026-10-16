@@ -46,7 +46,7 @@ def _install_windows(command: str) -> None:
                 winreg.SetValueEx(key, "AppliesTo", 0, winreg.REG_SZ, aqs_filter)
 
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator "%1"')
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click "%1"')
 
     bg_key_path = r"Software\Classes\Directory\Background\shell\hammerdown"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path) as key:
@@ -54,12 +54,12 @@ def _install_windows(command: str) -> None:
         if icon_path:
             winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path + r"\command") as key:
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator "%V"')
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click "%V"')
 
     sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
     if sendto_dir.is_dir():
         cmd_file = sendto_dir / "Hammer down.cmd"
-        cmd_file.write_text(f'@echo off\n{command} --coordinator %*\n', encoding="utf-8")
+        cmd_file.write_text(f'@echo off\n{command} --coordinator --right-click %*\n', encoding="utf-8")
 
 
 def _remove_registry_tree(root: Any, path: str) -> None:

@@ -38,7 +38,7 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
 
     sendto_cmd = sendto_dir / "Hammer down.cmd"
     assert sendto_cmd.is_file()
-    assert "--coordinator %*" in sendto_cmd.read_text(encoding="utf-8")
+    assert "--coordinator --right-click %*" in sendto_cmd.read_text(encoding="utf-8")
     assert r"Software\Classes\Directory\shell\hammerdown" in recorded_keys
     assert r"Software\Classes\Directory\Background\shell\hammerdown" in recorded_keys
 

@@ -138,10 +138,13 @@ def test_repeated_different_output_dirs_are_rejected(tmp_path: Path):
 @pytest.mark.parametrize(
     "options",
     [
-        ["--force", "--skip-existing"],
         ["-w", "--skip-existing"],
-        ["-i", "-o", "output"],
         ["-w", "-o", "output"],
+        ["--stdout", "--output-dir", "output"],
+        ["--stdout", "--overwrite"],
+        ["--stdout", "--skip-existing"],
+        ["--stdout", "--merge", "merged.md"],
+        ["--confirm"],
     ],
 )
 def test_conflicting_flags_are_rejected(tmp_path: Path, options: list[str]):
@@ -155,14 +158,15 @@ def test_conflicting_flags_are_rejected(tmp_path: Path, options: list[str]):
     assert exc.value.code == 2
 
 
-def test_repeating_skip_existing_and_force_is_idempotent(tmp_path: Path):
-    source = tmp_path / "notes.txt"
-    source.write_text("initial\n", encoding="utf-8")
-    target = tmp_path / "hm_notes_txt.md"
-    target.write_text("keep existing\n", encoding="utf-8")
+def test_include_can_be_combined_with_output_directory(tmp_path: Path, capsys):
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "keep.txt").write_text("keep", encoding="utf-8")
+    (root / "other.txt").write_text("other", encoding="utf-8")
+    output = tmp_path / "output"
 
-    assert main(["--skip-existing", "--skip-existing", str(source)]) == 0
-    assert target.read_text(encoding="utf-8") == "keep existing\n"
+    assert main(["-i", "keep", "-o", str(output), str(root)]) == 0
+    capsys.readouterr()
 
-    assert main(["--force", "--force", str(source)]) == 0
-    assert target.read_text(encoding="utf-8") == "initial\n"
+    assert (output / "hm_keep_txt.md").is_file()
+    assert not (output / "hm_other_txt.md").exists()

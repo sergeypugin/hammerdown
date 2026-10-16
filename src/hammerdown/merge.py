@@ -65,6 +65,29 @@ def _render_directory_structure(root_name: str, relative_paths: Sequence[Path]) 
     return "\n".join(lines)
 
 
+def _relative_paths(sources: Sequence[Path], root: Path) -> list[Path]:
+    relative_paths: list[Path] = []
+    for source in sources:
+        try:
+            relative_paths.append(source.relative_to(root))
+        except ValueError:
+            relative_paths.append(Path(source.name))
+    return relative_paths
+
+
+def render_merged_markdown(converted: Sequence[tuple[str, str]], merge_root: Path) -> str:
+    sources = [Path(source).resolve() for source, _ in converted]
+    relative_paths = _relative_paths(sources, merge_root.resolve())
+    sections: list[str] = [_render_directory_structure(merge_root.name or "root", relative_paths)]
+    for (_, content), relative in zip(converted, relative_paths):
+        cleaned = content.strip()
+        section = f"{SECTION_SEPARATOR}\nFILE: {relative.as_posix()}\n{SECTION_SEPARATOR}"
+        if cleaned:
+            section = f"{section}\n{cleaned}"
+        sections.append(section)
+    return "\n\n".join(sections) + "\n"
+
+
 def merge_converted_files(
     files: Sequence[str],
     results: Sequence[bool],
@@ -96,21 +119,7 @@ def merge_converted_files(
         return True
 
     root = merge_root.resolve() if merge_root is not None else merge_root_for_inputs([], [source for source, _ in successful])
-    relative_paths: list[Path] = []
-    for source, _ in successful:
-        try:
-            relative_paths.append(source.relative_to(root))
-        except ValueError:
-            relative_paths.append(Path(source.name))
-
-    sections: list[str] = [_render_directory_structure(root.name or "root", relative_paths)]
-    for (source, out_md), relative in zip(successful, relative_paths):
-        content = out_md.read_text(encoding="utf-8").strip()
-        section = f"{SECTION_SEPARATOR}\nFILE: {relative.as_posix()}\n{SECTION_SEPARATOR}"
-        if content:
-            section = f"{section}\n{content}"
-        sections.append(section)
-
+    converted = [(str(source), output.read_text(encoding="utf-8")) for source, output in successful]
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text("\n\n".join(sections) + "\n", encoding="utf-8", newline="\n")
+    dest.write_text(render_merged_markdown(converted, root), encoding="utf-8", newline="\n")
     return True
