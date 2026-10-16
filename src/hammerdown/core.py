@@ -398,6 +398,8 @@ def convert_file(
         token_count = _token_count(cleaned_md)
 
         if stdout:
+            if temporary_dir is None:
+                raise RuntimeError("temporary output directory is required for stdout conversion")
             duration = time.monotonic() - started_at
             if completion_callback:
                 completion_callback(True, duration, saved_images, token_count)
