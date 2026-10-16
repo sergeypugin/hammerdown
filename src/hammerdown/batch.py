@@ -11,6 +11,7 @@ from typing import Sequence
 from hammerdown import SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS
 from hammerdown.core import convert_file, get_conversion_estimate_seconds
 from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
+from hammerdown.merge import merge_converted_files, merge_root_for_inputs
 from hammerdown.utils import BatchUI, format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
@@ -69,33 +70,17 @@ def _merge_converted_files(
     overwrite_sources: bool = False,
     output_paths: Sequence[Path] | None = None,
     skip_existing: bool = False,
+    merge_root: Path | None = None,
 ) -> bool:
-    merged_sections: list[str] = []
-    for index, (file_path, succeeded) in enumerate(zip(files, results)):
-        if not succeeded:
-            continue
-        source = Path(normalize_path(file_path))
-        stem = source.stem
-        ext_clean = source.suffix.lower().lstrip(".")
-        out_md_name = f"hm_{stem}_{ext_clean}.md" if ext_clean else f"hm_{stem}.md"
-        out_md = output_paths[index] if output_paths is not None else source.parent / out_md_name
-        if overwrite_sources and source.suffix.lower() in TEXT_EXTENSIONS:
-            out_md = source
-        if out_md.is_file():
-            content = out_md.read_text(encoding="utf-8").strip()
-            section = f"# {source.name}\n\n{content}" if content else f"# {source.name}"
-            merged_sections.append(section)
-
-    if not merged_sections:
-        return False
-
-    dest = Path(normalize_path(merge_target))
-    if skip_existing and dest.exists():
-        return True
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text("\n\n".join(merged_sections) + "\n", encoding="utf-8", newline="\n")
-    return True
+    return merge_converted_files(
+        files,
+        results,
+        merge_target,
+        overwrite_sources=overwrite_sources,
+        output_paths=output_paths,
+        skip_existing=skip_existing,
+        merge_root=merge_root,
+    )
 
 
 def _process_single_file(args_tuple: tuple[str, bool, bool, bool, bool]) -> bool:
@@ -281,6 +266,7 @@ def run_batch(args: argparse.Namespace) -> int:
             overwrite_sources=args.overwrite,
             output_paths=successful_outputs,
             skip_existing=args.skip_existing,
+            merge_root=merge_root_for_inputs(raw_files, [Path(path) for path in successful_files]),
         )
         if merge_was_existing:
             batch_ui.add_summary_message(f"Merge skipped: {merge_target.name} already exists")
@@ -299,14 +285,33 @@ def run_batch(args: argparse.Namespace) -> int:
         )
     )
     if should_wait:
+        from rich.console import Console
+        from rich.text import Text
+
         try:
             if batch_ui.errors:
-                choice = input("\nType `e` and press Enter to extend the error list, or press Enter to exit: ")
+                prompt = Text("\nType ")
+                prompt.append("e", style="orange1")
+                prompt.append(" and press ")
+                prompt.append("Enter", style="orange1")
+                prompt.append(" to extend the error list, or press ")
+                prompt.append("Enter", style="orange1")
+                prompt.append(" to exit: ")
+                Console().print(prompt, end="")
+                choice = input()
                 if choice.strip().lower() == "e":
                     batch_ui.print_error_list()
-                    input("\nPress Enter to exit... ")
+                    follow_up = Text("\nPress ")
+                    follow_up.append("Enter", style="orange1")
+                    follow_up.append(" to exit... ")
+                    Console().print(follow_up, end="")
+                    input()
             else:
-                input("\nPress Enter to exit... ")
+                follow_up = Text("\nPress ")
+                follow_up.append("Enter", style="orange1")
+                follow_up.append(" to exit... ")
+                Console().print(follow_up, end="")
+                input()
         except (EOFError, KeyboardInterrupt):
             pass
 

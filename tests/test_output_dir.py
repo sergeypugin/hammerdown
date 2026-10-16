@@ -26,6 +26,25 @@ def test_output_dir_preserves_nested_layout_and_extracts_images(tmp_path: Path):
     assert "hm_images_notes_txt/embedded_img_0.png" in markdown.read_text(encoding="utf-8")
 
 
+def test_base64_image_extraction_preserves_supported_mime_extensions(tmp_path: Path):
+    svg = base64.b64encode(b"<svg></svg>").decode("ascii")
+    jpeg = base64.b64encode(b"jpeg bytes").decode("ascii")
+    source = tmp_path / "images.md"
+    source.write_text(
+        f"![svg](data:image/svg+xml;base64,{svg})\n![jpeg](data:image/jpeg;base64,{jpeg})\n",
+        encoding="utf-8",
+    )
+
+    assert main([str(source)]) == 0
+    output = tmp_path / "hm_images_images_md"
+    assert (output / "embedded_img_0.svg").read_bytes() == b"<svg></svg>"
+    assert (output / "embedded_img_1.jpeg").read_bytes() == b"jpeg bytes"
+    converted = tmp_path / "hm_images_md.md"
+    markdown = converted.read_text(encoding="utf-8")
+    assert "hm_images_images_md/embedded_img_0.svg" in markdown
+    assert "hm_images_images_md/embedded_img_1.jpeg" in markdown
+
+
 def test_skip_existing_checks_output_dir_target(tmp_path: Path):
     source_root = tmp_path / "source"
     source_root.mkdir()
@@ -50,8 +69,32 @@ def test_merge_reads_converted_markdown_from_output_dir(tmp_path: Path):
     assert main(["-o", str(output_root), "--merge", str(merged), str(source_root)]) == 0
 
     assert merged.is_file()
-    assert "# notes.txt" in merged.read_text(encoding="utf-8")
-    assert "converted content" in merged.read_text(encoding="utf-8")
+    content = merged.read_text(encoding="utf-8")
+    assert "FILE: deep/notes.txt" in content
+    assert "# notes.txt" not in content
+    assert "converted content" in content
+
+
+def test_merge_creates_missing_parent_directory(tmp_path: Path):
+    source = tmp_path / "notes.txt"
+    source.write_text("content\n", encoding="utf-8")
+    merged = tmp_path / "out" / "nested" / "combined.md"
+
+    assert main(["-m", str(merged), str(source)]) == 0
+    assert merged.is_file()
+    assert "FILE: notes.txt" in merged.read_text(encoding="utf-8")
+
+
+def test_merge_preserves_source_h1_headings(tmp_path: Path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Original heading\n\ntext\n", encoding="utf-8")
+    merged = tmp_path / "combined.md"
+
+    assert main(["-m", str(merged), str(source)]) == 0
+    content = merged.read_text(encoding="utf-8")
+    assert "FILE: notes.md" in content
+    assert "# Original heading" in content
+    assert "# notes.txt" not in content
 
 
 def test_skip_existing_preserves_existing_merge_target(tmp_path: Path):

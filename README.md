@@ -117,7 +117,7 @@ Options:
 - `-i`, `--in-place` -- save output Markdown and extracted images in the same directory as the source file
 - `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`, `.log`, `.csv`) in-place instead of creating a copy
 - `-s`, `--skip-existing` -- skip conversion if target Markdown file already exists (overwriting is enabled by default)
-- `-m`, `--merge OUTPUT_MD` -- merge all converted Markdown documents into a single target Markdown file
+- `-m`, `--merge OUTPUT_MD` -- merge all converted Markdown documents into a single target Markdown file; the output starts with a directory tree and uses `FILE: relative/path` blocks for each document
 - `-q`, `--quiet` -- suppress routine status output
 - `-v`, `--version` -- display version information
 
@@ -162,7 +162,7 @@ hammerdown.convert_file("document.pdf", progress_callback=on_progress)
 
 ### Extracting Base64 Images from Markdown
 
-If you have a Markdown file with embedded base64 images (such as `data:image/png;base64,...`), running `hammerdown` with `--in-place` will extract those raw image strings into PNG or JPEG files inside `hm_images_<stem>_<ext>/` and replace inline base64 data URIs with clean relative links:
+If you have a Markdown file with embedded base64 images, running `hammerdown` with `--in-place` will extract each image using its MIME type (`png`, `jpeg`, `webp`, `gif`, `svg` and other supported image subtypes) into `hm_images_<stem>_<ext>/` and replace inline base64 data URIs with clean relative links. The image is not converted to PNG: PNG is used only when the source data URI says `image/png`.
 
 ```sh
 hammerdown document.md --in-place

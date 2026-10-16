@@ -267,9 +267,11 @@ def test_merge_converted_files(tmp_path: Path):
 
     assert merged_file.is_file()
     content = merged_file.read_text(encoding="utf-8")
-    assert "# doc1.txt" in content
+    assert "FILE: doc1.txt" in content
+    assert "FILE: doc2.txt" in content
+    assert "# doc1.txt" not in content
+    assert "# doc2.txt" not in content
     assert "Hello from file 1" in content
-    assert "# doc2.txt" in content
     assert "Hello from file 2" in content
 
 
@@ -283,5 +285,5 @@ def test_merge_with_short_flag_and_skipped_failure(tmp_path: Path):
 
     assert merged_file.is_file()
     content = merged_file.read_text(encoding="utf-8")
-    assert "# doc1.txt" in content
+    assert "FILE: doc1.txt" in content
     assert "missing.docx" not in content

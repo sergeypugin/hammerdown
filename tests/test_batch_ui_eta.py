@@ -297,13 +297,27 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
         ("summary", message),
         ("finish",),
     ]
-    assert "# b-success.txt\n\nconverted content" in merged.read_text(encoding="utf-8")
+    assert "FILE: b-success.txt" in merged.read_text(encoding="utf-8")
+    assert "# b-success.txt" not in merged.read_text(encoding="utf-8")
+    assert "converted content" in merged.read_text(encoding="utf-8")
 
     output = StringIO()
     Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(instances[0]._summary_renderable())
     rendered = output.getvalue()
     assert "Errors: 2" in rendered
+    assert "─" in rendered
     assert rendered.index("─") < rendered.index(message)
+
+
+def test_batch_ui_summary_preserves_seconds_for_minute_estimates(tmp_path: Path):
+    ui = BatchUI([str(tmp_path / "document.pdf")], quiet=True, estimates=[65.2])
+
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._summary_renderable())
+
+    rendered = output.getvalue()
+    assert "Estimated total: ~1m 5.2s" in rendered
+    assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
 
 
 def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
@@ -315,5 +329,5 @@ def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
 
     rendered = output.getvalue()
     assert "Tokens: ~1_234_567" not in rendered
-    assert "…" in rendered
+    assert "….txt" in rendered
     assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH

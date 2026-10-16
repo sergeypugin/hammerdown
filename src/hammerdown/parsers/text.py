@@ -40,7 +40,8 @@ def convert_txt_or_md(
 
     def replacer(match: re.Match[str]) -> str:
         nonlocal saved_imgs
-        ext = match.group(1)
+        mime_subtype = match.group(1).lower()
+        ext = mime_subtype.split("+", 1)[0]
         b64_data = match.group(2)
         try:
             img_bytes = base64.b64decode(b64_data)
@@ -56,7 +57,7 @@ def convert_txt_or_md(
 
     # Replace data URIs in Markdown image syntax or raw links
     # Matches: data:image/png;base64,iVBOR...
-    pattern = r"data:image/([a-zA-Z]+);base64,([a-zA-Z0-9+/=]+)"
+    pattern = r"data:image/([a-zA-Z0-9.+-]+);base64,([a-zA-Z0-9+/=]+)"
     processed_text = re.sub(pattern, replacer, text)
 
     if progress_callback:
