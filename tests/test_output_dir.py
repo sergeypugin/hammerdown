@@ -58,24 +58,57 @@ def test_skip_existing_checks_output_dir_target(tmp_path: Path):
     assert target.read_text(encoding="utf-8") == "keep existing\n"
 
 
-def test_merge_reads_converted_markdown_from_output_dir(tmp_path: Path):
+def test_merge_rejects_output_dir(tmp_path: Path):
     source_root = tmp_path / "source"
-    nested = source_root / "deep"
-    nested.mkdir(parents=True)
-    (nested / "notes.txt").write_text("converted content\n", encoding="utf-8")
+    source_root.mkdir()
+    (source_root / "notes.txt").write_text("converted content\n", encoding="utf-8")
     output_root = tmp_path / "output"
-    merged = output_root / "combined.md"
+    merged = tmp_path / "combined.md"
 
-    assert main(["-o", str(output_root), "--merge", str(merged), str(source_root)]) == 0
+    with pytest.raises(SystemExit) as exc:
+        main(["-o", str(output_root), "--merge", str(merged), str(source_root)])
 
-    assert merged.is_file()
+    assert exc.value.code == 2
+    assert not merged.exists()
+
+
+def test_merge_writes_assets_under_namespaced_tree_without_per_file_markdown(tmp_path: Path):
+    source = tmp_path / "file1.md"
+    nested = tmp_path / "src"
+    nested.mkdir()
+    nested_source = nested / "f2.md"
+    image = base64.b64encode(b"file one image").decode("ascii")
+    nested_image = base64.b64encode(b"file two image").decode("ascii")
+    source.write_text(f"![one](data:image/png;base64,{image})\n", encoding="utf-8")
+    nested_source.write_text(f"![two](data:image/png;base64,{nested_image})\n", encoding="utf-8")
+    merged = tmp_path / "o.md"
+
+    assert main(["--merge", str(merged), str(source), str(nested_source)]) == 0
+
+    asset_root = tmp_path / "hm_merged_into_o_images"
+    first_image = asset_root / "hm_images_file1_md" / "embedded_img_0.png"
+    second_image = asset_root / "src" / "hm_images_f2_md" / "embedded_img_0.png"
+    assert first_image.read_bytes() == b"file one image"
+    assert second_image.read_bytes() == b"file two image"
+    assert not (tmp_path / "hm_file1_md.md").exists()
+    assert not (nested / "hm_f2_md.md").exists()
+
     content = merged.read_text(encoding="utf-8")
-    assert "FILE: deep/notes.txt" in content
-    assert "# notes.txt" not in content
-    assert "converted content" in content
+    assert "hm_merged_into_o_images/hm_images_file1_md/embedded_img_0.png" in content
+    assert "hm_merged_into_o_images/src/hm_images_f2_md/embedded_img_0.png" in content
 
 
-def test_merge_creates_missing_parent_directory(tmp_path: Path):
+def test_merge_rejects_overwrite(tmp_path: Path):
+    source = tmp_path / "notes.txt"
+    source.write_text("content\n", encoding="utf-8")
+    merged = tmp_path / "combined.md"
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--overwrite", "--merge", str(merged), str(source)])
+
+    assert exc.value.code == 2
+
+
     source = tmp_path / "notes.txt"
     source.write_text("content\n", encoding="utf-8")
     merged = tmp_path / "out" / "nested" / "combined.md"

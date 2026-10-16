@@ -12,7 +12,7 @@ from rich.console import Console
 
 import hammerdown.batch as batch
 import hammerdown.utils as utils
-from hammerdown.core import get_conversion_estimate, get_conversion_estimate_seconds
+from hammerdown.core import ConversionResult, get_conversion_estimate, get_conversion_estimate_seconds
 from hammerdown.utils import BATCH_UI_WIDTH, BatchUI, _LiveBatchRenderable
 
 
@@ -67,6 +67,12 @@ def test_run_batch_precomputes_all_estimates_before_conversion(tmp_path: Path, m
         coordinator=False,
         overwrite=False,
         skip_existing=False,
+        output_dir=None,
+        include=[],
+        exclude=[],
+        stdout=False,
+        confirm=False,
+        right_click=False,
         merge=None,
     )
 
@@ -322,14 +328,11 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
         events.append(("convert", Path(file_path).name))
         if Path(file_path) == failed:
             kwargs["completion_callback"](False, 0.01, 0, 0)
-            return False
-        output = Path(file_path).parent / "hm_b-success_txt.md"
-        output.write_text("converted content\n", encoding="utf-8")
+            return ConversionResult(False, duration=0.01, error="conversion failed")
         kwargs["completion_callback"](True, 0.01, 0, 0)
-        return True
+        return ConversionResult(True, duration=0.01, markdown="converted content\n")
 
     monkeypatch.setattr(batch, "BatchUI", RecordingBatchUI)
-    monkeypatch.setattr(batch, "get_conversion_estimate_seconds", lambda path: 0.5)
     monkeypatch.setattr(batch, "convert_file", convert_file)
     args = argparse.Namespace(
         files=[str(successful), str(failed), str(missing)],

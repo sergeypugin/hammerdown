@@ -125,6 +125,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("-o/--output-dir cannot be used in coordinator mode")
     if args.confirm and not args.stdout:
         parser.error("--confirm can only be used with --stdout")
+    if args.merge and args.overwrite:
+        parser.error("--merge cannot be combined with --overwrite")
+    if args.merge and args.output_dir:
+        parser.error("--merge cannot be combined with --output-dir")
     if args.stdout and args.merge:
         parser.error("--stdout cannot be combined with --merge")
     if args.stdout and args.output_dir:

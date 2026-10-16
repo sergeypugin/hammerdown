@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import os
+from pathlib import Path
 from typing import Sequence
 
-from hammerdown.path_utils import normalize_path
+from hammerdown.path_utils import get_images_dir_name, normalize_path
 
 TREE_BRANCH = "├── "
 TREE_LAST = "└── "
@@ -19,12 +19,15 @@ def merge_root_for_inputs(raw_inputs: Sequence[str], source_files: Sequence[Path
         path = Path(normalize_path(raw)).resolve()
         roots.append(path if path.is_dir() else path.parent)
     if roots:
-        common = Path(os.path.commonpath([str(path) for path in roots]))
-        if common.is_file():
-            return common.parent
-        return common
+        try:
+            return Path(os.path.commonpath([str(path) for path in roots]))
+        except ValueError:
+            return Path.cwd()
     if source_files:
-        return Path(os.path.commonpath([str(path.resolve().parent) for path in source_files]))
+        try:
+            return Path(os.path.commonpath([str(path.resolve().parent) for path in source_files]))
+        except ValueError:
+            return Path.cwd()
     return Path.cwd()
 
 
@@ -65,61 +68,71 @@ def _render_directory_structure(root_name: str, relative_paths: Sequence[Path]) 
     return "\n".join(lines)
 
 
-def _relative_paths(sources: Sequence[Path], root: Path) -> list[Path]:
-    relative_paths: list[Path] = []
-    for source in sources:
-        try:
-            relative_paths.append(source.relative_to(root))
-        except ValueError:
-            relative_paths.append(Path(source.name))
-    return relative_paths
+def relative_path_for_source(source: str | Path, root: Path) -> Path:
+    source_path = Path(source).resolve()
+    try:
+        return source_path.relative_to(root.resolve())
+    except ValueError:
+        anchor = source_path.anchor.replace(":", "").replace("\\", "").replace("/", "") or "root"
+        return Path(anchor, *source_path.parts[1:])
+
+
+def _relative_paths(sources: Sequence[str | Path], root: Path) -> list[Path]:
+    return [relative_path_for_source(source, root) for source in sources]
+
+
+def render_merge_header(sources: Sequence[str | Path], merge_root: Path) -> str:
+    relative_paths = _relative_paths(sources, merge_root.resolve())
+    return _render_directory_structure(merge_root.name or "root", relative_paths)
+
+
+def merge_asset_paths(source: str | Path, merge_root: Path, merge_target: Path) -> tuple[Path, Path]:
+    relative = relative_path_for_source(source, merge_root)
+    asset_root_name = f"hm_merged_into_{merge_target.stem}_images"
+    asset_prefix = Path(asset_root_name) / relative.parent
+    return merge_target.parent / asset_prefix, asset_prefix
+
+
+def render_merged_document(
+    source: str | Path,
+    content: str,
+    merge_root: Path,
+    asset_prefix: Path | None = None,
+) -> str:
+    source_path = Path(source).resolve()
+    relative = relative_path_for_source(source_path, merge_root)
+    image_prefix = asset_prefix if asset_prefix is not None else relative.parent
+    image_dir = get_images_dir_name(source_path)
+    if image_prefix != Path("."):
+        prefix = image_prefix.as_posix().rstrip("/")
+        content = content.replace(f"{image_dir}/", f"{prefix}/{image_dir}/")
+        content = content.replace(f"{image_dir}\\", f"{prefix}/{image_dir}/")
+
+    cleaned = content.strip()
+    section = f"{SECTION_SEPARATOR}\nFILE: {relative.as_posix()}\n{SECTION_SEPARATOR}"
+    if cleaned:
+        section = f"{section}\n{cleaned}"
+    return section
 
 
 def render_merged_markdown(converted: Sequence[tuple[str, str]], merge_root: Path) -> str:
-    sources = [Path(source).resolve() for source, _ in converted]
-    relative_paths = _relative_paths(sources, merge_root.resolve())
-    sections: list[str] = [_render_directory_structure(merge_root.name or "root", relative_paths)]
-    for (_, content), relative in zip(converted, relative_paths):
-        cleaned = content.strip()
-        section = f"{SECTION_SEPARATOR}\nFILE: {relative.as_posix()}\n{SECTION_SEPARATOR}"
-        if cleaned:
-            section = f"{section}\n{cleaned}"
-        sections.append(section)
+    sources = [source for source, _ in converted]
+    sections = [render_merge_header(sources, merge_root)]
+    sections.extend(render_merged_document(source, content, merge_root) for source, content in converted)
     return "\n\n".join(sections) + "\n"
 
 
-def merge_converted_files(
-    files: Sequence[str],
-    results: Sequence[bool],
-    merge_target: str,
-    overwrite_sources: bool = False,
-    output_paths: Sequence[Path] | None = None,
-    skip_existing: bool = False,
-    merge_root: Path | None = None,
-) -> bool:
-    successful: list[tuple[Path, Path]] = []
-    for index, (file_path, succeeded) in enumerate(zip(files, results)):
-        if not succeeded:
-            continue
-        source = Path(file_path).resolve()
-        stem = source.stem
-        ext_clean = source.suffix.lower().lstrip(".")
-        out_md_name = f"hm_{stem}_{ext_clean}.md" if ext_clean else f"hm_{stem}.md"
-        out_md = output_paths[index] if output_paths is not None else source.parent / out_md_name
-        if overwrite_sources and source.suffix.lower() in {".txt", ".md"}:
-            out_md = source
-        if out_md.is_file():
-            successful.append((source, out_md))
+def initialize_merge_file(merge_target: Path, sources: Sequence[str | Path], merge_root: Path) -> None:
+    merge_target.parent.mkdir(parents=True, exist_ok=True)
+    merge_target.write_text(render_merge_header(sources, merge_root) + "\n", encoding="utf-8", newline="\n")
 
-    if not successful:
-        return False
 
-    dest = Path(normalize_path(merge_target))
-    if skip_existing and dest.exists():
-        return True
-
-    root = merge_root.resolve() if merge_root is not None else merge_root_for_inputs([], [source for source, _ in successful])
-    converted = [(str(source), output.read_text(encoding="utf-8")) for source, output in successful]
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(render_merged_markdown(converted, root), encoding="utf-8", newline="\n")
-    return True
+def append_merged_document(
+    merge_target: Path,
+    source: str | Path,
+    content: str,
+    merge_root: Path,
+    asset_prefix: Path,
+) -> None:
+    with merge_target.open("a", encoding="utf-8", newline="\n") as output:
+        output.write("\n" + render_merged_document(source, content, merge_root, asset_prefix) + "\n")

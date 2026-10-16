@@ -16,7 +16,13 @@ from hammerdown.core import (
     get_conversion_estimate_seconds,
 )
 from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
-from hammerdown.merge import merge_converted_files, merge_root_for_inputs, render_merged_markdown
+from hammerdown.merge import (
+    append_merged_document,
+    initialize_merge_file,
+    merge_asset_paths,
+    merge_root_for_inputs,
+    render_merged_markdown,
+)
 from hammerdown.batch_ui import BatchUI
 from hammerdown.utils import format_duration, normalize_path
 
@@ -90,25 +96,6 @@ def _expand_paths(
 
     return targets
 
-
-def _merge_converted_files(
-    files: Sequence[str],
-    results: Sequence[bool],
-    merge_target: str,
-    overwrite_sources: bool = False,
-    output_paths: Sequence[Path] | None = None,
-    skip_existing: bool = False,
-    merge_root: Path | None = None,
-) -> bool:
-    return merge_converted_files(
-        files,
-        results,
-        merge_target,
-        overwrite_sources=overwrite_sources,
-        output_paths=output_paths,
-        skip_existing=skip_existing,
-        merge_root=merge_root,
-    )
 
 
 def _process_single_file(args_tuple: tuple[str, bool, bool]) -> ConversionResult:
@@ -227,6 +214,13 @@ def _run_stdout_conversion(files: Sequence[str], raw_inputs: Sequence[str]) -> i
 
 def run_batch(args: argparse.Namespace) -> int:
     raw_files = args.files
+    merge_requested = getattr(args, "merge", None)
+    if merge_requested and getattr(args, "overwrite", False):
+        logger.error("--merge cannot be combined with --overwrite")
+        return 1
+    if merge_requested and getattr(args, "output_dir", None):
+        logger.error("--merge cannot be combined with --output-dir")
+        return 1
     if not raw_files:
         logger.info("No supported documents found to convert")
         return 0
@@ -268,16 +262,6 @@ def run_batch(args: argparse.Namespace) -> int:
             return 1 if initial_errors else 0
         conversion_status = _run_stdout_conversion(files, raw_files)
         return 1 if initial_errors or conversion_status else 0
-
-    try:
-        output_paths = (
-            _output_paths(raw_files, targets, output_root)
-            if output_root is not None
-            else [Path(path).parent / f"hm_{Path(path).stem}_{Path(path).suffix.lower().lstrip('.')}.md" for path, _ in targets]
-        )
-    except ValueError as exc:
-        logger.error("%s", exc)
-        return 1
 
     use_ipc = getattr(args, "coordinator", False) or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
     options = {
@@ -323,12 +307,31 @@ def run_batch(args: argparse.Namespace) -> int:
     else:
         output_path_inputs = raw_files
 
+    merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
+    merge_sources = [path for path, error in targets if error is None]
+    if merge_target is not None and any(Path(path).resolve() == merge_target.resolve() for path in merge_sources):
+        logger.error("merge target cannot be one of the source files: %s", merge_target)
+        if coordinator:
+            coordinator.stop()
+        return 1
+
+    merge_root = (
+        merge_root_for_inputs(output_path_inputs, [Path(path) for path in merge_sources])
+        if merge_target is not None
+        else None
+    )
+    merge_skipped = bool(merge_target is not None and args.skip_existing and merge_target.exists())
+
     try:
-        output_paths = (
-            _output_paths(output_path_inputs, targets, output_root)
-            if output_root is not None
-            else [Path(path).parent / f"hm_{Path(path).stem}_{Path(path).suffix.lower().lstrip('.')}.md" for path, _ in targets]
-        )
+        if merge_target is not None:
+            output_paths = [merge_target] * len(targets)
+        elif output_root is not None:
+            output_paths = _output_paths(output_path_inputs, targets, output_root)
+        else:
+            output_paths = [
+                Path(path).parent / f"hm_{Path(path).stem}_{Path(path).suffix.lower().lstrip('.')}.md"
+                for path, _ in targets
+            ]
     except ValueError as exc:
         logger.error("%s", exc)
         if coordinator:
@@ -336,6 +339,8 @@ def run_batch(args: argparse.Namespace) -> int:
         return 1
 
     results: list[bool] = []
+    merged_count = 0
+    merge_initialized = False
     batch_ui = BatchUI(ui_files, estimates=estimates)
 
     if batch_ui.can_redraw:
@@ -356,12 +361,20 @@ def run_batch(args: argparse.Namespace) -> int:
             extension = f_path.suffix.lower()
             output_path = output_paths[idx]
             status_info = ""
-            if args.skip_existing and output_path.exists() and output_path != f_path:
+            if merge_target is not None:
+                if merge_skipped:
+                    status_info = f"skipped, existing merge output: {merge_target.name}"
+            elif args.skip_existing and output_path.exists() and output_path != f_path:
                 status_info = f"skipped, existing output: {output_path.name}"
             elif args.overwrite and extension in TEXT_EXTENSIONS:
                 status_info = "overwritten"
             elif args.overwrite:
                 status_info = "overwrite ignored (binary file)"
+
+            if merge_skipped:
+                batch_ui.complete_file(idx, True, 0.0, info=status_info)
+                results.append(True)
+                continue
 
             def on_progress(current: int, total: int, unit: str = "pages") -> None:
                 batch_ui.update_progress(idx, current, total, unit)
@@ -376,11 +389,17 @@ def run_batch(args: argparse.Namespace) -> int:
                 res = convert_file(
                     f_path,
                     overwrite=args.overwrite,
-                    skip_existing=args.skip_existing,
+                    skip_existing=args.skip_existing if merge_target is None else False,
                     progress_callback=on_progress,
                     completion_callback=on_complete,
                     batch_mode=True,
-                    target_dir=output_path.parent if output_root is not None else None,
+                    target_dir=output_path.parent if output_root is not None and merge_target is None else None,
+                    asset_dir=(
+                        merge_asset_paths(f_path, merge_root, merge_target)[0]
+                        if merge_target is not None and merge_root is not None
+                        else None
+                    ),
+                    write_markdown=merge_target is None,
                 )
             finally:
                 logger.disabled = logger_was_disabled
@@ -392,6 +411,33 @@ def run_batch(args: argparse.Namespace) -> int:
                     batch_ui.errors[-1] = (name, reason or previous_reason)
                 else:
                     batch_ui.errors.append((f_path.name, reason or "conversion failed"))
+            if succeeded and merge_target is not None and merge_root is not None:
+                if res.markdown is None:
+                    succeeded = False
+                    batch_ui.converted_count -= 1
+                    batch_ui.statuses[idx] = "[!]"
+                    batch_ui.details[idx] = "-"
+                    batch_ui.errors.append((f_path.name, "conversion returned no Markdown for merge"))
+                else:
+                    try:
+                        if not merge_initialized:
+                            initialize_merge_file(merge_target, merge_sources, merge_root)
+                            merge_initialized = True
+                        _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target)
+                        append_merged_document(
+                            merge_target,
+                            f_path,
+                            res.markdown,
+                            merge_root,
+                            asset_prefix,
+                        )
+                        merged_count += 1
+                    except OSError as exc:
+                        succeeded = False
+                        batch_ui.converted_count -= 1
+                        batch_ui.statuses[idx] = "[!]"
+                        batch_ui.details[idx] = "-"
+                        batch_ui.errors.append((f_path.name, f"could not append to merge output: {exc}"))
             results.append(succeeded)
         conversion_finished = True
     finally:
@@ -402,31 +448,10 @@ def run_batch(args: argparse.Namespace) -> int:
 
     failed_count = sum(not result for result in results)
     merge_failed = False
-    if args.merge and any(results):
-        successful_indexes = [index for index, ((_, error), result) in enumerate(zip(targets, results)) if error is None and result]
-        successful_files = [targets[index][0] for index in successful_indexes]
-        successful_outputs = [output_paths[index] for index in successful_indexes]
-        merge_target = Path(normalize_path(args.merge))
-        merge_was_existing = args.skip_existing and merge_target.exists()
-        try:
-            merge_completed = _merge_converted_files(
-                successful_files,
-                [True] * len(successful_files),
-                args.merge,
-                overwrite_sources=args.overwrite,
-                output_paths=successful_outputs,
-                skip_existing=args.skip_existing,
-                merge_root=merge_root_for_inputs(output_path_inputs, [Path(path) for path in successful_files]),
-            )
-        except Exception as exc:
-            merge_failed = True
-            batch_ui.errors.append((merge_target.name, str(exc)))
-            merge_completed = False
-        if merge_was_existing and not merge_failed:
-            batch_ui.skipped_count += 1
-        elif merge_completed and not merge_failed:
-            batch_ui.add_result("Merged documents", len(successful_files))
-        elif not merge_failed:
+    if merge_target is not None and any(results) and not merge_skipped:
+        if merge_initialized and merged_count > 0 and merge_target.is_file():
+            batch_ui.add_result("Merged documents", merged_count)
+        else:
             merge_failed = True
             batch_ui.errors.append((merge_target.name, "merge did not produce an output file"))
 
@@ -475,6 +500,10 @@ def convert_files(
         raise ValueError("confirm can only be used with stdout")
     if stdout and (merge is not None or output_dir is not None or overwrite or skip_existing):
         raise ValueError("stdout cannot be combined with merge, output_dir, overwrite, or skip_existing")
+    if merge is not None and overwrite:
+        raise ValueError("merge cannot be combined with overwrite")
+    if merge is not None and output_dir is not None:
+        raise ValueError("merge cannot be combined with output_dir")
     if overwrite and skip_existing:
         raise ValueError("overwrite cannot be combined with skip_existing")
     if overwrite and output_dir is not None:

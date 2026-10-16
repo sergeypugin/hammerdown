@@ -200,6 +200,8 @@ def convert_file(
     batch_mode: bool = False,
     target_dir: str | os.PathLike[str] | None = None,
     stdout: bool = False,
+    asset_dir: str | os.PathLike[str] | None = None,
+    write_markdown: bool = True,
 ) -> ConversionResult:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
@@ -214,8 +216,8 @@ def convert_file(
     extension = source.suffix.lower()
     ext_clean = extension.lstrip(".")
 
-    if stdout and (overwrite or skip_existing or target_dir is not None):
-        reason = "stdout mode cannot be combined with overwrite, skip-existing, or an output directory"
+    if stdout and (overwrite or skip_existing or target_dir is not None or asset_dir is not None):
+        reason = "stdout mode cannot be combined with overwrite, skip-existing, or output directories"
         logger.error("%s", reason)
         if completion_callback:
             completion_callback(False, 0.0, 0, 0)
@@ -227,6 +229,7 @@ def convert_file(
         out_dir = Path(temporary_dir.name)
     else:
         out_dir = Path(normalize_path(target_dir)) if target_dir is not None else source.parent
+    resource_dir = Path(normalize_path(asset_dir)) if asset_dir is not None else out_dir
 
     out_md_name = f"hm_{stem}_{ext_clean}.md" if ext_clean else f"hm_{stem}.md"
     out_md = out_dir / out_md_name
@@ -251,7 +254,8 @@ def convert_file(
             completion_callback(True, 0.0, 0, 0)
         return ConversionResult(True, duration=0.0, output_path=out_md)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if write_markdown:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     converter = CONVERTERS.get(extension)
     if converter is None:
@@ -369,9 +373,9 @@ def convert_file(
 
     try:
         try:
-            md_text, saved_images = converter(str(source), str(out_dir), progress_callback=active_callback)
+            md_text, saved_images = converter(str(source), str(resource_dir), progress_callback=active_callback)
         except TypeError:
-            md_text, saved_images = converter(str(source), str(out_dir))
+            md_text, saved_images = converter(str(source), str(resource_dir))
 
         if is_tty and last_len > 0:
             sys.stdout.write(f"\r{' ' * last_len}\r")
@@ -412,7 +416,9 @@ def convert_file(
                 duration=duration,
             )
 
-        out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
+        should_write_markdown = write_markdown or out_md == source
+        if should_write_markdown:
+            out_md.write_text(cleaned_md, encoding="utf-8", newline="\n")
         duration = time.monotonic() - started_at
         if completion_callback:
             completion_callback(True, duration, saved_images, token_count)
@@ -434,7 +440,7 @@ def convert_file(
             images=saved_images,
             tokens=token_count,
             duration=duration,
-            output_path=out_md,
+            output_path=out_md if should_write_markdown else None,
         )
     except Exception:
         duration = time.monotonic() - started_at
