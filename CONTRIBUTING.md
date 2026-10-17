@@ -4,7 +4,7 @@ We welcome contributions to hammerdown.
 
 Please follow these guidelines:
 
-- write commit messages using the Conventional Commits format: `<type>(<scope>): <description>` (for example, `feat(cli): add format support` or `fix(tests): resolve assertion mismatch`)
+- write commit messages in the Conventional Commits format, for example `feat(cli): add format support` or `fix(tests): resolve assertion mismatch`
 - keep changes minimal and focused on the intended feature or fix
 
 ## Running tests and verification
@@ -32,30 +32,39 @@ python tests/test_golden.py
 4. Test direct document conversion manually:
 
 ```sh
-34	python -m hammerdown.cli document.pdf
+python -m hammerdown.cli document.pdf
+```
+
+5. Run the static type checker (the project keeps `pyright` at zero errors and zero warnings):
+
+```sh
+python -m pyright
 ```
 
 Checklist before submitting changes:
 
 - all pytest test cases pass without warnings or errors
+- `python -m pyright` reports no errors and no warnings
 - golden reference files in `tests/golden/` match outputs in `tests/inputs/`
 - markdown outputs have clean line endings without trailing whitespace
 - no broken character encodings appear in generated markdown files
 
 ## Building executable for testing on Windows
 
-To package and test a standalone Windows executable (`hammerdown.exe`) locally using PyInstaller:
+To package and test a standalone Windows executable locally using PyInstaller:
 
 1. Install PyInstaller alongside project dependencies:
   ```sh
   python -m pip install -r requirements.txt pyinstaller
   ```
 
-2. Run PyInstaller build command:
+2. Run the PyInstaller build from the spec file:
   ```sh
-  python -m PyInstaller --noconfirm --clean --onefile --name "hammerdown" --icon "assets/icon.ico" --collect-all pymupdf --collect-all pymupdf4llm --collect-all hammerdown src/hammerdown/cli.py
+  python -m PyInstaller --noconfirm --clean hammerdown.spec
   ```
 
-3. The generated executable will be saved in `dist/hammerdown.exe`. Test it.
+3. The generated executable is saved in `dist/`. Test it.
+
+`hammerdown.spec` already collects `pymupdf`, `pymupdf4llm`, `onnxruntime`, `tiktoken`, `regex`, `rich`, and the `hammerdown` package, and pre-seeds the tiktoken cache. The `HAMMERDOWN_EXECUTABLE` environment variable controls the output executable name, which the release workflow sets per platform (for example `hammerdown-windows-x64`).
 
 For full technical specifications and processing pipeline architecture, refer to [docs/TECHNICAL.md](docs/TECHNICAL.md).

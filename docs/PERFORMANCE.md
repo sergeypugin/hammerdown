@@ -24,6 +24,10 @@ The following measurements were gathered across standard sample inputs on a 64-b
 
 ## Estimation Model
 
+The estimation model lives in a single module, `src/hammerdown/estimates.py`, and both the CLI hints and the Python API helpers read from it.
+
+The reported estimate is a preflight hint computed from document metadata only. Actual wall-clock time drops on multi-core machines because multi-page PDFs are split into page chunks and converted in parallel.
+
 When `hammerdown` starts converting a file, it checks the structure of the file before launching CPU-heavy extraction:
 
 ### PDF and E-books
@@ -53,7 +57,6 @@ Because `pymupdf4llm` runs in a single stream by default, `hammerdown` takes ove
 
 - workload chunking: pages are divided into continuous page blocks of size $\max(2, \lceil N_{\text{pages}} / N_{\text{cpu}} \rceil)$ rather than individual isolated pages
 - concurrent execution: page chunks are dispatched to a `ThreadPoolExecutor` with up to $N_{\text{cpu}}$ worker threads
-- asset I/O concurrency: extracted raster images and charts are simultaneously written to disk using a dedicated thread pool (up to 8 concurrent workers)
 
 For single-page documents ($N_{\text{pages}} = 1$), execution runs directly in the main thread to eliminate thread scheduling overhead.
 
@@ -84,23 +87,28 @@ On multi-core CPUs, concurrent chunk execution accelerates actual wall-clock pro
 Example log:
 ```text
 Processing report.pdf (9 pages, est. ~8s)...
-Completed report.pdf in 10s (saved 1 images)
+Completed report.pdf in 10s (0 images)
 ```
 
 ### Presentations
 
 For `.pptx` slides, `hammerdown` inspects slide count $N_{\text{slides}}$ via `python-pptx`:
 
-$$\text{Estimated Time} = \max(1.0,\; N_{\text{slides}} \times 0.1)$$
+$$\text{Estimated Time} = \max(1.0,\; N_{\text{slides}} \times 0.2)$$
 
 ### Other Formats
 
-Word documents (`.docx`), OpenDocument files (`.odt`), spreadsheets (`.xlsx`), and text/Markdown files convert in milliseconds on modern systems because they are parsed directly from structured XML/text archives using native C extensions (`lxml`, `openpyxl`).
+Structured office documents and text are parsed directly from their XML archives or raw bytes, so the estimate is derived from cheap metadata:
 
-Multi-threading is intentionally restricted to PDF documents and batch conversions:
+- `.docx`: $\max(1.0, N_{\text{pages}} \times 0.4)$ when `docProps/app.xml` reports a page count, otherwise $\max(1.0, \text{size of } \texttt{word/document.xml} / 50000)$
+- `.xlsx`: $\max(1.0, N_{\text{sheets}} \times 0.5)$
+- `.odt`: $\max(1.0, \text{size of } \texttt{content.xml} / 50000)$
+- plain text (`.txt`, `.md`, `.log`, `.csv`): a flat `0.5` seconds with a "fast text conversion" hint
+
+Multi-threading is intentionally restricted to PDF documents:
 - PDF files require visual page-layout reconstruction, font raster analysis, and vector curve extraction (~0.8--1.0s per page), making multi-threaded page chunking essential for responsive processing
 - structured office documents (`.docx`, `.odt`, `.xlsx`) parse nearly instantaneously (<0.1s total), so introducing thread scheduling overhead would degrade rather than improve conversion speed
-- batch file execution across all formats automatically leverages multi-process concurrency (`ProcessPoolExecutor`) when multiple files are supplied to the CLI
+- batch conversion across files runs sequentially in a single loop, so there is no multi-process parallelism; the only thread pools in the project are the PDF page-chunk pool and the golden-test pool
 
 ### Why Python Multi-threading is Real Parallelism Here
 
@@ -108,17 +116,23 @@ Python's **Global Interpreter Lock (GIL)** limits parallel execution of Python b
 
 - calls into those extensions can release the **GIL** during native operations such as layout parsing, font rasterization, and vector path decoding
 - separate page chunks are dispatched to worker threads by the PDF converter, allowing native parsing work to use multiple CPU cores
-- disk I/O bottlenecks are avoided by running image writes in a thread pool, reducing main-parser wait times
 
 For legacy binary office formats (`.doc`, `.xls`, `.ppt`), conversion timing depends on external application initialization times. The baseline ETA estimation uses a 10.0s baseline:
 
 $$\text{Estimated Time} = 10.0 + (\text{Size in MB} \times 2.0)$$
 
+### Preflight Estimate for `--stdout`
+
+`--confirm` reuses the same estimation module, so the numbers shown before a stream match the per-file hints in the batch UI:
+
+- the duration is the sum of the per-file estimates. Files without a known estimate are skipped instead of turning the whole total into `unknown`
+- the token count is reported only for formats that are already plain text (`.txt`, `.md`, `.log`, `.csv`), where `max(1, total bytes / 4)` is a fair proxy for the converted Markdown. A PDF, DOCX, or XLSX is mostly compressed payload, so its byte size would overstate the result by an order of magnitude. For mixed inputs the clause is marked `from text sources`, and when no such files are present it is omitted
+- the line is printed to stderr before any conversion work starts, for example `Preflight: 13 files, ~39_489 tokens, estimated time ~6.5s.`
+
 ## Human-Readable Duration Formatting
 
-Conversion durations are displayed in human-readable notation rather than fixed decimal seconds:
+Conversion durations are displayed in human-readable notation rather than raw seconds:
 
-- under 1 second: formatted with decimal precision (for example, `0.04s` or `0.85s`)
-- between 1 and 59 seconds: rounded to full seconds (for example, `14s` or `45s`)
-- between 1 minute and 59 minutes: formatted as `XmYs` (for example, `1m10s`, `5m30s`, or `2m` if exact)
-- 1 hour and above: formatted as `XhYm` (for example, `1h30m`, `2h15m`, or `3h` if exact)
+- under 1 minute: one decimal place, for example `0.5s` or `45.1s`
+- under 1 hour: minutes plus one decimal place of seconds, for example `1m 35.7s` or `12m 4.0s`
+- 1 hour and above: hours and whole minutes, for example `1h 30m` or `2h 0m`
