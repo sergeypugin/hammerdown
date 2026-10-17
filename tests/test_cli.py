@@ -369,7 +369,7 @@ def test_stdout_confirm_rejects_no(monkeypatch, tmp_path: Path, capsys):
 
     source = tmp_path / "notes.txt"
     source.write_text("content", encoding="utf-8")
-    monkeypatch.setattr("sys.stdin", InteractiveInput("no\\n"))
+    monkeypatch.setattr("sys.stdin", InteractiveInput("no\n"))
 
     assert hammerdown.cli.main(["--stdout", "--confirm", str(source)]) == 1
     captured = capsys.readouterr()
@@ -414,6 +414,30 @@ def test_stdout_confirm_cancels_on_eof(monkeypatch, tmp_path: Path, capsys):
 
     assert captured.out == ""
     assert "Cancelled." in captured.err
+
+
+def test_preflight_marks_token_estimate_as_text_only(tmp_path: Path, capsys):
+    text = tmp_path / "notes.txt"
+    text.write_text("content" * 10, encoding="utf-8")
+    binary = tmp_path / "report.pdf"
+    binary.write_bytes(b"%PDF-1.4" + b"\x00" * 4000)
+
+    assert hammerdown.cli.main(["--stdout", "--confirm", str(text), str(binary)]) == 1
+    captured = capsys.readouterr()
+
+    assert "tokens from text sources" in captured.err
+    assert "approximately" not in captured.err
+
+
+def test_preflight_omits_tokens_without_text_sources(tmp_path: Path, capsys):
+    binary = tmp_path / "report.pdf"
+    binary.write_bytes(b"%PDF-1.4" + b"\x00" * 4000)
+
+    assert hammerdown.cli.main(["--stdout", "--confirm", str(binary)]) == 1
+    captured = capsys.readouterr()
+
+    assert "Preflight: 1 file, estimated time" in captured.err
+    assert "tokens" not in captured.err
 
 
 def test_enter_wait_is_exclusive_to_right_click(tmp_path: Path, monkeypatch):

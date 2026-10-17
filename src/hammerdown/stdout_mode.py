@@ -11,15 +11,33 @@ from hammerdown.utils import format_duration
 
 logger = logging.getLogger("hammerdown")
 
+# Only these formats are already plain text, so their byte size is a usable
+# proxy for the size of the converted Markdown. Binary containers (PDF, DOCX,
+# XLSX) are mostly compressed payload and metadata, and their size says nothing
+# about the text that comes out of them.
+TEXT_TOKEN_EXTENSIONS: frozenset[str] = frozenset({".txt", ".md", ".log", ".csv"})
+
+
+def text_source_count(paths: Sequence[str]) -> int:
+    return sum(1 for path in paths if Path(path).suffix.lower() in TEXT_TOKEN_EXTENSIONS)
+
 
 def approximate_tokens(paths: Sequence[str]) -> int | None:
+    """Approximate output tokens for text sources, or ``None`` when there are none."""
     total_bytes = 0
+    counted = 0
     try:
         for path in paths:
-            total_bytes += Path(path).stat().st_size
+            file_path = Path(path)
+            if file_path.suffix.lower() not in TEXT_TOKEN_EXTENSIONS:
+                continue
+            total_bytes += file_path.stat().st_size
+            counted += 1
     except OSError:
         return None
-    return max(1, total_bytes // 4) if paths else 0
+    if not counted:
+        return None
+    return max(1, total_bytes // 4)
 
 
 def confirm_stdout(paths: Sequence[str], estimates: Sequence[float | None]) -> bool:
@@ -27,11 +45,16 @@ def confirm_stdout(paths: Sequence[str], estimates: Sequence[float | None]) -> b
     token_estimate = approximate_tokens(paths)
     known_estimates = [value for value in estimates if value is not None]
     seconds = sum(known_estimates) if known_estimates else (0.0 if not paths else None)
-    token_text = f"~{token_estimate:_}" if token_estimate is not None else "unknown"
     duration_text = f"~{format_duration(seconds)}" if seconds is not None else "unknown"
     file_label = "file" if len(paths) == 1 else "files"
+    if token_estimate is None:
+        token_clause = ""
+    elif text_source_count(paths) < len(paths):
+        token_clause = f", ~{token_estimate:_} tokens from text sources"
+    else:
+        token_clause = f", ~{token_estimate:_} tokens"
     print(
-        f"Preflight: {len(paths)} {file_label}, {token_text} tokens, estimated time {duration_text}.",
+        f"Preflight: {len(paths)} {file_label}{token_clause}, estimated time {duration_text}.",
         file=sys.stderr,
     )
     if not sys.stdin.isatty():
