@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import hammerdown.parsers.office.legacy as legacy
@@ -48,8 +49,11 @@ def test_legacy_conversion_preserves_converter_failure_reason(tmp_path: Path, mo
 
     assert result is None
     assert "legacy office conversion failed" in caplog.text
-    assert "document is corrupted" in caplog.text
     assert "source file could not be loaded" in caplog.text
+    if os.name == "nt":
+        assert "document is corrupted" in caplog.text
+    else:
+        assert "Microsoft Office" not in caplog.text
     assert "install LibreOffice" not in caplog.text
 
 

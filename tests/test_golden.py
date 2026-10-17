@@ -23,6 +23,8 @@ from pathlib import Path
 
 from hammerdown import SUPPORTED_EXTENSIONS
 
+LEGACY_OFFICE_EXTENSIONS = {".doc", ".xls", ".ppt"}
+
 
 def _has_legacy_office_converter() -> bool:
     if shutil.which("soffice") or shutil.which("libreoffice"):
@@ -77,7 +79,7 @@ def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path, d
     cmd = [sys.executable, "-m", "hammerdown.cli", str(target_input)]
     result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
     if result.returncode != 0:
-        if "requires LibreOffice or Microsoft" in result.stderr and not _has_legacy_office_converter():
+        if file_path.suffix.lower() in LEGACY_OFFICE_EXTENSIONS and not _has_legacy_office_converter():
             print(f"Skipping {file_path.name}: legacy office converter not installed in environment")
             return
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
