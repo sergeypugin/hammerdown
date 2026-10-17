@@ -16,13 +16,14 @@ flowchart TD
     subgraph S2 [2. Content Parsing & Extraction]
         C --> D{Format Router}
 
-        D -->|PDF, EPUB| P_PDF[PDF Engine<br>Text-only layout reconstruction]
-        D -->|DOCX, DOC, ODT| P_DOC[Word & ODF Engine<br>Math to LaTeX & Charts to SVG]
+        D -->|PDF & e-books| P_PDF[PDF Engine<br>Text-only layout reconstruction]
+        D -->|DOCX, DOC, ODT| P_DOC[Word & ODF Engine<br>Math to LaTeX & assets]
         D -->|XLSX, XLS| P_SHEET[Spreadsheet Engine<br>Matrix segmentation to tables]
         D -->|PPTX, PPT| P_PPT[Presentation Engine<br>Slides & text frames]
         D -->|MD, TXT, LOG, CSV| P_TXT[Text Engine<br>Encoding & base64 images]
 
         P_DOC --> SVG[Chart SVGs]
+        P_DOC --> ODFIMG[OpenDocument Images]
         P_TXT --> B64[Decoded Images]
 
         P_PDF --> MD_RAW[Raw Markdown Content]
@@ -34,6 +35,7 @@ flowchart TD
 
     subgraph S3 [3. Post-Processing & Output]
         SVG --> ASSETS["hm_images_report_docx/"]
+        ODFIMG --> ASSETS
         B64 --> ASSETS
 
         MD_RAW --> CLEAN[Whitespace Trimming & Newline Normalization]
@@ -55,7 +57,7 @@ The conversion pipeline consists of three corresponding stages:
 
 - **Format Router**: detects file extension and delegates work to the corresponding parser
 - **PDF Engine**: reconstructs text and layout with PyMuPDF4LLM (OCR disabled) and extracts no images
-- **Word & ODF Engine**: extracts text and tables, translates equations (OMML and MathML) into LaTeX via `symbols.json`, and renders DrawingML charts as SVG
+- **Word & ODF Engine**: extracts text and tables, translates equations (OMML and MathML) into LaTeX via `symbols.json`, copies OpenDocument images out, and renders Word DrawingML charts as SVG
 - **Spreadsheet Engine**: segments cell matrices, trims empty borders, and builds clean Markdown tables
 - **Presentation Engine**: converts slides, headers, and text frames into structured sections
 - **Text Engine**: auto-detects encodings and decodes inline base64 images into standalone image files
@@ -83,11 +85,11 @@ Normal per-file output writes one Markdown document plus its asset folder next t
 
 ### Streaming to stdout (`--stdout`)
 
-`--stdout` produces the same merged document without writing anything to the file system:
+`--stdout` produces the same merged document without writing into the source tree:
 
 - each conversion runs against a temporary output directory, so no `hm_*.md` files or asset folders are left behind
 - `resources.embed_temporary_resources` inlines every temporary asset as a base64 data URI, keeping the stream self-contained
-- the merged document is written to stdout while diagnostics and errors go to stderr
+- the merged document is written to stdout while progress output is suppressed and errors go to stderr
 - `--confirm` prints a preflight line with the file count, a token estimate for text sources, and the duration estimate, then asks `[y/n]`; `y` and `yes` proceed, `n` and `no` cancel, and any other answer re-asks
 - without an interactive stdin, `--confirm` cancels instead of waiting
 
@@ -108,9 +110,9 @@ When a batch runs in a TTY, `hammerdown` renders a live view built from two Rich
 - the active file shows a five-cell progress bar such as `[███░░]` styled dark orange, alongside its live elapsed time
 - queued files show `[ ]` in a dim style and display their preflight estimate in the time column
 - failed files show `[!]` styled red
-- panel borders use the running color `#ec7c39` while the batch is active and the completion color `#729c1f` once it finishes
+- the `Processing` panel border uses the running color `#ec7c39` while the batch is active and the completion color `#729c1f` once it finishes
 
-In non-TTY runs (pipes, CI, redirected logs) no live view is drawn. Each file is announced with a `Processing report.pdf ~8.1s...` line when it starts, and the batch ends with the `Summary`, `Error list`, and `Results` panels printed once as plain text. Errors are reported only in the error panel and never counted as results.
+In non-TTY runs (pipes, CI, redirected logs) no live view is drawn. Each file is announced with a `Processing report.pdf ~8.1s...` line when it starts and a `Completed report.pdf (8.1s, ~1_200 tokens)` line when it finishes, and the batch ends with the `Summary`, `Error list`, and `Results` panels printed once as plain text. Errors are reported only in the error panel and never counted as results.
 
 ## Module Layout
 
@@ -123,7 +125,7 @@ In non-TTY runs (pipes, CI, redirected logs) no live view is drawn. Each file is
 - alternate pipelines: `merge.py` (`merge_root_for_inputs`, `render_merge_header`, `merge_asset_paths`, `render_merged_document`, `render_merged_markdown`, `initialize_merge_file`, `append_merged_document`), `stdout_mode.py` (`approximate_tokens`, `confirm_stdout`, `run_stdout_conversion`)
 - estimates: `estimates.py` (single source of truth for ETA via `describe`, `get_conversion_estimate_seconds`, and `get_conversion_estimate`, plus `PDF_EXTENSIONS`, `LEGACY_EXTENSIONS`, and `FAST_TEXT_EXTENSIONS`)
 - support: `resources.py` (`embed_temporary_resources`, `token_count`), `path_utils.py` (`normalize_path`, `get_images_dir_name`, `enable_vt_mode`), `platform_utils.py` (`is_windows`, `is_macos`), `formatting.py` (`format_duration`, `format_progress_bar`), `ui_constants.py` (colors and layout constants), `utils.py` (thin facade re-exporting the above)
-- platform integration: `ipc.py` (`IPCCoordinator`, `try_delegate_to_coordinator`), `file_selection.py` (PowerShell picker on Windows, tkinter elsewhere), `integrations/` (`install`/`uninstall` plus shared helpers in `_common` and per-platform `windows`, `linux`, `macos`), `updater.py` (`update()`, downloads verified by SHA-256 with digest and size fallbacks plus an executable magic-byte check, and an atomic staged binary swap with rollback)
+- platform integration: `ipc.py` (`IPCCoordinator`, `try_delegate_to_coordinator`), `file_selection.py` (PowerShell picker on Windows, tkinter elsewhere), `integrations/` (`install`/`uninstall` plus shared helpers in `_common` and per-platform `windows`, `linux`, `macos`), `updater.py` (`update()`, downloads verified by SHA-256 with digest and size fallbacks plus an executable magic-byte check, and a staged binary swap with rollback)
 - parsers: `parsers/__init__` holds the `CONVERTERS` registry, alongside `text`, `pdf`, `tables`, `markdown_render` (shared `render_markdown_table` and `is_math_glue`), `math`, `charts`, `odt`, and an `office/` subpackage (`word`, `spreadsheet`, `presentation`, `legacy`)
 
 ## Cascade Parser Pipeline for Legacy Formats

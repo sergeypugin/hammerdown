@@ -145,7 +145,7 @@ Each converter has the same signature and returns `tuple[str | None, int]` -- th
 - `convert_docx(docx_path, out_dir)` -- converts modern Word (.docx) files, parses tables, turns Word formulas into LaTeX, and renders embedded charts as SVG; additionally accepts `images_dir_name=None` and `progress_callback=None` as keyword arguments
 - `convert_doc(doc_path, out_dir)` -- converts legacy Word (.doc) files using LibreOffice or Microsoft Word automation
 - `convert_odt(odt_path, out_dir)` -- converts OpenDocument Text (.odt) files with native formula and image extraction
-- `convert_txt_or_md(file_path, out_dir)` -- reads plain text, log, or Markdown files with automatic encoding detection; extracts any embedded base64 image strings into PNG/JPEG files inside the source's asset folder, for example `hm_images_LMS_md/`
+- `convert_txt_or_md(file_path, out_dir)` -- reads plain text, log, or Markdown files with automatic encoding detection; extracts any embedded base64 image strings into files whose extension follows the MIME subtype (`embedded_img_0.png`, `embedded_img_1.jpeg`, and so on) inside the source's asset folder, for example `hm_images_LMS_md/`
 
 ```python
 from hammerdown import convert_docx, convert_odt
@@ -220,7 +220,11 @@ Extracts data series from Word chart XML and generates a clean, standalone SVG d
 
 ### `render_markdown_table(rows)`
 
-Renders already-stringified table cells into Markdown lines, escaping any `|` inside a cell.
+Renders already-stringified table cells into Markdown lines, escaping any `|` inside a cell. Import it from `hammerdown.parsers.markdown_render`:
+
+```python
+from hammerdown.parsers.markdown_render import render_markdown_table
+```
 
 - `rows` (`Sequence[Sequence[str]]`): two-dimensional cell data where every cell is already a string
 - Returns: `list[str]` -- the header row, the `| --- |` separator row, and the body rows
@@ -229,9 +233,9 @@ Renders already-stringified table cells into Markdown lines, escaping any `|` in
 
 The estimation model lives in `hammerdown.estimates` and is shared by the CLI hints and the API:
 
-- `describe(path)` -> `tuple[float | None, str]` -- the estimated duration in seconds and a display hint suffix such as ` (9 pages, est. ~8s)`
+- `describe(path)` -> `tuple[float | None, str]` -- the estimated duration in seconds and a display hint suffix such as ` (9 pages, est. ~8.1s)`
 - `get_conversion_estimate_seconds(path)` -> `float | None` -- just the estimated duration
-- `get_conversion_estimate(path)` -> `str` -- just the display hint (for example `~8s`), or an empty string when no estimate is available
+- `get_conversion_estimate(path)` -> `str` -- just the display hint (for example `~8.1s`), or an empty string when no estimate is available
 
 ### `omml_to_latex(elem)` and `mathml_to_latex(elem)`
 

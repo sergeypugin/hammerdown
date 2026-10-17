@@ -86,13 +86,13 @@ On multi-core CPUs, concurrent chunk execution accelerates actual wall-clock pro
 
 Example log:
 ```text
-Processing report.pdf (9 pages, est. ~8s)...
-Completed report.pdf in 10s (0 images)
+Processing report.pdf (9 pages, est. ~8.1s)...
+Completed report.pdf in 10.0s (0 images)
 ```
 
 ### Presentations
 
-For `.pptx` slides, `hammerdown` inspects slide count $N_{\text{slides}}$ via `python-pptx`:
+For `.pptx` slides, `hammerdown` inspects slide count $N_{\text{slides}}$ by counting `ppt/slides/slide*.xml` members inside the archive:
 
 $$\text{Estimated Time} = \max(1.0,\; N_{\text{slides}} \times 0.2)$$
 
@@ -125,7 +125,7 @@ $$\text{Estimated Time} = 10.0 + (\text{Size in MB} \times 2.0)$$
 
 `--confirm` reuses the same estimation module, so the numbers shown before a stream match the per-file hints in the batch UI:
 
-- the duration is the sum of the per-file estimates. Files without a known estimate are skipped instead of turning the whole total into `unknown`
+- the duration is the sum of the known per-file estimates. Files without an estimate are skipped rather than turning the whole total into `unknown`; the total is `unknown` only when no file has one
 - the token count is reported only for formats that are already plain text (`.txt`, `.md`, `.log`, `.csv`), where `max(1, total bytes / 4)` is a fair proxy for the converted Markdown. A PDF, DOCX, or XLSX is mostly compressed payload, so its byte size would overstate the result by an order of magnitude. For mixed inputs the clause is marked `from text sources`, and when no such files are present it is omitted
 - the line is printed to stderr before any conversion work starts, for example `Preflight: 13 files, ~39_489 tokens, estimated time ~6.5s.`
 

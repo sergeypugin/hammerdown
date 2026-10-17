@@ -23,7 +23,7 @@ folder/
 
 Key naming rules:
 - the output Markdown file is named after the source and its extension: `report.docx` becomes `hm_report_docx.md`, while `report.doc` becomes `hm_report_doc.md`. This avoids collisions between files with identical names but different extensions. With `-w`/`--overwrite`, plain-text sources are rewritten in place instead
-- images, charts, and extracted assets are stored in a dedicated folder next to the Markdown file: `report.docx` uses `hm_images_report_docx/`
+- extracted assets are stored in a dedicated folder next to the Markdown file: Word charts land in `hm_images_report_docx/`, and OpenDocument or Markdown images land in a folder such as `hm_images_report_odt/` or `hm_images_LMS_md/`
 - relative image links in the Markdown point into that folder, for example `hm_images_report_docx/chart_000.svg`
 
 ## File Processing Details
@@ -39,9 +39,9 @@ Key naming rules:
 
 ### Word Documents (.docx, .doc, .odt)
 
-- headings, paragraphs, and list items are converted to standard Markdown syntax
+- paragraphs and inline runs are converted to Markdown text, and tables become Markdown tables; headings and list items keep their text but are not promoted to Markdown heading or list syntax
 - equations are translated from internal XML structures into standard LaTeX formulas using character mapping definitions in `src/hammerdown/parsers/symbols.json`
-- embedded diagrams and charts are exported as vector SVG graphics
+- embedded Word DrawingML charts are exported as vector SVG graphics
 - binary `.doc` legacy files are converted to DOCX first when LibreOffice or Microsoft Word is installed
 
 ### Excel Workbooks and CSV (.xlsx, .xls, .csv)
@@ -49,11 +49,11 @@ Key naming rules:
 - each worksheet is exported with a header such as `# Sheet: Data`
 - cell boundaries are detected automatically, trimming blank margins and turning separate tables on the same sheet into individual Markdown tables
 - evaluated values take precedence over raw formulas when available
-- character encodings (UTF-8, CP1251, Latin-1) and tabular delimiters (comma, semicolon, tab) are detected automatically for CSV files
+- character encodings (UTF-8, CP1251, CP1252, Latin-1) and tabular delimiters (comma, semicolon, tab, pipe) are detected automatically for CSV files
 
 ### Plain Text and Markdown (.txt, .md, .log)
 
-- text is decoded with automatic fallback across UTF-8, CP1251, and Latin-1 encodings
+- text is decoded with automatic fallback across UTF-8, CP1251, CP1252, and Latin-1 encodings
 - if a Markdown file contains embedded base64 image strings (like `data:image/png;base64,...`), `hammerdown` decodes them, saves them as `embedded_img_0.png`, `embedded_img_1.jpeg`, and so on inside the source's asset folder, and replaces the inline base64 string with a clean relative link. For `LMS.md`, the folder is `hm_images_LMS_md/`
 
 ### PowerPoint Presentations (.pptx, .ppt)
@@ -125,7 +125,7 @@ Extracted assets are kept apart from the originals: images, charts, and decoded 
 
 - each conversion runs against a temporary output directory, so no `hm_*.md` files or asset folders are created
 - `resources.embed_temporary_resources` inlines every temporary asset as a base64 data URI, keeping the stream self-contained
-- the merged document goes to stdout while progress, warnings, and errors go to stderr, and the exit code is non-zero when any document failed
+- the merged document goes to stdout while progress output is suppressed and errors go to stderr, and the exit code is non-zero when any document failed
 - `--stdout` is rejected together with `--merge`, `--output-dir`, `--overwrite`, and `--skip-existing`
 - `--confirm` adds a preflight estimate and an interactive `[y/n]` prompt. `y` and `yes` proceed, `n` and `no` cancel, other answers re-ask, and a missing TTY cancels immediately. The token part of the estimate covers only plain-text sources
 

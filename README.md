@@ -11,7 +11,7 @@
   <img src="assets/logo.svg" alt="hammerdown logo" width="220" height="220">
 </div>
 
-`hammerdown` is a cross-platform tool and Python library for converting PDF, Word, Excel, PowerPoint, OpenDocument, CSV, and plain-text documents into clean Markdown. Embedded images, SVG charts, and mathematical formulas are automatically extracted and formatted.
+`hammerdown` is a cross-platform tool and Python library for converting PDF, Word, Excel, PowerPoint, OpenDocument, CSV, and plain-text documents into clean Markdown. Word charts are rendered as SVG, OpenDocument and Markdown images are extracted, and mathematical formulas are converted to LaTeX.
 
 The PDF pipeline is built on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM), which do the actual page-layout reconstruction and Markdown generation. This is the central feature the project was built around. Everything else -- routing, batch handling, merging, and file-manager integration -- is built around that core.
 
@@ -72,7 +72,7 @@ folder/
     └── chart_000.svg
 ```
 
-PDF text is converted directly to Markdown without producing an asset folder; images and charts are extracted for Word, OpenDocument, Markdown, and presentation sources, where the source format exposes them as separate assets.
+PDF text is converted directly to Markdown without producing an asset folder. Asset folders are created only where the format exposes separate assets: Word charts are rendered as SVG, OpenDocument images are copied out, and base64 images in Markdown are decoded. Presentations and spreadsheets produce Markdown text and tables only.
 
 ## Installation
 
@@ -157,21 +157,23 @@ When converting documents from the terminal, `hammerdown` renders a live view in
 </div>
 
 - a completed file gets a green marker and its duration, image count, and token count
-- the active file shows an inline progress bar, the current page or slide count, and live elapsed time
+- the active file shows an inline progress bar in the state column and its live elapsed time
 - queued files are dimmed and show their preflight estimate
 - failed files get a red marker and are repeated in a separate `Error list` panel with the failure reason
-- panel borders are orange while the batch is running and green once it finishes
+- the `Processing` panel border is orange while the batch is running and green once it finishes
 - the `Results` panel summarizes merged documents, converted files, and extracted images
 
 <div align="center">
   <img src="docs/assets/batch-summary.png" alt="Batch summary, error list, and results" width="600">
 </div>
 
-In non-interactive environments (CI pipelines, redirected logs, or non-TTY outputs) no live view is drawn. Each file is announced when it starts, and the same `Summary`, `Error list`, and `Results` panels are printed once at the end as plain text without terminal control characters:
+In non-interactive environments (CI pipelines, redirected logs, or non-TTY outputs) no live view is drawn. Each file is announced when it starts and reported when it finishes, and the same `Summary`, `Error list`, and `Results` panels are printed once at the end as plain text without terminal control characters:
 
 ```text
 Processing report.pdf ~8.1s...
+Completed report.pdf (8.1s, ~1_200 tokens)
 Processing notes.txt ~0.5s...
+Completed notes.txt (0.5s, ~12 tokens)
 ```
 
 When using `hammerdown` as a Python library, custom progress callbacks can be passed to `to_markdown()` or `convert_file()`:
@@ -199,10 +201,10 @@ Options:
 - `-i`, `--include REGEX` -- only process files whose normalized relative path matches REGEX; may be repeated
 - `-e`, `--exclude REGEX` -- skip files whose normalized relative path matches REGEX; may be repeated; exclusions always take priority
 - `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`) in-place instead of creating a copy
-- `-s`, `--skip-existing` -- skip conversion if the target Markdown file already exists (overwriting is enabled by default)
+- `-s`, `--skip-existing` -- skip conversion when the target Markdown file already exists; without it, existing `hm_*.md` outputs are overwritten
 - `-o`, `--output-dir DIR` -- save Markdown output and extracted images under DIR, preserving the relative layout of the input tree
 - `-m`, `--merge OUTPUT_MD` -- merge every converted Markdown document into a single target Markdown file
-- `--stdout` -- write the merged Markdown document to stdout; diagnostics and errors go to stderr
+- `--stdout` -- write the merged Markdown document to stdout; errors go to stderr
 - `--confirm` -- with `--stdout`, print a preflight estimate and ask for confirmation before writing anything
 - `-v`, `--version` -- display version information
 
@@ -294,7 +296,7 @@ Assets are inlined as base64 data URIs, so the stream is self-contained. Progres
 Add `--confirm` to inspect the cost before anything is printed. Missing paths are reported first, then the preflight line shows the file count, a token estimate for text sources, and an estimated duration. The prompt accepts `y` and `yes`, rejects `n` and `no`, and re-asks on anything else:
 
 ```text
-[!] drafts/: file or directory not found
+[!] drafts: file or directory not found
 [!] missing.md: file or directory not found
 Preflight: 16 files, ~2_400 tokens from text sources, estimated time ~1m 43.9s.
 Continue and write Markdown to stdout? [y/n] Lk
@@ -303,7 +305,7 @@ Continue and write Markdown to stdout? [y/n] nO
 Cancelled.
 ```
 
-Only formats that are already plain text (`.txt`, `.md`, `.log`, `.csv`) contribute to the token estimate, because the size of a PDF, DOCX, or XLSX says nothing about the Markdown that comes out of it. When an input contains no such files, the token clause is omitted. `--confirm` requires an interactive stdin; without a terminal it cancels safely instead of waiting. `--stdout` is incompatible with `--merge`, `--output-dir`, `--overwrite`, and `--skip-existing`.
+Only formats that are already plain text (`.txt`, `.md`, `.log`, `.csv`) contribute to the token estimate, because the size of a PDF, DOCX, or XLSX says nothing about the Markdown that comes out of it. For mixed inputs the clause is marked `from text sources`; when no such files are present, the token clause is omitted entirely. `--confirm` requires an interactive stdin; without a terminal it cancels safely instead of waiting. `--stdout` is incompatible with `--merge`, `--output-dir`, `--overwrite`, and `--skip-existing`.
 
 ### Python Library Quickstart
 
