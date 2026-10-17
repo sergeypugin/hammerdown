@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import logging
 import os
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
 from hammerdown import SUPPORTED_EXTENSIONS
 
-logger = logging.getLogger("hammerdown")
+from ._common import _remove_install_dir
 
 
 def _install_windows(command: str) -> None:
@@ -91,8 +89,4 @@ def _uninstall_windows() -> None:
     (sendto_dir / "Hammer down.cmd").unlink(missing_ok=True)
     (sendto_dir / "Hammer down.lnk").unlink(missing_ok=True)
     install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
-    if install_dir.exists():
-        try:
-            shutil.rmtree(install_dir)
-        except OSError:
-            logger.warning("Could not remove installed program files at %s", install_dir)
+    _remove_install_dir(install_dir)

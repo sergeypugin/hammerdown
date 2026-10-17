@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import logging
 import shutil
 import stat
 import subprocess
 from pathlib import Path
 
-logger = logging.getLogger("hammerdown")
+from ._common import _install_launcher, _quote_if_needed, _remove_install_dir
 
 LINUX_MIME_TYPES: tuple[str, ...] = (
     "application/pdf",
@@ -80,23 +79,10 @@ def _find_icon_png() -> Path | None:
     return None
 
 
-def _install_launcher(command: str, home_dir: Path | None = None) -> Path:
-    home = home_dir or Path.home()
-    bin_dir = home / ".local" / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    launcher = bin_dir / "hammerdown"
-    launcher.write_text(f'#!/bin/sh\nexec {command} "$@"\n', encoding="utf-8")
-    try:
-        launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    except OSError:
-        pass
-    return launcher
-
-
 def _install_linux(command: str, home_dir: Path | None = None) -> None:
     home = home_dir or Path.home()
     launcher = _install_launcher(command, home)
-    exec_cmd = f'"{launcher}"' if " " in str(launcher) else str(launcher)
+    exec_cmd = _quote_if_needed(launcher)
 
     apps_dir = home / ".local" / "share" / "applications"
     apps_dir.mkdir(parents=True, exist_ok=True)
@@ -159,12 +145,7 @@ def _uninstall_linux(home_dir: Path | None = None) -> None:
     (home / ".config" / "caja" / "scripts" / "Hammer down file").unlink(missing_ok=True)
     (home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "hammerdown.png").unlink(missing_ok=True)
 
-    install_dir = home / ".local" / "share" / "hammerdown"
-    if install_dir.exists():
-        try:
-            shutil.rmtree(install_dir)
-        except OSError:
-            logger.warning("Could not remove installed program files at %s", install_dir)
+    _remove_install_dir(home / ".local" / "share" / "hammerdown")
 
     update_db = shutil.which("update-desktop-database")
     if update_db:

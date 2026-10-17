@@ -12,6 +12,10 @@ _SYMBOLS_PATH = Path(__file__).parent / "symbols.json"
 with _SYMBOLS_PATH.open("r", encoding="utf-8") as _f:
     _MATH_SYMBOLS = str.maketrans(json.load(_f))
 
+_DECIMAL_COMMA_RE = re.compile(r"(?<=\d),(?=\d)")
+_EXP_RE = re.compile(r"(?:(?<![A-Za-z\\])|(?<=\\cdot))exp(?![A-Za-z])")
+_TEXT_WRAP_RE = re.compile(r"(\\text\{[^\}]+\})|([а-яА-ЯёЁ]+(?:\.[а-яА-ЯёЁ]+|\.)?|\\?%)")
+
 
 def math_text(text: str) -> str:
     if not text:
@@ -19,8 +23,8 @@ def math_text(text: str) -> str:
 
     # Symbol translation and basic normalization
     rendered = text.translate(_MATH_SYMBOLS)
-    rendered = re.sub(r"(?<=\d),(?=\d)", r"{,}", rendered)
-    rendered = re.sub(r"(?:(?<![A-Za-z\\])|(?<=\\cdot))exp(?![A-Za-z])", lambda _: r"\exp", rendered)
+    rendered = _DECIMAL_COMMA_RE.sub(r"{,}", rendered)
+    rendered = _EXP_RE.sub(lambda _: r"\exp", rendered)
     rendered = rendered.replace("\u2003", r"\quad ").replace("\u2004", " ").replace("\xa0", " ")
 
     # Safe wrapping: match existing \text{...} OR Cyrillic OR unescaped %
@@ -40,8 +44,7 @@ def math_text(text: str) -> str:
 
     # Group 1: already wrapped \text{...}
     # Group 2: Cyrillic words/abbreviations or Percent signs
-    pattern = r"(\\text\{[^\}]+\})|([а-яА-ЯёЁ]+(?:\.[а-яА-ЯёЁ]+|\.)?|\\?%)"
-    rendered = re.sub(pattern, wrapper, rendered)
+    rendered = _TEXT_WRAP_RE.sub(wrapper, rendered)
 
     return rendered
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from hammerdown.parsers.charts import render_chart_svg
+from hammerdown.parsers.markdown_render import is_math_glue, render_markdown_table
 from hammerdown.parsers.math import MATH_NS as _MATH_NS
 from hammerdown.parsers.math import math_text as _math_text
 from hammerdown.parsers.math import omml_to_latex as _omml_to_latex
@@ -14,6 +15,10 @@ from hammerdown.utils import get_images_dir_name
 
 logger = logging.getLogger("hammerdown")
 ProgressCallback = Callable[[int, int, str], None]
+
+_ALNUM_RE = re.compile(r"[\w\d]")
+_NUMERIC_RE = re.compile(r"^[0-9\s.,=≈\+\-\*\/±]+$")
+_PLAIN_TEXT_RE = re.compile(r"^[ \w\d\.]+$")
 
 
 def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str, str]:
@@ -29,7 +34,7 @@ def _render_word_node(node, relationships, chart_links=None) -> str | tuple[str,
         res = _render_word_children(node, relationships, chart_links)
         if vert in {"subscript", "superscript"}:
             latex = res[1] if isinstance(res, tuple) else res
-            if latex.strip() and re.search(r"[\w\d]", latex) and re.match(r"^[ \w\d\.]+$", latex.strip()):
+            if latex.strip() and _ALNUM_RE.search(latex) and _PLAIN_TEXT_RE.match(latex.strip()):
                 prefix = "_" if vert == "subscript" else "^"
                 return ("inline", f"{prefix}{{{latex.strip()}}}")
         return res
@@ -81,19 +86,7 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
             else:
                 curr_math.append(latex)
         elif isinstance(part, str):
-            stripped = part.strip()
-            if not stripped:
-                is_glue = True
-            elif not re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–\w\.]+$", stripped):
-                is_glue = False
-            else:
-                words = re.findall(r"\w+", stripped)
-                is_glue = all(
-                    len(w) <= 4 or w.lower() in {"max", "min", "sin", "cos", "tan", "log", "ln", "exp", "lim", "det", "arg"}
-                    for w in words
-                )
-
-            if curr_math and is_glue:
+            if curr_math and is_math_glue(part):
                 curr_math.append(part)
             else:
                 flush_math()
@@ -105,7 +98,7 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
     if not formulas:
         return text_content
 
-    is_standalone = not force_inline and len(re.findall(r"[\w\d]", text_content)) < 10
+    is_standalone = not force_inline and len(_ALNUM_RE.findall(text_content)) < 10
 
     if is_standalone:
         rendered_parts = []
@@ -114,7 +107,7 @@ def _render_word_children(node, relationships, chart_links=None, force_inline=Fa
                 rendered_parts.append(part[1])
             else:
                 if part.strip():
-                    if re.match(r"^[0-9\s.,=≈\+\-\*\/±]+$", part):
+                    if _NUMERIC_RE.match(part):
                         rendered_parts.append(part)
                     else:
                         rendered_parts.append(_math_text(part))
@@ -185,20 +178,18 @@ def convert_docx(
                 blocks.append(text)
         elif tag == "tbl":
             table = Table(element, doc)
-            rows = []
-            for row_index, row in enumerate(table.rows):
+            rendered_rows: list[list[str]] = []
+            for row in table.rows:
                 cells = []
                 for cell in row.cells:
                     cell_paragraphs = [
                         _render_word_paragraph(paragraph._p, doc.part.rels, chart_links, force_inline=True)
                         for paragraph in cell.paragraphs
                     ]
-                    cells.append(" ".join(text for text in cell_paragraphs if text).replace("|", "\\|"))
-                rows.append(f"| {' | '.join(cells)} |")
-                if row_index == 0:
-                    rows.append(f"| {' | '.join(['---'] * len(cells))} |")
-            if rows:
-                blocks.append("\n".join(rows))
+                    cells.append(" ".join(text for text in cell_paragraphs if text))
+                rendered_rows.append(cells)
+            if rendered_rows:
+                blocks.append("\n".join(render_markdown_table(rendered_rows)))
         if progress_callback:
             progress_callback(elem_idx, total_elements, "elements")
 

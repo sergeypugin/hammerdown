@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from hammerdown.parsers.markdown_render import render_markdown_table
+
 
 def _is_empty(value: object) -> bool:
     return value is None or not str(value).strip()
@@ -53,14 +55,10 @@ def render_table_regions(rows: Iterable[Iterable[object]]) -> list[str]:
 
             region_width = max(len(row) for row in region)
             region = [row + [None] * (region_width - len(row)) for row in region]
-            header = [str(value).strip().replace("|", "\\|") if not _is_empty(value) else "" for value in region[0]]
-            lines = [
-                f"| {' | '.join(header)} |",
-                f"| {' | '.join(['---'] * region_width)} |",
+            table_rows = [
+                [str(value).strip() if not _is_empty(value) else "" for value in row]
+                for row in region
             ]
-            for row in region[1:]:
-                cells = [str(value).strip().replace("|", "\\|") if not _is_empty(value) else "" for value in row]
-                lines.append(f"| {' | '.join(cells)} |")
-            rendered.append("\n".join(lines))
+            rendered.append("\n".join(render_markdown_table(table_rows)))
 
     return rendered

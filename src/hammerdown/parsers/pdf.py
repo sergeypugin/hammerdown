@@ -3,10 +3,7 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import os
-from pathlib import Path
-
-from hammerdown.utils import get_images_dir_name
-
+import threading
 from typing import Callable
 
 logger = logging.getLogger("hammerdown")
@@ -26,40 +23,8 @@ def convert_pdf_or_ebook(
         logger.error("PDF support requires pymupdf and pymupdf4llm")
         return None, 0
 
-    img_dir_name = get_images_dir_name(file_path)
-    img_dir = Path(out_dir) / img_dir_name
-
-    saved_imgs = 0
-    extracted_xrefs: set[int] = set()
-    image_tasks: list[tuple[Path, bytes]] = []
-
     with pymupdf.open(file_path) as doc:
         page_count = len(doc)
-        for page_number in range(page_count):
-            page = doc[page_number]
-            for img_info in page.get_images():
-                xref = img_info[0]
-                if xref in extracted_xrefs:
-                    continue
-
-                img_data = doc.extract_image(xref)
-                if img_data["width"] < 50 or img_data["height"] < 50:
-                    continue
-
-                img_name = f"img_p{page_number:03d}_xref{xref}.{img_data['ext']}"
-                image_tasks.append((img_dir / img_name, img_data["image"]))
-                extracted_xrefs.add(xref)
-                saved_imgs += 1
-
-    if image_tasks:
-        img_dir.mkdir(parents=True, exist_ok=True)
-
-        def _write_image(task: tuple[Path, bytes]) -> None:
-            target_path, img_bytes = task
-            target_path.write_bytes(img_bytes)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(image_tasks), 8)) as executor:
-            list(executor.map(_write_image, image_tasks))
 
     if page_count > 1:
         cpu_cnt = os.cpu_count() or 4
@@ -70,6 +35,7 @@ def convert_pdf_or_ebook(
         ]
 
         completed_pages = 0
+        progress_lock = threading.Lock()
 
         def _convert_single_page_safe(page_idx: int) -> str:
             nonlocal completed_pages
@@ -78,18 +44,20 @@ def convert_pdf_or_ebook(
                 res_str = str(res)
             except Exception:
                 res_str = f"\n\n<!-- Warning: failed to parse page {page_idx + 1} -->\n\n"
-            completed_pages += 1
-            if progress_callback:
-                progress_callback(completed_pages, page_count, "pages")
+            with progress_lock:
+                completed_pages += 1
+                if progress_callback:
+                    progress_callback(completed_pages, page_count, "pages")
             return res_str
 
         def _convert_chunk_worker(pages: list[int]) -> str:
             nonlocal completed_pages
             try:
                 res = pymupdf4llm.to_markdown(file_path, pages=pages, write_images=False, use_ocr=False)
-                completed_pages += len(pages)
-                if progress_callback:
-                    progress_callback(completed_pages, page_count, "pages")
+                with progress_lock:
+                    completed_pages += len(pages)
+                    if progress_callback:
+                        progress_callback(completed_pages, page_count, "pages")
                 return str(res)
             except Exception:
                 # If a multi-page chunk fails, fall back to safe per-page extraction
@@ -111,7 +79,7 @@ def convert_pdf_or_ebook(
         if progress_callback:
             progress_callback(page_count, page_count, "pages")
 
-    return str(md_text), saved_imgs
+    return str(md_text), 0
 
 
 CONVERTERS = {

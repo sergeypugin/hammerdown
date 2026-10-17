@@ -9,12 +9,11 @@ from pathlib import Path
 from typing import Sequence
 
 from hammerdown.core import (
-    ConversionResult,
-    SUPPORTED_EXTENSIONS,
     TEXT_EXTENSIONS,
     convert_file,
     get_conversion_estimate_seconds,
 )
+from hammerdown.discovery import expand_paths, output_paths as compute_output_paths
 from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
 from hammerdown.merge import (
     append_merged_document,
@@ -24,192 +23,10 @@ from hammerdown.merge import (
     render_merged_markdown,
 )
 from hammerdown.batch_ui import BatchUI
+from hammerdown.stdout_mode import confirm_stdout, run_stdout_conversion
 from hammerdown.utils import format_duration, normalize_path
 
 logger = logging.getLogger("hammerdown")
-
-
-def _expand_paths(
-    paths: Sequence[str],
-    excluded_dir: Path | None = None,
-    include_patterns: Sequence[re.Pattern[str]] = (),
-    exclude_patterns: Sequence[re.Pattern[str]] = (),
-) -> list[tuple[str, str | None]]:
-    targets: list[tuple[str, str | None]] = []
-    seen_paths: set[Path] = set()
-    excluded_dir = excluded_dir.resolve() if excluded_dir is not None else None
-
-    def matches(path: Path, root: Path | None) -> bool:
-        if root is not None:
-            try:
-                relative = path.relative_to(root).as_posix()
-            except ValueError:
-                relative = path.name
-        else:
-            relative = path.name
-        if include_patterns and not any(pattern.search(relative) for pattern in include_patterns):
-            return False
-        return not any(pattern.search(relative) for pattern in exclude_patterns)
-
-    for raw in paths:
-        try:
-            p = Path(normalize_path(raw)).resolve()
-        except Exception:
-            targets.append((str(raw), "invalid path"))
-            continue
-
-        if not p.exists():
-            targets.append((str(raw), "file or directory not found"))
-            continue
-
-        if p.is_dir():
-            for root, dirnames, filenames in os.walk(p):
-                if excluded_dir is not None:
-                    dirnames[:] = [
-                        name for name in dirnames
-                        if not (Path(root) / name).resolve().is_relative_to(excluded_dir)
-                    ]
-                for f in sorted(filenames):
-                    if (
-                        f.startswith("~$")
-                        or f.startswith(".")
-                        or (f.startswith("hm_") and f.lower().endswith(".md"))
-                    ):
-                        continue
-                    try:
-                        file_path = (Path(root) / f).resolve()
-                        if (
-                            file_path.suffix.lower() in SUPPORTED_EXTENSIONS
-                            and file_path not in seen_paths
-                            and matches(file_path, p)
-                        ):
-                            seen_paths.add(file_path)
-                            targets.append((str(file_path), None))
-                    except OSError:
-                        continue
-        elif p.is_file():
-            if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
-                targets.append((str(p), "unsupported format"))
-            elif p not in seen_paths and matches(p, None):
-                seen_paths.add(p)
-                targets.append((str(p), None))
-
-    return targets
-
-
-
-def _process_single_file(args_tuple: tuple[str, bool, bool]) -> ConversionResult:
-    file_path, overwrite, skip_existing = args_tuple
-    if not logger.handlers:
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
-    return convert_file(
-        file_path,
-        overwrite=overwrite,
-        skip_existing=skip_existing,
-    )
-
-
-def _output_paths(
-    raw_files: Sequence[str],
-    targets: Sequence[tuple[str, str | None]],
-    output_root: Path,
-) -> list[Path]:
-    roots: list[Path] = []
-    for raw in raw_files:
-        try:
-            path = Path(normalize_path(raw)).resolve()
-        except (OSError, ValueError):
-            continue
-        if path.is_dir():
-            roots.append(path)
-
-    output_paths: list[Path] = []
-    for path, _ in targets:
-        source = Path(path).resolve()
-        matching_roots = [root for root in roots if source.is_relative_to(root)]
-        if matching_roots:
-            relative = source.relative_to(max(matching_roots, key=lambda root: len(root.parts)))
-        else:
-            relative = Path(source.name)
-        ext_clean = source.suffix.lower().lstrip(".")
-        output_name = f"hm_{source.stem}_{ext_clean}.md" if ext_clean else f"hm_{source.stem}.md"
-        output_paths.append(output_root / relative.parent / output_name)
-
-    collisions: dict[Path, list[Path]] = {}
-    for (source, error), output in zip(targets, output_paths):
-        if error is None:
-            collisions.setdefault(output, []).append(Path(source))
-    duplicates = {output: sources for output, sources in collisions.items() if len(sources) > 1}
-    if duplicates:
-        details = "; ".join(
-            f"{output}: {', '.join(str(source) for source in sources)}"
-            for output, sources in duplicates.items()
-        )
-        raise ValueError(f"output filename collision: {details}")
-    return output_paths
-
-
-def _approximate_tokens(paths: Sequence[str]) -> int | None:
-    total_bytes = 0
-    try:
-        for path in paths:
-            total_bytes += Path(path).stat().st_size
-    except OSError:
-        return None
-    return max(1, total_bytes // 4) if paths else 0
-
-
-def _confirm_stdout(paths: Sequence[str], estimates: Sequence[float | None]) -> bool:
-    token_estimate = _approximate_tokens(paths)
-    known_estimates = [value for value in estimates if value is not None]
-    seconds = sum(known_estimates) if len(known_estimates) == len(paths) and paths else (0.0 if not paths else None)
-    token_text = f"~{token_estimate:_}" if token_estimate is not None else "unknown"
-    duration_text = f"~{format_duration(seconds)}" if seconds is not None else "unknown"
-    print(
-        f"Preflight: {len(paths)} files, approximately {token_text} tokens, estimated time {duration_text}.",
-        file=sys.stderr,
-    )
-    if not sys.stdin.isatty():
-        print("Confirmation requires interactive stdin; cancelled.", file=sys.stderr)
-        return False
-    try:
-        print("Continue and write Markdown to stdout? [y/N] ", end="", file=sys.stderr, flush=True)
-        answer = sys.stdin.readline().strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print("Cancelled.", file=sys.stderr)
-        return False
-    if answer != "y":
-        print("Cancelled.", file=sys.stderr)
-        return False
-    return True
-
-
-def _run_stdout_conversion(files: Sequence[str], raw_inputs: Sequence[str]) -> int:
-    if not files:
-        return 0
-    converted: list[tuple[str, str]] = []
-    failed = False
-    for file_path in files:
-        logger_was_disabled = logger.disabled
-        logger.disabled = True
-        try:
-            result = convert_file(
-                file_path,
-                batch_mode=True,
-                target_dir=None,
-                stdout=True,
-            )
-        finally:
-            logger.disabled = logger_was_disabled
-        if result.success and result.markdown is not None:
-            converted.append((file_path, result.markdown))
-        else:
-            failed = True
-            print(f"[!] {Path(file_path).name}: {result.error or 'conversion failed'}", file=sys.stderr)
-    if converted:
-        root = merge_root_for_inputs(raw_inputs, [Path(path) for path, _ in converted])
-        sys.stdout.write(render_merged_markdown(converted, root))
-    return 1 if failed else 0
 
 
 def run_batch(args: argparse.Namespace) -> int:
@@ -233,7 +50,7 @@ def run_batch(args: argparse.Namespace) -> int:
 
     include_patterns = [re.compile(pattern) for pattern in getattr(args, "include", [])]
     exclude_patterns = [re.compile(pattern) for pattern in getattr(args, "exclude", [])]
-    targets = _expand_paths(
+    targets = expand_paths(
         raw_files,
         excluded_dir=output_root,
         include_patterns=include_patterns,
@@ -256,11 +73,11 @@ def run_batch(args: argparse.Namespace) -> int:
         for path, error in initial_errors:
             print(f"[!] {Path(path).name}: {error}", file=sys.stderr)
         file_estimates = [estimate for (_, error), estimate in zip(targets, estimates) if error is None]
-        if getattr(args, "confirm", False) and files and not _confirm_stdout(files, file_estimates):
+        if getattr(args, "confirm", False) and files and not confirm_stdout(files, file_estimates):
             return 1
         if not files:
             return 1 if initial_errors else 0
-        conversion_status = _run_stdout_conversion(files, raw_files)
+        conversion_status = run_stdout_conversion(files, raw_files)
         return 1 if initial_errors or conversion_status else 0
 
     use_ipc = getattr(args, "coordinator", False) or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
@@ -285,7 +102,7 @@ def run_batch(args: argparse.Namespace) -> int:
 
         initial_errors = [target for target in targets if target[1] is not None]
         collected_files = coordinator.collect_files(files, assembly_timeout=0.35)
-        targets = _expand_paths(
+        targets = expand_paths(
             [*raw_files, *collected_files],
             excluded_dir=output_root,
             include_patterns=include_patterns,
@@ -324,11 +141,11 @@ def run_batch(args: argparse.Namespace) -> int:
 
     try:
         if merge_target is not None:
-            output_paths = [merge_target] * len(targets)
+            target_paths = [merge_target] * len(targets)
         elif output_root is not None:
-            output_paths = _output_paths(output_path_inputs, targets, output_root)
+            target_paths = compute_output_paths(output_path_inputs, targets, output_root)
         else:
-            output_paths = [
+            target_paths = [
                 Path(path).parent / f"hm_{Path(path).stem}_{Path(path).suffix.lower().lstrip('.')}.md"
                 for path, _ in targets
             ]
@@ -359,7 +176,7 @@ def run_batch(args: argparse.Namespace) -> int:
             hint = f"~{format_duration(estimate)}" if estimate is not None else ""
             batch_ui.start_file(idx, hint=hint)
             extension = f_path.suffix.lower()
-            output_path = output_paths[idx]
+            output_path = target_paths[idx]
             status_info = ""
             if merge_target is not None:
                 if merge_skipped:
@@ -508,26 +325,8 @@ def convert_files(
         raise ValueError("overwrite cannot be combined with skip_existing")
     if overwrite and output_dir is not None:
         raise ValueError("overwrite cannot be combined with output_dir")
-    include_patterns = []
-    for pattern in include:
-        normalized = pattern.strip()
-        if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {"'", '"'}:
-            normalized = normalized[1:-1]
-        try:
-            re.compile(normalized)
-        except re.error as exc:
-            raise ValueError(f"include invalid regular expression {pattern!r}: {exc}") from exc
-        include_patterns.append(normalized)
-    exclude_patterns = []
-    for pattern in exclude:
-        normalized = pattern.strip()
-        if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {"'", '"'}:
-            normalized = normalized[1:-1]
-        try:
-            re.compile(normalized)
-        except re.error as exc:
-            raise ValueError(f"exclude invalid regular expression {pattern!r}: {exc}") from exc
-        exclude_patterns.append(normalized)
+    include_patterns = _normalize_patterns(include, "include")
+    exclude_patterns = _normalize_patterns(exclude, "exclude")
     namespace = argparse.Namespace(
         files=[os.fspath(path) for path in files],
         include=include_patterns,
@@ -542,3 +341,17 @@ def convert_files(
         right_click=False,
     )
     return run_batch(namespace)
+
+
+def _normalize_patterns(patterns: Sequence[str], flag: str) -> list[str]:
+    normalized_patterns: list[str] = []
+    for pattern in patterns:
+        normalized = pattern.strip()
+        if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {"'", '"'}:
+            normalized = normalized[1:-1]
+        try:
+            re.compile(normalized)
+        except re.error as exc:
+            raise ValueError(f"{flag} invalid regular expression {pattern!r}: {exc}") from exc
+        normalized_patterns.append(normalized)
+    return normalized_patterns

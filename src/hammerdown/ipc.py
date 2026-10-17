@@ -26,24 +26,36 @@ def _get_address(pipe_name: str | tuple[str, int] | None = None) -> str | tuple[
     return ("127.0.0.1", IPC_PORT)
 
 
+def _close_quietly(conn: Any) -> None:
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
 def try_delegate_to_coordinator(
     files: Sequence[str],
     options: dict[str, Any],
     pipe_name: str | tuple[str, int] | None = None,
 ) -> bool:
+    """Hand files to an already running coordinator.
+
+    ``options`` is accepted for call-site compatibility but is not transmitted:
+    the receiving instance applies its own command-line options.
+    """
     address = _get_address(pipe_name)
+    conn = None
     try:
         conn = Client(address, authkey=IPC_AUTH_KEY)
-        payload = {
-            "files": list(files),
-            "options": options,
-        }
-        conn.send(payload)
+        conn.send({"files": list(files)})
         response = conn.recv()
-        conn.close()
         return isinstance(response, dict) and response.get("status") == "ok"
     except Exception:
         return False
+    finally:
+        _close_quietly(conn)
 
 
 class IPCCoordinator:
@@ -68,15 +80,20 @@ class IPCCoordinator:
         while self._running and self.listener:
             try:
                 conn = self.listener.accept()
+            except Exception:
+                break
+            try:
                 data = conn.recv()
-                if isinstance(data, dict) and "files" in data:
-                    new_files = data["files"]
+                files = data.get("files") if isinstance(data, dict) else None
+                if isinstance(files, list):
+                    new_files = [item for item in files if isinstance(item, str)]
                     if new_files:
                         self._incoming_queue.put(new_files)
                     conn.send({"status": "ok"})
-                conn.close()
             except Exception:
-                break
+                logger.debug("Failed to handle coordinator connection", exc_info=True)
+            finally:
+                _close_quietly(conn)
 
     def collect_files(self, initial_files: Sequence[str], assembly_timeout: float = 0.35) -> list[str]:
         collected: list[str] = list(initial_files)

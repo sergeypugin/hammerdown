@@ -6,24 +6,27 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rich.cells import cell_len
-
-from hammerdown.ui_constants import (
-    BATCH_UI_WIDTH,
-    BATCH_UI_VISIBLE_FILES,
-    PROCESS_COMPLETE_COLOR,
-    PROCESS_RUNNING_COLOR,
-    PROGRESS_BAR_WIDTH,
-    PROGRESS_DISPLAY_DELAY,
-    QUEUE_FILE_WIDTH,
-    QUEUE_IMAGES_WIDTH,
-    QUEUE_MARKER_WIDTH,
-    QUEUE_TOKENS_WIDTH,
-    RESULTS_COLOR,
-    SUMMARY_COLOR,
+from hammerdown.batch_ui_render import (
+    add_queue_columns as _add_queue_columns,
+    add_result_columns as _add_result_columns,
+    add_status_file_columns as _add_status_file_columns,
+    estimate_label as _estimate_label,
+    marker_for as _marker_for,
+    panel_title as _panel_title,
+    render_process_panel as _render_process_panel,
+    render_renderable as _render_renderable,
+    render_summary_panel as _render_summary_panel,
+    truncate_filename as _truncate_filename,
 )
 from hammerdown.formatting import format_duration
 from hammerdown.path_utils import enable_vt_mode
+from hammerdown.ui_constants import (
+    BATCH_UI_WIDTH,
+    PROGRESS_BAR_WIDTH,
+    PROGRESS_DISPLAY_DELAY,
+    QUEUE_FILE_WIDTH,
+    RESULTS_COLOR,
+)
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -176,137 +179,24 @@ class BatchUI:
             )
         )
 
-
     def render(self) -> None:
         if self._live is not None:
             self._live.update(_LiveBatchRenderable(self), refresh=True)
 
     def _renderable(self, final: bool = False):
-        from rich.console import Group
-
-        return Group(self._summary_renderable(), self._process_renderable(final=final))
+        return _render_renderable(self, final=final)
 
     def _process_renderable(self, final: bool = False):
-        from rich import box
-        from rich.panel import Panel
-        from rich.table import Table
-        from rich.text import Text
-
-        total = len(self.files)
-        completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
-        percent = completed / total if total else 0
-        title = _panel_title(
-            f"Processing {total} files {percent:.0%} ({completed}/{total})",
-            PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR,
-        )
-
-        queue = Table.grid(expand=True, padding=(0, 0))
-        _add_queue_columns(queue)
-        queue.add_row(
-            Text("state", style="dim", no_wrap=True),
-            Text("file", style="dim", no_wrap=True),
-            Text("time", style="dim", no_wrap=True),
-            Text("images", style="dim", no_wrap=True),
-            Text("tokens", style="dim", no_wrap=True),
-        )
-        if self.current_idx < 0:
-            start = 0
-        else:
-            remaining = max(0, total - self.current_idx - 1)
-            target_position = 4 - min(remaining, 2)
-            start = max(0, min(self.current_idx - target_position, total - BATCH_UI_VISIBLE_FILES))
-        end = min(total, start + BATCH_UI_VISIBLE_FILES)
-        for index in range(start, end):
-            state = self.statuses[index]
-            marker, style = self._marker_for(index, state)
-            if state == "[ ]":
-                duration = self._estimate_label(index)
-                images = ""
-                tokens = ""
-            elif state == "[>]":
-                started_at = self._file_started_at[index]
-                elapsed_file = time.monotonic() - started_at if started_at is not None else 0.0
-                duration = format_duration(elapsed_file)
-                images = ""
-                tokens = ""
-            elif state == "[!]":
-                duration = "-"
-                images = "-"
-                tokens = "-"
-            else:
-                duration = self._file_durations[index]
-                images = str(self._file_images[index]) if self._file_images[index] else "-"
-                tokens = f"~{self._file_tokens[index]:_}" if self._file_tokens[index] else ""
-            queue.add_row(
-                Text(marker, style=style, no_wrap=True),
-                Text(_truncate_filename(self.files[index].name, QUEUE_FILE_WIDTH), style=style, no_wrap=True),
-                Text(duration, style="dim" if state == "[ ]" else style, no_wrap=True),
-                Text(images, style="dim" if state == "[ ]" else style, no_wrap=True),
-                Text(tokens, style="dim" if state == "[ ]" else style, no_wrap=True),
-            )
-        for _ in range(BATCH_UI_VISIBLE_FILES - (end - start)):
-            queue.add_row("", "", "", "", "")
-
-        border_style = PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR
-        return Panel(
-            queue,
-            title=title,
-            title_align="left",
-            border_style=border_style,
-            box=box.ROUNDED,
-            width=BATCH_UI_WIDTH,
-        )
+        return _render_process_panel(self, final=final)
 
     def _summary_renderable(self):
-        from rich.console import Group
-        from rich import box
-        from rich.panel import Panel
-        from rich.table import Table
-        from rich.text import Text
-
-        elapsed = time.monotonic() - self._batch_started_at if self._batch_started_at is not None else 0.0
-        estimated_total = sum(value for value in self.estimates if value is not None)
-        timing = Table.grid(expand=True, padding=(0, 0))
-        timing.add_column(width=22, no_wrap=True, overflow="ellipsis")
-        timing.add_column(width=22, no_wrap=True, overflow="ellipsis")
-        timing.add_column(width=16, no_wrap=True, overflow="ellipsis")
-        completed = sum(status in {"[x]", "[!]"} for status in self.statuses)
-        failed = len(self.errors)
-        error_label = Text(f"Errors: {failed}", style="red") if failed else Text("")
-        timing.add_row(
-            f"Time passed: {format_duration(elapsed)}",
-            f"Estimated: ~{format_duration(estimated_total)}" if estimated_total else "",
-            error_label,
-        )
-        timing.add_row(f"Completed: {completed}", f"Tokens: ~{self.total_tokens:_}", f"Overwritten: {self.overwritten_count}")
-        if self.skipped_count:
-            timing.add_row(f"Skipped: {self.skipped_count}", "", "")
-        summary_parts = [timing]
-        return Panel(
-            Group(*summary_parts),
-            title=_panel_title("Summary", SUMMARY_COLOR),
-            title_align="left",
-            border_style=SUMMARY_COLOR,
-            box=box.ROUNDED,
-            width=BATCH_UI_WIDTH,
-        )
+        return _render_summary_panel(self)
 
     def _marker_for(self, index: int, state: str) -> tuple[str, str]:
-        if state == "[x]":
-            return "[✓]", "green"
-        if state == "[!]":
-            return "[!]", "red"
-        if state == "[>]":
-            total = self._progress_total[index]
-            current = self._progress_current[index]
-            filled = int(round(PROGRESS_BAR_WIDTH * current / total)) if total else 0
-            bar = "█" * filled + "░" * (PROGRESS_BAR_WIDTH - filled)
-            return f"[{bar}]", "dark_orange"
-        return "[ ]", "dim"
+        return _marker_for(self, index, state)
 
     def _estimate_label(self, index: int) -> str:
-        estimate = self.estimates[index]
-        return f"~{format_duration(estimate)}" if estimate is not None else ""
+        return _estimate_label(self, index)
 
     def start_file(self, index: int, hint: str = "") -> None:
         self.current_idx = index
@@ -374,8 +264,7 @@ class BatchUI:
                 self.overwritten_count += 1
             token_info = f", ~{tokens:_} tokens" if tokens > 0 else ""
             img_info = f", {images} images" if images > 0 else ""
-            extra_info = ""
-            self.details[index] = f"({duration_text}{img_info}{token_info}{extra_info})"
+            self.details[index] = f"({duration_text}{img_info}{token_info})"
         else:
             self.statuses[index] = "[!]"
             self._file_durations[index] = "-"
@@ -394,46 +283,3 @@ class BatchUI:
             if info:
                 details.append(info)
             logger.info("Completed %s (%s)", self.files[index].name, ", ".join(details))
-
-
-def _add_status_file_columns(table) -> None:
-    table.add_column(width=QUEUE_MARKER_WIDTH, justify="center", no_wrap=True)
-    table.add_column(width=QUEUE_FILE_WIDTH, overflow="ellipsis", no_wrap=True)
-    table.add_column(ratio=1, no_wrap=False, overflow="fold")
-
-
-def _add_result_columns(table) -> None:
-    table.add_column(width=QUEUE_MARKER_WIDTH, justify="center", no_wrap=True)
-    table.add_column(ratio=1, no_wrap=False, overflow="fold")
-
-
-def _add_queue_columns(table) -> None:
-    table.add_column(width=QUEUE_MARKER_WIDTH, justify="center", no_wrap=True)
-    table.add_column(width=QUEUE_FILE_WIDTH, overflow="ellipsis", no_wrap=True)
-    table.add_column(ratio=1, no_wrap=True, justify="right")
-    table.add_column(width=QUEUE_IMAGES_WIDTH, no_wrap=True, justify="right")
-    table.add_column(width=QUEUE_TOKENS_WIDTH, no_wrap=True, justify="right")
-
-
-def _panel_title(label: str, style: str):
-    from rich.text import Text
-
-    return Text(label, style=style)
-
-
-def _truncate_filename(filename: str, max_width: int) -> str:
-    """Shorten a name without dropping its extension."""
-    if cell_len(filename) <= max_width:
-        return filename
-
-    path = Path(filename)
-    suffix = "".join(path.suffixes)
-    stem = filename[: -len(suffix)] if suffix else filename
-    ellipsis = "…"
-    suffix_width = cell_len(suffix)
-    if suffix_width + cell_len(ellipsis) > max_width:
-        suffix = suffix[-max(0, max_width - cell_len(ellipsis)) :]
-        suffix_width = cell_len(suffix)
-    stem_width = max(0, max_width - suffix_width - cell_len(ellipsis))
-    stem_prefix = stem[:stem_width]
-    return f"{stem_prefix}{ellipsis}{suffix}"

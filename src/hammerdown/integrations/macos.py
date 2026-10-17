@@ -1,17 +1,22 @@
 from __future__ import annotations
 
-import logging
-import os
 import plistlib
 import shutil
 import subprocess
-import sys
 import uuid
 from pathlib import Path
 
-from .linux import _install_launcher
+from hammerdown.platform_utils import is_macos
 
-logger = logging.getLogger("hammerdown")
+from ._common import _install_launcher, _quote_if_needed, _remove_install_dir
+
+
+def _remove_silently(path: Path) -> None:
+    if path.exists():
+        try:
+            shutil.rmtree(path)
+        except OSError:
+            pass
 
 
 def _create_macos_workflow(workflow_dir: Path, launcher: Path | str) -> None:
@@ -37,7 +42,7 @@ def _create_macos_workflow(workflow_dir: Path, launcher: Path | str) -> None:
     with open(contents_dir / "Info.plist", "wb") as fp:
         plistlib.dump(info_data, fp, fmt=plistlib.FMT_XML)
 
-    exec_target = f'"{launcher}"' if " " in str(launcher) else str(launcher)
+    exec_target = _quote_if_needed(launcher)
     wflow_data = {
         "AMApplicationBuild": "523",
         "AMApplicationVersion": "2.10",
@@ -105,13 +110,9 @@ def _create_macos_droplet(app_dest: Path, launcher: Path | str) -> bool:
         return False
 
     app_dest.parent.mkdir(parents=True, exist_ok=True)
-    if app_dest.exists():
-        try:
-            shutil.rmtree(app_dest)
-        except OSError:
-            pass
+    _remove_silently(app_dest)
 
-    exec_target = f'"{launcher}"' if " " in str(launcher) else str(launcher)
+    exec_target = _quote_if_needed(launcher)
     applescript_source = (
         'on run\n'
         '    set chosenFiles to choose file with prompt "Select documents to convert:" with multiple selections allowed\n'
@@ -171,7 +172,7 @@ def _install_macos(command: str, home_dir: Path | None = None) -> None:
     app_dest = home / "Applications" / "Hammer down.app"
     _create_macos_droplet(app_dest, launcher)
 
-    if sys.platform == "darwin":
+    if is_macos():
         pbs_path = "/System/Library/CoreServices/pbs"
         if Path(pbs_path).is_file():
             try:
@@ -183,35 +184,12 @@ def _install_macos(command: str, home_dir: Path | None = None) -> None:
 def _uninstall_macos(home_dir: Path | None = None) -> None:
     home = home_dir or Path.home()
     (home / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)
-    workflow_path = home / "Library" / "Services" / "Hammer down.workflow"
-    if workflow_path.exists():
-        try:
-            shutil.rmtree(workflow_path)
-        except OSError:
-            pass
+    _remove_silently(home / "Library" / "Services" / "Hammer down.workflow")
+    _remove_silently(home / "Library" / "Services" / "Hammer down file.workflow")
+    _remove_silently(home / "Applications" / "Hammer down.app")
+    _remove_install_dir(home / ".local" / "share" / "hammerdown")
 
-    legacy_workflow = home / "Library" / "Services" / "Hammer down file.workflow"
-    if legacy_workflow.exists():
-        try:
-            shutil.rmtree(legacy_workflow)
-        except OSError:
-            pass
-
-    app_path = home / "Applications" / "Hammer down.app"
-    if app_path.exists():
-        try:
-            shutil.rmtree(app_path)
-        except OSError:
-            pass
-
-    install_dir = home / ".local" / "share" / "hammerdown"
-    if install_dir.exists():
-        try:
-            shutil.rmtree(install_dir)
-        except OSError:
-            logger.warning("Could not remove installed program files at %s", install_dir)
-
-    if sys.platform == "darwin":
+    if is_macos():
         pbs_path = "/System/Library/CoreServices/pbs"
         if Path(pbs_path).is_file():
             try:

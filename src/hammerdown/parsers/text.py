@@ -4,16 +4,24 @@ import base64
 import csv
 import io
 import re
-from pathlib import Path
 import zipfile
+from pathlib import Path
+from typing import Callable
 
+from hammerdown.parsers.office.spreadsheet import convert_xlsx
 from hammerdown.parsers.tables import render_table_regions
 from hammerdown.utils import get_images_dir_name
 
-
-from typing import Callable
-
 ProgressCallback = Callable[[int, int, str], None]
+
+
+def _decode_bytes(raw: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "cp1251", "cp1252"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1")
 
 
 def convert_txt_or_md(
@@ -22,15 +30,7 @@ def convert_txt_or_md(
     progress_callback: ProgressCallback | None = None,
 ) -> tuple[str | None, int]:
     raw = Path(file_path).read_bytes()
-    text = None
-    for enc in ("utf-8-sig", "utf-8", "cp1251", "cp1252", "latin-1"):
-        try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-    if text is None:
-        text = raw.decode("utf-8", errors="replace")
+    text = _decode_bytes(raw)
 
     # Extract base64 images from Markdown/text
     # Pattern: data:image/(png|jpeg|jpg|webp|gif);base64,[data]
@@ -73,42 +73,14 @@ def convert_csv(
 ) -> tuple[str | None, int]:
     if zipfile.is_zipfile(csv_path):
         try:
-            import openpyxl  # type: ignore
-            data = Path(csv_path).read_bytes()
-            workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
-            formula_workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=False, read_only=True)
-            blocks: list[str] = []
-            for sheet in workbook.sheetnames:
-                blocks.append(f"# Sheet: {sheet}")
-                data_sheet = workbook[sheet]
-                formula_sheet = formula_workbook[sheet]
-                rows = []
-                for data_row, formula_row in zip(data_sheet.iter_rows(), formula_sheet.iter_rows()):
-                    row = []
-                    for data_cell, formula_cell in zip(data_row, formula_row):
-                        value = data_cell.value
-                        if value is None and formula_cell.data_type == "f":
-                            value = formula_cell.value
-                        row.append(value)
-                    rows.append(row)
-                blocks.extend(render_table_regions(rows))
-            workbook.close()
-            formula_workbook.close()
-            return "\n\n".join(blocks), 0
+            result = convert_xlsx(csv_path, out_dir, progress_callback=progress_callback)
+            if result[0] is not None:
+                return result
         except Exception:
             pass
 
     raw = Path(csv_path).read_bytes()
-    text = None
-    for enc in ("utf-8-sig", "utf-8", "cp1251", "cp1252", "latin-1"):
-        try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-
-    if text is None:
-        text = raw.decode("utf-8", errors="replace")
+    text = _decode_bytes(raw)
 
     sample = text[:2048]
     delimiter = ","

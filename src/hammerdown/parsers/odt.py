@@ -7,6 +7,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from urllib.parse import unquote
 
+from hammerdown.parsers.markdown_render import is_math_glue, render_markdown_table
 from hammerdown.parsers.math import mathml_to_latex, xml_name, math_text as _math_text
 from hammerdown.utils import get_images_dir_name
 
@@ -15,6 +16,9 @@ from typing import Callable
 logger = logging.getLogger("hammerdown")
 
 ProgressCallback = Callable[[int, int, str], None]
+
+_ALNUM_RE = re.compile(r"[\w\d]")
+_NUMERIC_RE = re.compile(r"^[0-9\s.,=≈\+\-\*\/±]+$")
 
 ODF_NS = {
     "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
@@ -103,21 +107,7 @@ def _render_paragraph(
         if isinstance(part, tuple):
             curr_math.append(part[1])
         else:
-            # Strictly math symbols, numbers, and whitespace, or very short words/abbreviations.
-            stripped = part.strip()
-            if not stripped:
-                is_glue = True
-            elif not re.match(r"^[0-9\s=\+\-\*\/±≈\.,_():;\[\]!<>|–\w\.]+$", stripped):
-                is_glue = False
-            else:
-                # Check that no individual word in the glue exceeds 4 characters (unless it's a known function)
-                words = re.findall(r"\w+", stripped)
-                is_glue = all(
-                    len(w) <= 4 or w.lower() in {"max", "min", "sin", "cos", "tan", "log", "ln", "exp", "lim", "det", "arg"}
-                    for w in words
-                )
-
-            if curr_math and is_glue:
+            if curr_math and is_math_glue(part):
                 curr_math.append(part)
             else:
                 flush_math()
@@ -133,7 +123,7 @@ def _render_paragraph(
             return f"{'#' * level} {text}"
         return text
 
-    is_standalone = not force_inline and len(re.findall(r"[\w\d]", text_content)) < 10
+    is_standalone = not force_inline and len(_ALNUM_RE.findall(text_content)) < 10
     is_header = xml_name(element) == "h"
 
     if is_standalone or is_header:
@@ -143,7 +133,7 @@ def _render_paragraph(
                 rendered_parts.append(part[1])
             else:
                 if part.strip():
-                    if re.match(r"^[0-9\s.,=≈\+\-\*\/±]+$", part):
+                    if _NUMERIC_RE.match(part):
                         rendered_parts.append(part)
                     else:
                         rendered_parts.append(_math_text(part))
@@ -173,8 +163,8 @@ def _render_table(
     images: dict[str, str],
 ) -> list[str]:
     rows = table.findall(".//table:table-row", ODF_NS)
-    lines: list[str] = []
-    for row_index, row in enumerate(rows):
+    rendered_rows: list[list[str]] = []
+    for row in rows:
         cells = [child for child in row if xml_name(child) in {"table-cell", "covered-table-cell"}]
         rendered_cells = []
         for cell in cells:
@@ -183,10 +173,9 @@ def _render_table(
                 for child in cell
                 if xml_name(child) in {"p", "h"}
             ]
-            rendered_cells.append("<br>".join(text for text in paragraphs if text).replace("|", "\\|"))
-        lines.append(f"| {' | '.join(rendered_cells)} |")
-        if row_index == 0:
-            lines.append(f"| {' | '.join(['---'] * len(rendered_cells))} |")
+            rendered_cells.append("<br>".join(text for text in paragraphs if text))
+        rendered_rows.append(rendered_cells)
+    lines = render_markdown_table(rendered_rows)
     if lines:
         lines.append("")
     return lines

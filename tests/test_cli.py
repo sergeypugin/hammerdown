@@ -341,7 +341,7 @@ def test_stdout_confirm_cancels_without_interactive_input(tmp_path: Path, capsys
     assert not (tmp_path / "hm_notes_txt.md").exists()
 
 
-def test_stdout_confirm_only_accepts_y(monkeypatch, tmp_path: Path, capsys):
+def test_stdout_confirm_reasks_on_unknown_answer(monkeypatch, tmp_path: Path, capsys):
     import io
 
     class InteractiveInput(io.StringIO):
@@ -350,7 +350,26 @@ def test_stdout_confirm_only_accepts_y(monkeypatch, tmp_path: Path, capsys):
 
     source = tmp_path / "notes.txt"
     source.write_text("content", encoding="utf-8")
-    monkeypatch.setattr("sys.stdin", InteractiveInput("yes\\n"))
+    monkeypatch.setattr("sys.stdin", InteractiveInput("maybe\n1\nyes\n"))
+
+    assert hammerdown.cli.main(["--stdout", "--confirm", str(source)]) == 0
+    captured = capsys.readouterr()
+
+    assert "FILE: notes.txt" in captured.out
+    assert captured.err.count('Please answer "y" or "n".') == 2
+    assert "approximately" not in captured.err
+
+
+def test_stdout_confirm_rejects_no(monkeypatch, tmp_path: Path, capsys):
+    import io
+
+    class InteractiveInput(io.StringIO):
+        def isatty(self):
+            return True
+
+    source = tmp_path / "notes.txt"
+    source.write_text("content", encoding="utf-8")
+    monkeypatch.setattr("sys.stdin", InteractiveInput("no\\n"))
 
     assert hammerdown.cli.main(["--stdout", "--confirm", str(source)]) == 1
     captured = capsys.readouterr()
@@ -377,6 +396,24 @@ def test_stdout_confirm_accepts_trimmed_case_insensitive_y(monkeypatch, tmp_path
     assert "Preflight:" in captured.err
     assert "Continue and write Markdown" in captured.err
     assert not (tmp_path / "hm_notes_txt.md").exists()
+
+
+def test_stdout_confirm_cancels_on_eof(monkeypatch, tmp_path: Path, capsys):
+    import io
+
+    class InteractiveInput(io.StringIO):
+        def isatty(self):
+            return True
+
+    source = tmp_path / "notes.txt"
+    source.write_text("content", encoding="utf-8")
+    monkeypatch.setattr("sys.stdin", InteractiveInput(""))
+
+    assert hammerdown.cli.main(["--stdout", "--confirm", str(source)]) == 1
+    captured = capsys.readouterr()
+
+    assert captured.out == ""
+    assert "Cancelled." in captured.err
 
 
 def test_enter_wait_is_exclusive_to_right_click(tmp_path: Path, monkeypatch):

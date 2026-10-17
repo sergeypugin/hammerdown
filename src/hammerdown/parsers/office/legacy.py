@@ -146,11 +146,6 @@ def _convert_via_soffice_attempt(file_path: str, out_ext: str) -> _ConversionAtt
         return _ConversionAttempt("LibreOffice", "failed", detail=f"could not start LibreOffice: {exc}")
 
 
-def _convert_via_soffice(file_path: str, out_ext: str) -> str | None:
-    attempt = _convert_via_soffice_attempt(file_path, out_ext)
-    return attempt.path if attempt.status == "converted" else None
-
-
 def _convert_via_ms_office_nt_attempt(file_path: str, out_ext: str) -> _ConversionAttempt:
     powershell = _find_powershell()
     if not powershell:
@@ -232,11 +227,6 @@ def _convert_via_ms_office_nt_attempt(file_path: str, out_ext: str) -> _Conversi
         return _ConversionAttempt("Microsoft Office", "not_found", detail=f"PowerShell could not be started: {exc}")
     except OSError as exc:
         return _ConversionAttempt("Microsoft Office", "failed", detail=f"PowerShell could not be started: {exc}")
-
-
-def _convert_via_ms_office_nt(file_path: str, out_ext: str) -> str | None:
-    attempt = _convert_via_ms_office_nt_attempt(file_path, out_ext)
-    return attempt.path if attempt.status == "converted" else None
 
 
 def _log_failed_attempt(attempt: _ConversionAttempt, file_name: str) -> None:

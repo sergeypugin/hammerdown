@@ -109,7 +109,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--confirm",
         action="store_true",
-        help="Show an approximate preflight and ask for confirmation before --stdout",
+        help="Show a preflight estimate and ask for confirmation before --stdout",
     )
     parser.add_argument("--coordinator", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--right-click", action="store_true", help=argparse.SUPPRESS)

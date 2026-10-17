@@ -6,19 +6,21 @@ import shutil
 import sys
 from pathlib import Path
 
+from hammerdown.platform_utils import is_macos, is_windows
+
 logger = logging.getLogger("hammerdown")
 
 
 def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
     home = home_dir or Path.home()
-    if os.name == "nt":
+    if is_windows():
         app_dir = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local")) / "Programs" / "hammerdown"
     else:
         app_dir = home / ".local" / "share" / "hammerdown"
     app_dir.mkdir(parents=True, exist_ok=True)
 
     if getattr(sys, "frozen", False):
-        suffix = ".exe" if os.name == "nt" else ""
+        suffix = ".exe" if is_windows() else ""
         target = app_dir / f"hammerdown{suffix}"
         if Path(sys.executable).resolve() != target.resolve():
             shutil.move(sys.executable, target)
@@ -30,7 +32,7 @@ def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
 
 
 def _install_unix(command: str) -> None:
-    if sys.platform == "darwin":
+    if is_macos():
         from .macos import _install_macos
 
         _install_macos(command)
@@ -43,7 +45,7 @@ def _install_unix(command: str) -> None:
 def install() -> bool:
     try:
         _, command = _installed_command()
-        if os.name == "nt":
+        if is_windows():
             from .windows import _install_windows
 
             _install_windows(command)
@@ -58,11 +60,11 @@ def install() -> bool:
 
 def uninstall() -> bool:
     try:
-        if os.name == "nt":
+        if is_windows():
             from .windows import _uninstall_windows
 
             _uninstall_windows()
-        elif sys.platform == "darwin":
+        elif is_macos():
             from .macos import _uninstall_macos
 
             _uninstall_macos()
