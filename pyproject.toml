@@ -9,8 +9,8 @@ description = "Convert documents to Markdown with extracted images"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pymupdf",
-    "pymupdf4llm",
+    "pymupdf<2",
+    "pymupdf4llm<2",
     "python-docx",
     "openpyxl",
     "python-pptx",
