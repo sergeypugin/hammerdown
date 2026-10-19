@@ -7,6 +7,27 @@ import re
 import sys
 from typing import Sequence
 
+
+def _prepare_console_window() -> None:
+    if os.name != "nt":
+        return
+    if "--coordinator" not in sys.argv[1:] and "--right-click" not in sys.argv[1:]:
+        return
+
+    import ctypes
+
+    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+    if not hwnd:
+        return
+    if "--coordinator" in sys.argv[1:]:
+        ctypes.windll.user32.ShowWindow(hwnd, 0)
+    else:
+        ctypes.windll.user32.ShowWindow(hwnd, 5)
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+
+
+_prepare_console_window()
+
 from hammerdown import APP_DESCRIPTION, APP_NAME, SUPPORTED_EXTENSIONS, __version__
 from hammerdown.batch import run_batch
 from hammerdown.file_selection import _select_files
@@ -58,13 +79,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _main(argv: Sequence[str] | None = None) -> int:
     actual_argv = list(argv) if argv is not None else sys.argv[1:]
-    if os.name == "nt" and ("--coordinator" in actual_argv or "--right-click" in actual_argv):
-        import ctypes
-
-        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 5)
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
 
     parser = argparse.ArgumentParser(
         prog=APP_NAME,

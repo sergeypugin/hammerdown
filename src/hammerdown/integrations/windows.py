@@ -27,7 +27,6 @@ def _install_windows(command: str) -> None:
             icon_path = command.split('"')[1]
 
     all_files_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown"
-    aqs_filter = " OR ".join(f"System.FileExtension:={ext}" for ext in SUPPORTED_EXTENSIONS)
 
     targets = [
         all_files_path,
@@ -41,7 +40,13 @@ def _install_windows(command: str) -> None:
 
             if key_path == all_files_path:
                 winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
-                winreg.SetValueEx(key, "AppliesTo", 0, winreg.REG_SZ, aqs_filter)
+                # Explorer hides a verb when AppliesTo does not match every
+                # selected item, so the filter is removed and unsupported
+                # files are reported by the batch summary instead.
+                try:
+                    winreg.DeleteValue(key, "AppliesTo")
+                except FileNotFoundError:
+                    pass
 
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click "%1"')
@@ -58,6 +63,11 @@ def _install_windows(command: str) -> None:
     if sendto_dir.is_dir():
         cmd_file = sendto_dir / "Hammer down.cmd"
         cmd_file.write_text(f'@echo off\n{command} --coordinator --right-click %*\n', encoding="utf-8")
+
+    install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
+    legacy_launcher = install_dir / "hammerdown_sendto.cmd"
+    if legacy_launcher.is_file():
+        legacy_launcher.write_text(f'@echo off\n{command} --coordinator --right-click %*\n', encoding="utf-8")
 
 
 def _remove_registry_tree(root: Any, path: str) -> None:

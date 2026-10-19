@@ -29,6 +29,29 @@ from hammerdown.utils import format_duration, normalize_path
 logger = logging.getLogger("hammerdown")
 
 
+def _ensure_console_window() -> None:
+    """Show the current console or allocate one for a windowed launcher."""
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.windll.user32
+    hwnd = kernel32.GetConsoleWindow()
+    if not hwnd:
+        if not kernel32.AllocConsole():
+            return
+        sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+        sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+        sys.stdin = open("CONIN$", "r", encoding="utf-8")
+        for name in ("", "hammerdown"):
+            for handler in logging.getLogger(name).handlers:
+                if isinstance(handler, logging.StreamHandler) and getattr(handler, "stream", None) is None:
+                    handler.setStream(sys.stderr)
+        hwnd = kernel32.GetConsoleWindow()
+    if hwnd:
+        user32.ShowWindow(hwnd, 5)
+        user32.SetForegroundWindow(hwnd)
+
+
 def run_batch(args: argparse.Namespace) -> int:
     raw_files = args.files
     merge_requested = getattr(args, "merge", None)
@@ -93,12 +116,7 @@ def run_batch(args: argparse.Namespace) -> int:
     coordinator = IPCCoordinator() if use_ipc else None
     if coordinator and coordinator.start():
         if os.name == "nt":
-            import ctypes
-
-            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-            if hwnd:
-                ctypes.windll.user32.ShowWindow(hwnd, 5)
-                ctypes.windll.user32.SetForegroundWindow(hwnd)
+            _ensure_console_window()
 
         initial_errors = [target for target in targets if target[1] is not None]
         collected_files = coordinator.collect_files(files, assembly_timeout=0.35)
@@ -284,7 +302,11 @@ def run_batch(args: argparse.Namespace) -> int:
         batch_ui.print_error_list()
     batch_ui.print_results()
 
-    if getattr(args, "right_click", False):
+    if (
+        getattr(args, "right_click", False)
+        or getattr(args, "coordinator", False)
+        or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
+    ):
         from rich.console import Console
         from rich.text import Text
 

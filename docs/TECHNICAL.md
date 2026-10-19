@@ -104,7 +104,9 @@ To prevent collisions between documents with the same name across different form
 ### Single-Instance IPC Coordinator
 On Windows, selecting multiple files in Explorer normally starts a separate process for each file. `hammerdown` combines Explorer's native multi-select grouping with an IPC fallback to handle these launches:
 
-- native multi-select grouping in Explorer is configured via `MultiSelectModel = "Player"` and an Advanced Query Syntax (`AppliesTo`) filter so Explorer passes supported files to a **single process**
+- native multi-select grouping in Explorer is configured via `MultiSelectModel = "Player"` without an `AppliesTo` filter, because Explorer hides a filtered verb unless the filter matches every selected item
+- unsupported files in a mixed selection are skipped and listed in the batch summary instead of being filtered out by Explorer
+- the Explorer verb launches `pythonw.exe`, so delegate processes never allocate a console; the coordinator calls `AllocConsole()` only after it wins the IPC race and rebinds `stdin`, `stdout`, and `stderr`
 - local IPC channels (`\\.\pipe\hammerdown_coordinator` on Windows) catch additional launches when command line limits (8191 characters) are exceeded or files arrive separately
 - incoming paths are assembled over a 0.35-second window by the coordinator before rendering them together in one console window
 

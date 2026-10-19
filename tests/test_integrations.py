@@ -6,7 +6,15 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     sendto_dir.mkdir(parents=True)
     monkeypatch.setenv("APPDATA", str(tmp_path))
 
+    install_dir = tmp_path / "Programs" / "hammerdown"
+    install_dir.mkdir(parents=True)
+    legacy_launcher = install_dir / "hammerdown_sendto.cmd"
+    legacy_launcher.write_text("@echo off\nhammerdown --coordinator %*\n", encoding="utf-8")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
     recorded_keys = []
+    recorded_values = []
+    deleted_values = []
 
     class DummyKey:
         def __enter__(self):
@@ -20,7 +28,10 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
         return DummyKey()
 
     def dummy_set_value(key, value_name, reserved, type_, value):
-        pass
+        recorded_values.append(value_name)
+
+    def dummy_delete_value(key, value_name):
+        deleted_values.append(value_name)
 
     import sys
     import types
@@ -30,6 +41,7 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     setattr(fake_winreg, "REG_SZ", 1)
     setattr(fake_winreg, "CreateKey", dummy_create_key)
     setattr(fake_winreg, "SetValueEx", dummy_set_value)
+    setattr(fake_winreg, "DeleteValue", dummy_delete_value)
     monkeypatch.setitem(sys.modules, "winreg", fake_winreg)
 
     from hammerdown.integrations.windows import _install_windows
@@ -39,8 +51,49 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     sendto_cmd = sendto_dir / "Hammer down.cmd"
     assert sendto_cmd.is_file()
     assert "--coordinator --right-click %*" in sendto_cmd.read_text(encoding="utf-8")
+    assert "--coordinator --right-click %*" in legacy_launcher.read_text(encoding="utf-8")
     assert r"Software\Classes\Directory\shell\hammerdown" in recorded_keys
     assert r"Software\Classes\Directory\Background\shell\hammerdown" in recorded_keys
+    assert "AppliesTo" not in recorded_values
+    assert "AppliesTo" in deleted_values
+
+
+def test_installed_command_prefers_pythonw(tmp_path: Path, monkeypatch):
+    import sys
+
+    from hammerdown.integrations import _installed_command
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("hammerdown.integrations.is_windows", lambda: True)
+
+    python = tmp_path / "python.exe"
+    pythonw = tmp_path / "pythonw.exe"
+    python.write_text("", encoding="utf-8")
+    pythonw.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(python))
+
+    _, command = _installed_command(home_dir=tmp_path)
+
+    assert str(pythonw) in command
+    assert "hammerdown_runner.py" in command
+
+
+def test_installed_command_falls_back_to_console_python(tmp_path: Path, monkeypatch):
+    import sys
+
+    from hammerdown.integrations import _installed_command
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("hammerdown.integrations.is_windows", lambda: True)
+
+    python = tmp_path / "python.exe"
+    python.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(python))
+
+    _, command = _installed_command(home_dir=tmp_path)
+
+    assert str(python) in command
+    assert str(tmp_path / "pythonw.exe") not in command
 
 
 def test_linux_mime_types():

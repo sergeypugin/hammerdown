@@ -27,8 +27,33 @@ def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
         return app_dir, str(target)
 
     target = app_dir / "hammerdown_runner.py"
-    target.write_text("import sys\nfrom hammerdown.cli import main\nif __name__ == '__main__': sys.exit(main())", encoding="utf-8")
-    return app_dir, f'"{sys.executable}" "{target}"'
+    target.write_text(
+        "import os\n"
+        "import sys\n"
+        "\n"
+        "if os.name == 'nt' and ('--coordinator' in sys.argv[1:] or '--right-click' in sys.argv[1:]):\n"
+        "    import ctypes\n"
+        "    hwnd = ctypes.windll.kernel32.GetConsoleWindow()\n"
+        "    if hwnd:\n"
+        "        if '--coordinator' in sys.argv[1:]:\n"
+        "            ctypes.windll.user32.ShowWindow(hwnd, 0)\n"
+        "        else:\n"
+        "            ctypes.windll.user32.ShowWindow(hwnd, 5)\n"
+        "            ctypes.windll.user32.SetForegroundWindow(hwnd)\n"
+        "\n"
+        "from hammerdown.cli import main\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    sys.exit(main())\n",
+        encoding="utf-8",
+    )
+
+    interpreter = sys.executable
+    if is_windows() and interpreter:
+        windowed = Path(interpreter).with_name("pythonw.exe")
+        if windowed.is_file():
+            interpreter = str(windowed)
+    return app_dir, f'"{interpreter}" "{target}"'
 
 
 def _install_unix(command: str) -> None:
