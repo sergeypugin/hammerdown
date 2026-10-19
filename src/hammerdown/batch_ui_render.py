@@ -16,6 +16,7 @@ from hammerdown.ui_constants import (
     QUEUE_FILE_WIDTH,
     QUEUE_IMAGES_WIDTH,
     QUEUE_MARKER_WIDTH,
+    QUEUE_TIME_WIDTH,
     QUEUE_TOKENS_WIDTH,
     RESULTS_COLOR,
     SUMMARY_COLOR,
@@ -45,7 +46,7 @@ def add_result_columns(table) -> None:
 def add_queue_columns(table) -> None:
     table.add_column(width=QUEUE_MARKER_WIDTH, justify="center", no_wrap=True)
     table.add_column(width=QUEUE_FILE_WIDTH, overflow="ellipsis", no_wrap=True)
-    table.add_column(ratio=1, no_wrap=True, justify="right")
+    table.add_column(width=QUEUE_TIME_WIDTH, no_wrap=True, justify="right")
     table.add_column(width=QUEUE_IMAGES_WIDTH, no_wrap=True, justify="right")
     table.add_column(width=QUEUE_TOKENS_WIDTH, no_wrap=True, justify="right")
 
@@ -133,7 +134,9 @@ def render_process_panel(ui: BatchUI, final: bool = False):
         elif state == "[>]":
             started_at = ui._file_started_at[index]
             elapsed_file = time.monotonic() - started_at if started_at is not None else 0.0
-            duration = format_duration(elapsed_file)
+            elapsed_str = format_duration(elapsed_file)
+            est = estimate_label(ui, index)
+            duration = f"{elapsed_str} / {est}" if est else elapsed_str
             images = ""
             tokens = ""
         elif state == "[!]":

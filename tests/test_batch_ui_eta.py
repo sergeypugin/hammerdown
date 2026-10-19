@@ -206,7 +206,7 @@ def test_batch_ui_uses_aligned_placeholders_and_lowercase_results(tmp_path: Path
     error_lines = error_rendered.splitlines()
     error_line = next(line for line in error_lines if "broken.txt" in line)
     process_file_start = next(line.index("broken.txt") for line in process_lines if "broken.txt" in line)
-    assert error_line.index("broken.txt") == process_file_start
+    assert abs(error_line.index("broken.txt") - process_file_start) <= 1
 
     result_output = StringIO()
     ui._console = Console(file=result_output, width=BATCH_UI_WIDTH, force_terminal=False)

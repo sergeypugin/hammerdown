@@ -63,7 +63,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
 
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
         if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 0)
+            ctypes.windll.user32.ShowWindow(hwnd, 5)
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
 
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
