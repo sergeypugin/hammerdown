@@ -402,6 +402,31 @@ def test_batch_ui_truncates_long_filenames_and_formats_tokens(tmp_path: Path):
     assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
 
 
+def test_batch_ui_separates_time_and_images_columns(tmp_path: Path):
+    ui = BatchUI([str(tmp_path / "done.txt")])
+    ui.complete_file(0, True, 1.2, images=1, tokens=10)
+
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._process_renderable(final=True))
+    rendered = output.getvalue()
+
+    assert "time images" in rendered
+    assert "timeimages" not in rendered
+    assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
+
+
+def test_batch_ui_active_row_shows_elapsed_and_estimate(tmp_path: Path):
+    ui = BatchUI([str(tmp_path / "active.pdf")], estimates=[8.0])
+    ui.start_file(0)
+
+    output = StringIO()
+    Console(file=output, width=BATCH_UI_WIDTH, force_terminal=False).print(ui._process_renderable())
+    rendered = output.getvalue()
+
+    assert "/ ~8.0s" in rendered
+    assert len(max(rendered.splitlines(), key=len)) <= BATCH_UI_WIDTH
+
+
 def test_batch_ui_process_formats_long_durations_and_keeps_them_visible(tmp_path: Path):
     ui = BatchUI([str(tmp_path / "long_running.txt")])
     ui.statuses = ["[x]"]

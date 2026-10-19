@@ -16,6 +16,7 @@ from hammerdown.ui_constants import (
     QUEUE_FILE_WIDTH,
     QUEUE_IMAGES_WIDTH,
     QUEUE_MARKER_WIDTH,
+    QUEUE_SPACER_WIDTH,
     QUEUE_TIME_WIDTH,
     QUEUE_TOKENS_WIDTH,
     RESULTS_COLOR,
@@ -47,6 +48,7 @@ def add_queue_columns(table) -> None:
     table.add_column(width=QUEUE_MARKER_WIDTH, justify="center", no_wrap=True)
     table.add_column(width=QUEUE_FILE_WIDTH, overflow="ellipsis", no_wrap=True)
     table.add_column(width=QUEUE_TIME_WIDTH, no_wrap=True, justify="right")
+    table.add_column(width=QUEUE_SPACER_WIDTH, no_wrap=True)
     table.add_column(width=QUEUE_IMAGES_WIDTH, no_wrap=True, justify="right")
     table.add_column(width=QUEUE_TOKENS_WIDTH, no_wrap=True, justify="right")
 
@@ -114,6 +116,7 @@ def render_process_panel(ui: BatchUI, final: bool = False):
         Text("state", style="dim", no_wrap=True),
         Text("file", style="dim", no_wrap=True),
         Text("time", style="dim", no_wrap=True),
+        Text("", style="dim", no_wrap=True),
         Text("images", style="dim", no_wrap=True),
         Text("tokens", style="dim", no_wrap=True),
     )
@@ -137,6 +140,8 @@ def render_process_panel(ui: BatchUI, final: bool = False):
             elapsed_str = format_duration(elapsed_file)
             est = estimate_label(ui, index)
             duration = f"{elapsed_str} / {est}" if est else elapsed_str
+            if cell_len(duration) > QUEUE_TIME_WIDTH:
+                duration = elapsed_str
             images = ""
             tokens = ""
         elif state == "[!]":
@@ -151,11 +156,12 @@ def render_process_panel(ui: BatchUI, final: bool = False):
             Text(marker, style=style, no_wrap=True),
             Text(truncate_filename(ui.files[index].name, QUEUE_FILE_WIDTH), style=style, no_wrap=True),
             Text(duration, style="dim" if state == "[ ]" else style, no_wrap=True),
+            Text("", no_wrap=True),
             Text(images, style="dim" if state == "[ ]" else style, no_wrap=True),
             Text(tokens, style="dim" if state == "[ ]" else style, no_wrap=True),
         )
     for _ in range(BATCH_UI_VISIBLE_FILES - (end - start)):
-        queue.add_row("", "", "", "", "")
+        queue.add_row("", "", "", "", "", "")
 
     border_style = PROCESS_COMPLETE_COLOR if final else PROCESS_RUNNING_COLOR
     return Panel(
