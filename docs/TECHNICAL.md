@@ -78,6 +78,14 @@ The symbol catalog is maintained in `src/hammerdown/parsers/symbols.json` and is
 
 Any fixes or subsequent updates must always increment the version number (e.g. `1.5.3`) and be released as a fresh tag.
 
+### Release channels
+
+Tags decide both the GitHub Release and the PyPI upload:
+- stable: `vX.Y.Z` (for example `v3.1.0`). The release becomes the latest GitHub release and is published to PyPI after the workflow verifies that `X.Y.Z` matches `__version__`
+- prerelease: a tag with a suffix (for example `v3.1.2-pre`). It is published as a GitHub prerelease, never becomes latest, and is not uploaded to PyPI
+
+This matches the convention used by Zed (`-pre`) and Electron (`-beta`), and the tags stay valid SemVer. The tradeoff is that a plain tag publishes to PyPI, so release tags must be pushed deliberately.
+
 > [!warning]
 > **Legacy Version Ambiguity (v1.5.2 "Frankenstein")**: Due to a synchronization overlap during the transition to tag protection, version `1.5.2` on PyPI may differ from the `v1.5.2` tag on GitHub. To ensure a clean state for any version below `2.0.0`, it is strictly recommended to run the following recovery sequence:
 > 1. `pip uninstall hammerdown`

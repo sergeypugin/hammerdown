@@ -50,6 +50,23 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+  classify:
+    name: Classify release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      stable: ${{ steps.classify.outputs.stable }}
+    steps:
+      - name: Classify tag
+        id: classify
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: Build ${{ matrix.asset_name }}
     needs: test
@@ -102,7 +119,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, classify]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -117,18 +134,23 @@ jobs:
       - name: Generate checksums
         run: sha256sum ./artifacts/* > ./artifacts/SHA256SUMS.txt
 
+      # Stable releases are tagged vX.Y.Z. Any tag with a suffix (for example
+      # vX.Y.Z-pre) is a prerelease: it is never marked latest and is not
+      # published to PyPI.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: ./artifacts/*
+          prerelease: ${{ needs.classify.outputs.stable != 'true' }}
+          make_latest: ${{ needs.classify.outputs.stable == 'true' && 'true' || 'false' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   pypi-publish:
     name: Publish to PyPI
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, classify]
+    if: startsWith(github.ref, 'refs/tags/v') && needs.classify.outputs.stable == 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -140,6 +162,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/hammerdown/__init__.py)
+          if [ "$tag" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $version"
+            exit 1
+          fi
 
       - name: Install build tools
         run: |
