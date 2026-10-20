@@ -14,6 +14,7 @@ from hammerdown.core import (
     get_conversion_estimate_seconds,
 )
 from hammerdown.discovery import expand_paths, output_paths as compute_output_paths
+from hammerdown.google_drive import download_google_url, is_google_drive_url
 from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
 from hammerdown.merge import (
     append_merged_document,
@@ -64,6 +65,24 @@ def run_batch(args: argparse.Namespace) -> int:
     if not raw_files:
         logger.info("No supported documents found to convert")
         return 0
+
+    # Resolve Google Docs/Drive file URLs by downloading them first. Folders are
+    # not supported and are reported as conversion errors rather than silently
+    # skipped. Downloaded HTML is cached under .hammerdown-cache so the Markdown
+    # output is written alongside it in a predictable location.
+    resolved_files: list[str] = []
+    google_cache_dir = Path.cwd() / ".hammerdown-cache"
+    for raw in raw_files:
+        if is_google_drive_url(raw):
+            cached = download_google_url(raw, google_cache_dir)
+            if cached is None:
+                logger.error("Could not download Google Drive URL: %s", raw)
+                continue
+            resolved_files.append(str(cached))
+            logger.info("Downloaded %s to %s", raw, cached.name)
+        else:
+            resolved_files.append(raw)
+    raw_files = resolved_files
 
     output_dir = getattr(args, "output_dir", None)
     output_root = Path(output_dir).resolve() if output_dir else None
