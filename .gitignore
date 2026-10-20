@@ -1,7 +1,6 @@
 _ignore
 __pycache__/
 .pytest_cache/
-.hammerdown-cache/
 venv/
 build/
 dist/

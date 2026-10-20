@@ -236,7 +236,7 @@ hammerdown "https://docs.google.com/presentation/d/...."
 hammerdown "https://drive.google.com/file/d/...."
 ```
 
-The HTML export is downloaded into a `.hammerdown-cache` folder next to the current directory. Google Drive **folders** (`.../drive/folders/...`) are not supported because they require Drive API authentication; only single file links are accepted. Images referenced by Google are left as external links in the Markdown, since Google hosts them on `googleusercontent.com` rather than alongside the HTML.
+The HTML export is downloaded to a temporary staging folder, converted, and then removed. Google Drive **folders** (`.../drive/folders/...`) are not supported because they require Drive API authentication, and private documents (HTTP 401) are reported as errors. Images referenced by Google are left as external links in the Markdown, since Google hosts them on `googleusercontent.com` rather than alongside the HTML.
 
 Options:
 

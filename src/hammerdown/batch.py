@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Sequence
 
@@ -66,18 +67,24 @@ def run_batch(args: argparse.Namespace) -> int:
         logger.info("No supported documents found to convert")
         return 0
 
-    # Resolve Google Docs/Drive file URLs by downloading them first. Folders are
-    # not supported and are reported as conversion errors rather than silently
-    # skipped. Downloaded HTML is cached under .hammerdown-cache so the Markdown
-    # output is written alongside it in a predictable location.
+    # Resolve Google Docs/Drive file URLs by downloading them first. Folders and
+    # inaccessible files (HTTP 401, private docs) are surfaced as conversion
+    # errors rather than silently skipped. Downloaded HTML is kept in a temporary
+    # staging directory that is removed after conversion; the Markdown output
+    # goes to -o/--output-dir or the current directory.
+    google_downloaded: set[str] = set()
+    google_failed: list[str] = []
+    google_staging = tempfile.TemporaryDirectory(prefix="hammerdown-remote-")
+    google_staging_dir = Path(google_staging.name)
     resolved_files: list[str] = []
-    google_cache_dir = Path.cwd() / ".hammerdown-cache"
     for raw in raw_files:
         if is_google_drive_url(raw):
-            cached = download_google_url(raw, google_cache_dir)
+            cached = download_google_url(raw, google_staging_dir)
             if cached is None:
-                logger.error("Could not download Google Drive URL: %s", raw)
+                google_failed.append(raw)
+                logger.error("Could not download Google Drive URL (private, missing, or unsupported): %s", raw)
                 continue
+            google_downloaded.add(str(cached.resolve()))
             resolved_files.append(str(cached))
             logger.info("Downloaded %s to %s", raw, cached.name)
         else:
@@ -98,6 +105,11 @@ def run_batch(args: argparse.Namespace) -> int:
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
     )
+    # Surface Google links that could not be downloaded as explicit errors so
+    # they land in the Error list instead of disappearing silently.
+    for url in google_failed:
+        if url not in {path for path, _ in targets}:
+            targets.append((url, "could not download Google Drive URL (private, missing, or unsupported)"))
     if not targets:
         logger.info("No supported documents found to convert")
         return 0
@@ -182,10 +194,20 @@ def run_batch(args: argparse.Namespace) -> int:
         elif output_root is not None:
             target_paths = compute_output_paths(output_path_inputs, targets, output_root)
         else:
-            target_paths = [
-                Path(path).parent / f"hm_{Path(path).stem}_{Path(path).suffix.lower().lstrip('.')}.md"
-                for path, _ in targets
-            ]
+            target_paths = []
+            for path, _ in targets:
+                p = Path(path)
+                # Google-downloaded HTML lives in a temporary staging folder; write
+                # its Markdown output next to the user (cwd) or in -o/--output-dir.
+                if str(p.resolve()) in google_downloaded:
+                    base = output_root if output_root is not None else Path.cwd()
+                    target_paths.append(
+                        base / f"hm_{p.stem}_{p.suffix.lower().lstrip('.')}.md"
+                    )
+                else:
+                    target_paths.append(
+                        p.parent / f"hm_{p.stem}_{p.suffix.lower().lstrip('.')}.md"
+                    )
     except ValueError as exc:
         logger.error("%s", exc)
         if coordinator:
@@ -299,6 +321,10 @@ def run_batch(args: argparse.Namespace) -> int:
             batch_ui.stop()
         if coordinator:
             coordinator.stop()
+        # The downloaded Google HTML files lived in a temporary staging directory
+        # that is removed here; the Markdown output and images were written to
+        # -o/--output-dir or the current directory, so nothing is lost.
+        google_staging.cleanup()
 
     failed_count = sum(not result for result in results)
     merge_failed = False
