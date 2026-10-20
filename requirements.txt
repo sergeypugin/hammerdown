@@ -6,6 +6,8 @@ python-pptx
 onnxruntime
 tiktoken
 rich
+beautifulsoup4
+lxml
 pytest-xdist
 pytest
 pyright

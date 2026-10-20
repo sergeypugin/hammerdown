@@ -27,7 +27,7 @@ from hammerdown.core import (
 )
 from hammerdown.batch import convert_files
 
-__version__ = "3.0.4"
+__version__ = "3.1.0-pre1"
 
 __all__ = [
     "APP_NAME",

@@ -17,6 +17,8 @@ dependencies = [
     "onnxruntime",
     "tiktoken",
     "rich",
+    "beautifulsoup4",
+    "lxml",
 ]
 
 [project.scripts]
