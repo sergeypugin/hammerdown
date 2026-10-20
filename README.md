@@ -24,6 +24,7 @@ The PDF pipeline is built on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyM
 - **Text and Markdown**: `.txt`, `.md`, `.log`
 - **Web pages**: `.html`, `.htm`
 - **Google Drive exports**: `.zip` (Google Docs "Web page" export, containing an `.html` file and an optional `images/` folder)
+- **Google Docs/Drive links**: public `docs.google.com` (document, spreadsheets, presentation) and `drive.google.com/file` URLs are downloaded automatically; **Drive folders are not supported**
 
 > [!important]
 > Legacy binary formats (`.doc`, `.xls`, `.ppt`) require a compatible desktop office suite installed on the same computer as `hammerdown`. These applications are not bundled with `hammerdown`.
@@ -225,6 +226,17 @@ Convert one or multiple files:
 hammerdown report.pdf
 hammerdown report.docx workbook.xlsx slides.pptx
 ```
+
+Convert a public Google Docs, Sheets, or Slides link directly (it must be shared as "Anyone with the link"):
+
+```sh
+hammerdown "https://docs.google.com/document/d/...."
+hammerdown "https://docs.google.com/spreadsheets/d/...."
+hammerdown "https://docs.google.com/presentation/d/...."
+hammerdown "https://drive.google.com/file/d/...."
+```
+
+The HTML export is downloaded into a `.hammerdown-cache` folder next to the current directory. Google Drive **folders** (`.../drive/folders/...`) are not supported because they require Drive API authentication; only single file links are accepted. Images referenced by Google are left as external links in the Markdown, since Google hosts them on `googleusercontent.com` rather than alongside the HTML.
 
 Options:
 
