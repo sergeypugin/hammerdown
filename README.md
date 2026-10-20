@@ -22,6 +22,8 @@ The PDF pipeline is built on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyM
 - **Spreadsheets**: `.xlsx`, `.xls`, `.csv`
 - **Presentations**: `.pptx`, `.ppt`
 - **Text and Markdown**: `.txt`, `.md`, `.log`
+- **Web pages**: `.html`, `.htm`
+- **Google Drive exports**: `.zip` (Google Docs "Web page" export, containing an `.html` file and an optional `images/` folder)
 
 > [!important]
 > Legacy binary formats (`.doc`, `.xls`, `.ppt`) require a compatible desktop office suite installed on the same computer as `hammerdown`. These applications are not bundled with `hammerdown`.
@@ -72,7 +74,7 @@ folder/
     └── chart_000.svg
 ```
 
-PDF text is converted directly to Markdown without producing an asset folder. Asset folders are created only where the format exposes separate assets: Word charts are rendered as SVG, OpenDocument images are copied out, and base64 images in Markdown are decoded. Presentations and spreadsheets produce Markdown text and tables only.
+PDF text is converted directly to Markdown without producing an asset folder. Asset folders are created only where the format exposes separate assets: Word charts are rendered as SVG, OpenDocument images are copied out, and base64 images in Markdown are decoded. Presentations and spreadsheets produce Markdown text and tables only. Web page (`.html`) and Google Drive ZIP exports copy their referenced images into the target folder with the same `hm_images_...` naming convention.
 
 ## Installation
 
@@ -91,6 +93,19 @@ git clone https://github.com/sergeypugin/hammerdown.git
 cd hammerdown
 pip install .
 ```
+
+#### Development install (editable)
+
+To test the latest changes without waiting for a release, install the package in editable mode from the repository. This makes the `hammerdown` command point directly at your local source tree, so edits to `src/` are picked up immediately:
+
+```sh
+git clone https://github.com/sergeypugin/hammerdown.git
+cd hammerdown
+python -m pip install -e .
+hammerdown --install
+```
+
+`hammerdown --install` registers the file-manager integration using the freshly installed local package, so right-clicking a document uses this build right away.
 
 ### Direct Download (Standalone binaries)
 
@@ -146,7 +161,22 @@ hammerdown --update
 > hammerdown --install
 > ```
 >
-> Starting from version 1.5.2, `hammerdown --update` automatically refreshes all launcher scripts and file manager integrations without manual reinstallation. Release tags on GitHub are protected by immutable tag rulesets (`Protect release tags`).
+> Starting from version 1.5.2, `hammerdown --update` automatically refreshes all launcher scripts and file manager integrations without manual reinstallation.
+
+### Versioning and release tags
+
+`hammerdown` follows semantic versioning. A tag `vX.Y.Z` (for example `v3.1.0`) is a **stable** release: it is marked as the latest and published to PyPI. A tag with a prerelease suffix (for example `v3.1.0-pre1`) is a **preview**: it is published as a GitHub release but is never marked latest and is not pushed to PyPI.
+
+On every push to `main`, the CI workflow inspects the commit messages since the previous `v*` tag and bumps the version automatically, following Conventional Commits:
+
+- `feat!:` or `fix!:` (breaking change) bumps the **major** version
+- `feat:` bumps the **minor** version
+- `fix:` or `perf:` bumps the **patch** version
+- `docs`/`style`/`refactor`/`test`/`build`/`ci`/`chore` do not trigger a bump
+
+The bump applies **once** to the whole range between two tags (the strongest single change wins), not per commit. The bot commit it creates is excluded from the next run, which keeps the workflow from looping. Preview tags (`-pre`, `-pre1`) are created manually when you want a testable build before the next stable release.
+
+Release tags are protected by tag rulesets (`Protect release tags`) on GitHub; the release bot needs `contents: write` permission and must be allowed to create tags for the automatic bump to work.
 
 ### Logging and Progress Tracking
 
