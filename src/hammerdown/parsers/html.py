@@ -10,6 +10,20 @@ from bs4 import BeautifulSoup, NavigableString, Tag, PageElement
 ProgressCallback = Callable[[int, int, str], None]
 
 
+def _is_remote_or_absolute(src: str) -> bool:
+    """Return True when an image src is not a plain relative local path.
+
+    Remote URLs (https://, data:) and absolute paths (C:\\, /, //) are left as
+    external references rather than being copied from disk.
+    """
+    lowered = src.strip().lower()
+    return bool(
+        lowered.startswith(("http://", "https://", "ftp://", "data:", "//"))
+        or lowered.startswith(("/", "\\"))
+        or (":" in lowered[1:3])
+    )
+
+
 def convert_html(
     file_path: str | os.PathLike[str],
     asset_dir: str | os.PathLike[str],
@@ -41,8 +55,13 @@ def convert_html(
             src_val = img.get("src")
             if not src_val or not isinstance(src_val, str):
                 continue
-            
-            # Local image path
+
+            # Skip remote or absolute URLs (e.g. Google-hosted images). These
+            # are left untouched in the Markdown instead of being downloaded.
+            if _is_remote_or_absolute(src_val):
+                continue
+
+            # Local image path (relative to the HTML file, e.g. images/foo.png)
             local_img_path = source_dir / src_val
             if local_img_path.is_file():
                 asset_dir_path.mkdir(parents=True, exist_ok=True)
