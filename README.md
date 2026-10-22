@@ -141,11 +141,16 @@ What this does:
 
 To convert a file or folder, right-click any supported document or folder and select **Hammer down file** (or use **Send to -> Hammer down**). The Markdown output and extracted images are saved directly next to each original document.
 
+On Windows, a second menu item **Hammer down and merge** is also available when multiple files are selected. It converts all selected files and combines them into a single Markdown file (equivalent to `hammerdown --merge output.md file1 file2 ...`). The merged file is saved next to the first selected document.
+
 To remove file manager integration and clean up shortcuts:
 
 ```sh
 hammerdown --uninstall
 ```
+
+> [!note]
+> `hammerdown --install` updates both context menu items (**Hammer down file** and **Hammer down and merge**) and SendTo shortcuts. Run it after upgrading to refresh launcher scripts.
 
 To update `hammerdown` to the latest version:
 
@@ -220,6 +225,12 @@ hammerdown.convert_file("report.pdf", progress_callback=on_progress)
 
 ### Command Line Interface
 
+Run without arguments to see a short description, supported formats, and usage hint:
+
+```sh
+hammerdown
+```
+
 Convert one or multiple files:
 
 ```sh
@@ -239,6 +250,9 @@ hammerdown "https://drive.google.com/file/d/...."
 The HTML export is downloaded to a temporary staging folder, converted, and then removed. Google Drive **folders** (`.../drive/folders/...`) are not supported because they require Drive API authentication, and private documents (HTTP 401) are reported as errors. Images referenced by Google are left as external links in the Markdown, since Google hosts them on `googleusercontent.com` rather than alongside the HTML.
 
 Options:
+
+> [!tip]
+> Running `hammerdown` without arguments prints a short description, the list of supported formats, and a hint to run `hammerdown --help` for full usage.
 
 - `-i`, `--include REGEX` -- only process files whose normalized relative path matches REGEX; may be repeated
 - `-e`, `--exclude REGEX` -- skip files whose normalized relative path matches REGEX; may be repeated; exclusions always take priority
