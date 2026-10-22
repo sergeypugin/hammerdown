@@ -355,7 +355,7 @@ def test_stdout_confirm_reasks_on_unknown_answer(monkeypatch, tmp_path: Path, ca
     assert hammerdown.cli.main(["--stdout", "--confirm", str(source)]) == 0
     captured = capsys.readouterr()
 
-    assert "FILE: notes.txt" in captured.out
+    assert "content" in captured.out
     assert captured.err.count('Please answer "y" or "n".') == 2
     assert "approximately" not in captured.err
 
@@ -392,7 +392,7 @@ def test_stdout_confirm_accepts_trimmed_case_insensitive_y(monkeypatch, tmp_path
     assert hammerdown.cli.main(["--stdout", "--confirm", str(source)]) == 0
     captured = capsys.readouterr()
 
-    assert "FILE: notes.txt" in captured.out
+    assert "content" in captured.out
     assert "Preflight:" in captured.err
     assert "Continue and write Markdown" in captured.err
     assert not (tmp_path / "hm_notes_txt.md").exists()

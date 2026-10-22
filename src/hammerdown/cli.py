@@ -174,6 +174,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
 
     raw_files = args.files or _select_files()
     if not raw_files:
+        parser.print_help(sys.stderr)
         return 0
 
     args.files = raw_files
