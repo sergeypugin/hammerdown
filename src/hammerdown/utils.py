@@ -36,7 +36,7 @@ logger = logging.getLogger("hammerdown")
 
 
 def get_app_description() -> str:
-    """Read and return the short app description from README.md (without version)."""
+    """Read and return the short app description from README.md (without version, without leading 'hammerdown')."""
     # Try to find README.md relative to this file (src/hammerdown/utils.py -> ../../README.md)
     readme_path = Path(__file__).resolve().parent.parent.parent / "README.md"
     if readme_path.is_file():
@@ -76,21 +76,27 @@ def get_app_description() -> str:
                 if base.startswith('`') and '`' in base[1:]:
                     end = base.index('`', 1)
                     base = base[end+1:].lstrip()
+                # Remove leading 'hammerdown' or 'hammerdown is' etc.
+                base_lower = base.lower()
+                if base_lower.startswith("hammerdown "):
+                    base = base[len("hammerdown "):]
+                elif base_lower.startswith("hammerdown"):
+                    base = base[len("hammerdown"):].lstrip()
                 # Ensure first letter is lowercase
                 if base:
                     base = base[0].lower() + base[1:]
                 # Append supported formats with colors
                 from hammerdown import SUPPORTED_EXTENSIONS
-                from hammerdown.ui_constants import COLOR_ORANGE, COLOR_RESET, COLOR_BOLD
+                from hammerdown.ui_constants import COLOR_ORANGE, COLOR_RESET, COLOR_CYAN
                 formats = ", ".join(ext.lstrip('.') for ext in SUPPORTED_EXTENSIONS)
-                return f"{COLOR_BOLD}\033[38;2;254;180;84mhammerdown{COLOR_RESET} {base}\n\n{COLOR_ORANGE}Supported formats:{COLOR_RESET} {formats}"
+                return f"{base}\n\n{COLOR_ORANGE}Supported formats:{COLOR_RESET} {formats}\n\nRun {COLOR_CYAN}'hammerdown --help'{COLOR_RESET} for usage."
         except Exception:
             pass
     # Fallback
     from hammerdown import SUPPORTED_EXTENSIONS
-    from hammerdown.ui_constants import COLOR_ORANGE, COLOR_RESET, COLOR_BOLD
+    from hammerdown.ui_constants import COLOR_ORANGE, COLOR_RESET, COLOR_CYAN
     formats = ", ".join(ext.lstrip('.') for ext in SUPPORTED_EXTENSIONS)
-    return f"{COLOR_BOLD}\033[38;2;254;180;84mhammerdown{COLOR_RESET} convert PDF and office documents to Markdown\n\n{COLOR_ORANGE}Supported formats:{COLOR_RESET} {formats}"
+    return f"convert PDF and office documents to Markdown\n\n{COLOR_ORANGE}Supported formats:{COLOR_RESET} {formats}\n\nRun {COLOR_CYAN}'hammerdown --help'{COLOR_RESET} for usage."
 
 
 __all__ = [
