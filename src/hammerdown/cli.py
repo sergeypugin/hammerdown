@@ -28,14 +28,18 @@ def _prepare_console_window() -> None:
 
 _prepare_console_window()
 
-from hammerdown import APP_DESCRIPTION, APP_NAME, SUPPORTED_EXTENSIONS, __version__
+from hammerdown import APP_NAME, SUPPORTED_EXTENSIONS, __version__
 from hammerdown.batch import run_batch
 from hammerdown.file_selection import _select_files
 from hammerdown.integrations import install as install_integration
 from hammerdown.integrations import uninstall as uninstall_integration
 from hammerdown.updater import update as update_application
+from hammerdown.utils import get_app_description
 
 logger = logging.getLogger("hammerdown")
+
+
+APP_DESCRIPTION = get_app_description()
 
 
 def install() -> bool:
@@ -172,11 +176,12 @@ def _main(argv: Sequence[str] | None = None) -> int:
     if args.update:
         return 0 if update() else 1
 
-    raw_files = args.files or _select_files()
-    if not raw_files:
-        parser.print_help(sys.stderr)
+    if not args.files:
+        print(f"{APP_NAME} {__version__} -- {APP_DESCRIPTION}", file=sys.stderr)
+        print(f"Run '{APP_NAME} --help' for usage.", file=sys.stderr)
         return 0
 
+    raw_files = args.files
     args.files = raw_files
     return run_batch(args)
 

@@ -20,6 +20,7 @@ PROGRESS_BAR_WIDTH = 5
 # ANSI values are retained for non-Rich log output.
 COLOR_RESET = "\033[0m"
 COLOR_GREEN = "\033[38;2;167;201;57m"
+COLOR_CYAN = "\033[38;2;58;189;249m"
 COLOR_ORANGE = "\033[38;2;236;124;57m"
 COLOR_RED = "\033[38;2;157;47;52m"
 COLOR_DIM = "\033[90m"
