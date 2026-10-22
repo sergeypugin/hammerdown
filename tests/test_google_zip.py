@@ -1,3 +1,4 @@
+import base64
 import zipfile
 from pathlib import Path
 from hammerdown.core import convert_file
@@ -71,9 +72,9 @@ def test_google_zip_conversion(tmp_path: Path):
     content = out_md.read_text(encoding="utf-8")
     assert "# Title" in content
     assert "Hello [link](http://example.com)" in content
-    assert "![Test image](hm_images_test_doc_1.png)" in content
+    assert "![Test image](hm_images_test_doc_zip/img_000.png)" in content
 
-    img_file = out_dir / "hm_images_test_doc_1.png"
+    img_file = out_dir / "hm_images_test_doc_zip" / "img_000.png"
     assert img_file.is_file()
     assert img_file.read_bytes() == b"fake_png_data"
 
@@ -98,8 +99,8 @@ def test_html_images_inside_tables_and_lists(tmp_path: Path):
     assert out_md.is_file()
 
     content = out_md.read_text(encoding="utf-8")
-    assert "![Table image](hm_images_inline_images_1.png)" in content
-    assert "![List image](hm_images_inline_images_2.png)" in content
+    assert "![Table image](hm_images_inline_images_html/img_000.png)" in content
+    assert "![List image](hm_images_inline_images_html/img_001.png)" in content
     assert "![Remote](https://lh3.googleusercontent.com/remote.png)" in content
     assert "Hello [link](http://example.com)" in content
 
@@ -133,3 +134,30 @@ def test_google_zip_without_images_folder(tmp_path: Path):
     content = out_md.read_text(encoding="utf-8")
     assert "# Title without images" in content
     assert "![Missing image](images/missing.png)" in content
+
+
+def test_data_image_is_written_to_disk(tmp_path: Path):
+    """An HTML export that inlines every picture as a base64 data URI must not
+    keep the huge payload in the Markdown; it is extracted to a file instead."""
+    encoded = base64.b64encode(b"fake png bytes").decode("ascii")
+    html_path = tmp_path / "data_img.html"
+    html_path.write_text(
+        f"<html><body><p><img src=\"data:image/png;base64,{encoded}\" alt=\"Inline\"></p></body></html>",
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "out"
+    res = convert_file(html_path, target_dir=out_dir)
+
+    assert res.success
+    assert res.images == 1
+
+    out_md = out_dir / "hm_data_img_html.md"
+    assert out_md.is_file()
+    content = out_md.read_text(encoding="utf-8")
+    assert "![Inline](hm_images_data_img_html/img_000.png)" in content
+    assert "data:image/" not in content
+
+    img_file = out_dir / "hm_images_data_img_html" / "img_000.png"
+    assert img_file.is_file()
+    assert img_file.read_bytes() == b"fake png bytes"

@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
+from hammerdown.path_utils import get_images_dir_name
 from .html import convert_html
 
 ProgressCallback = Callable[[int, int, str], None]
@@ -36,8 +37,14 @@ def convert_zip(
             html_files.sort(key=lambda p: len(p.parts))
             target_html = html_files[0]
 
-            # Use html converter on extracted HTML
-            return convert_html(target_html, asset_dir, progress_callback=progress_callback)
+            # Use html converter on extracted HTML, but preserve zip's image directory name
+            img_dir_name = get_images_dir_name(source_path)
+            return convert_html(
+                target_html,
+                asset_dir,
+                images_dir_name=img_dir_name,
+                progress_callback=progress_callback,
+            )
 
     except Exception:
         return None, 0
