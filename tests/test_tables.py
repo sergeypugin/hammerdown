@@ -56,3 +56,22 @@ def test_xlsx_splits_distinct_blocks_and_uses_formula_when_cache_is_missing(tmp_
     assert "| left | value |\n| --- | --- |\n| row | =1+1 |" in markdown
     assert "| right | value |\n| --- | --- |\n| item | x |" in markdown
     assert "0.00" not in markdown
+
+
+def test_parallel_tables_of_different_lengths_are_split_cleanly():
+    rows = [
+        ["A1", "B1", None, "X1", "Y1"],
+        ["A2", "B2", None, "X2", "Y2"],
+        ["A3", "B3", None, None, None],
+        ["A4", "B4", None, None, None],
+        ["A5", "B5", None, "Z1", "W1"],
+        ["A6", "B6", None, "Z2", "W2"],
+    ]
+    tables = render_table_regions(rows)
+    # Left table: A1..B6 (one continuous table)
+    # Right tables: X1..Y2 and Z1..W2 (two separate tables)
+    assert len(tables) == 3
+    assert "| A1 | B1 |" in tables[0]
+    assert "| A6 | B6 |" in tables[0]
+    assert "| X1 | Y1 |" in tables[1]
+    assert "| Z1 | W1 |" in tables[2]
