@@ -72,19 +72,23 @@ def get_app_description() -> str:
                     desc_lines.append(stripped)
             if desc_lines:
                 base = " ".join(desc_lines)
+                # Strip leading backticks if present (README uses `hammerdown`...)
+                if base.startswith('`') and '`' in base[1:]:
+                    end = base.index('`', 1)
+                    base = base[end+1:].lstrip()
                 # Ensure first letter is lowercase
                 if base:
                     base = base[0].lower() + base[1:]
                 # Append supported formats with colors
                 from hammerdown import SUPPORTED_EXTENSIONS
-                from hammerdown.ui_constants import COLOR_GREEN, COLOR_ORANGE, COLOR_RESET, COLOR_BOLD
+                from hammerdown.ui_constants import COLOR_ORANGE, COLOR_RESET, COLOR_BOLD
                 formats = ", ".join(ext.lstrip('.') for ext in SUPPORTED_EXTENSIONS)
                 return f"{COLOR_BOLD}\033[38;2;254;180;84mhammerdown{COLOR_RESET} {base}\n\n{COLOR_ORANGE}Supported formats:{COLOR_RESET} {formats}"
         except Exception:
             pass
     # Fallback
     from hammerdown import SUPPORTED_EXTENSIONS
-    from hammerdown.ui_constants import COLOR_GREEN, COLOR_ORANGE, COLOR_RESET, COLOR_BOLD
+    from hammerdown.ui_constants import COLOR_ORANGE, COLOR_RESET, COLOR_BOLD
     formats = ", ".join(ext.lstrip('.') for ext in SUPPORTED_EXTENSIONS)
     return f"{COLOR_BOLD}\033[38;2;254;180;84mhammerdown{COLOR_RESET} convert PDF and office documents to Markdown\n\n{COLOR_ORANGE}Supported formats:{COLOR_RESET} {formats}"
 
