@@ -26,6 +26,7 @@ def _install_windows(command: str) -> None:
         if not icon_path:
             icon_path = command.split('"')[1]
 
+    # Regular "Hammer down file" verb (single file or multi-select without merge)
     all_files_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown"
 
     targets = [
@@ -51,6 +52,22 @@ def _install_windows(command: str) -> None:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click "%1"')
 
+    # "Hammer down and merge" verb (multi-select, merges into single markdown)
+    merge_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, merge_path) as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down and merge")
+        # Document = pass all selected files in one invocation
+        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Document")
+        # Use same icon but we could customize it later
+        if icon_path:
+            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
+        try:
+            winreg.DeleteValue(key, "AppliesTo")
+        except FileNotFoundError:
+            pass
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, merge_path + r"\command") as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --merge-auto')
+
     bg_key_path = r"Software\Classes\Directory\Background\shell\hammerdown"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path) as key:
         winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down directory")
@@ -62,12 +79,16 @@ def _install_windows(command: str) -> None:
     sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
     if sendto_dir.is_dir():
         cmd_file = sendto_dir / "Hammer down.cmd"
-        cmd_file.write_text(f'@echo off\n{command} --coordinator --right-click %*\n', encoding="utf-8")
+        # chcp 65001 sets UTF-8 code page so %* expands Unicode filenames correctly
+        cmd_file.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click %*\n', encoding="utf-8")
+
+        merge_cmd_file = sendto_dir / "Hammer down and merge.cmd"
+        merge_cmd_file.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click --merge-auto %*\n', encoding="utf-8")
 
     install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
     legacy_launcher = install_dir / "hammerdown_sendto.cmd"
     if legacy_launcher.is_file():
-        legacy_launcher.write_text(f'@echo off\n{command} --coordinator --right-click %*\n', encoding="utf-8")
+        legacy_launcher.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click %*\n', encoding="utf-8")
 
 
 def _remove_registry_tree(root: Any, path: str) -> None:
@@ -93,10 +114,12 @@ def _uninstall_windows() -> None:
         _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown")
         _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\SystemFileAssociations\{ext}\shell\Convert to Markdown")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown")
+    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\shell\hammerdown")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown")
     sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
     (sendto_dir / "Hammer down.cmd").unlink(missing_ok=True)
+    (sendto_dir / "Hammer down and merge.cmd").unlink(missing_ok=True)
     (sendto_dir / "Hammer down.lnk").unlink(missing_ok=True)
     install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
     _remove_install_dir(install_dir)

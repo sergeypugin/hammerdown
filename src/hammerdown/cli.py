@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import argparse
 import logging
 import os
@@ -28,14 +30,18 @@ def _prepare_console_window() -> None:
 
 _prepare_console_window()
 
-from hammerdown import APP_DESCRIPTION, APP_NAME, SUPPORTED_EXTENSIONS, __version__
+from hammerdown import APP_NAME, SUPPORTED_EXTENSIONS, __version__
 from hammerdown.batch import run_batch
 from hammerdown.file_selection import _select_files
 from hammerdown.integrations import install as install_integration
 from hammerdown.integrations import uninstall as uninstall_integration
 from hammerdown.updater import update as update_application
+from hammerdown.utils import get_app_description
 
 logger = logging.getLogger("hammerdown")
+
+
+APP_DESCRIPTION = get_app_description()
 
 
 def install() -> bool:
@@ -83,7 +89,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
         description=APP_DESCRIPTION,
-        epilog=f"Supported formats: {', '.join(extension.lstrip('.') for extension in SUPPORTED_EXTENSIONS)}",
     )
     parser.add_argument("-v", "--version", action="version", version=f"{APP_NAME} {__version__}")
     action = parser.add_mutually_exclusive_group()
@@ -120,6 +125,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("-o", "--output-dir", action="append", metavar="DIR", help="Save Markdown and extracted images under DIR")
     parser.add_argument("-m", "--merge", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file")
+    parser.add_argument("--merge-auto", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stdout", action="store_true", help="Write the merged Markdown document to stdout")
     parser.add_argument(
         "--confirm",
@@ -148,6 +154,11 @@ def _main(argv: Sequence[str] | None = None) -> int:
         parser.error("-o/--output-dir cannot be used in coordinator mode")
     if args.confirm and not args.stdout:
         parser.error("--confirm can only be used with --stdout")
+    # Resolve default merge output for --right-click --merge-auto
+    if args.merge_auto and args.right_click and args.files:
+        first_file = Path(args.files[0]).resolve()
+        args.merge = str(first_file.parent / "hammerdowned.md")
+
     if args.merge and args.overwrite:
         parser.error("--merge cannot be combined with --overwrite")
     if args.merge and args.output_dir:
@@ -172,10 +183,15 @@ def _main(argv: Sequence[str] | None = None) -> int:
     if args.update:
         return 0 if update() else 1
 
-    raw_files = args.files or _select_files()
-    if not raw_files:
+    if not args.files:
+        # APP_DESCRIPTION contains description + supported formats + help hint (no 'hammerdown' prefix)
+        # Print 'hammerdown version' in yellow, then description
+        from hammerdown.ui_constants import COLOR_BOLD, COLOR_RESET
+        name_version_colored = f"{COLOR_BOLD}\033[38;2;254;180;84mhammerdown {__version__}{COLOR_RESET}"
+        print(f"{name_version_colored} {APP_DESCRIPTION}", file=sys.stderr)
         return 0
 
+    raw_files = args.files
     args.files = raw_files
     return run_batch(args)
 

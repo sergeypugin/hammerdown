@@ -7,6 +7,23 @@ Please follow these guidelines:
 - write commit messages in the Conventional Commits format, for example `feat(cli): add format support` or `fix(tests): resolve assertion mismatch`
 - keep changes minimal and focused on the intended feature or fix
 
+## Local (editable) install
+
+To test the latest changes without building a release or waiting for a tag, install the package in editable mode and register the file-manager integration:
+
+```sh
+python -m pip install -e .
+hammerdown --install
+```
+
+The `hammerdown` command now points at your local `src/`, so edits are picked up immediately. Re-run `hammerdown --install` after changing the set of supported formats so the context menu reflects the new extensions.
+
+The repository uses `python` (not `python3`) in its documented commands. On Windows, `python` and `python3` often refer to the same interpreter, but the project assumes `python` for consistency with `pyproject.toml` and the vendored `venv`. The `pyright` configuration points at `./venv`, so run checks through that environment:
+
+```sh
+python -m pyright
+```
+
 ## Running tests and verification
 
 Before submitting a pull request or pushing changes, verify that the test suite passes and existing behavior remains intact:

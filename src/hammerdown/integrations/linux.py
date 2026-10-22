@@ -26,6 +26,9 @@ LINUX_MIME_TYPES: tuple[str, ...] = (
     "text/markdown",
     "text/x-markdown",
     "text/x-log",
+    "text/html",
+    "text/htm",
+    "application/zip",
     "inode/directory",
 )
 

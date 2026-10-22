@@ -39,6 +39,8 @@ def try_delegate_to_coordinator(
     files: Sequence[str],
     options: dict[str, Any],
     pipe_name: str | tuple[str, int] | None = None,
+    retries: int = 15,
+    retry_delay: float = 0.02,
 ) -> bool:
     """Hand files to an already running coordinator.
 
@@ -46,16 +48,21 @@ def try_delegate_to_coordinator(
     the receiving instance applies its own command-line options.
     """
     address = _get_address(pipe_name)
-    conn = None
-    try:
-        conn = Client(address, authkey=IPC_AUTH_KEY)
-        conn.send({"files": list(files)})
-        response = conn.recv()
-        return isinstance(response, dict) and response.get("status") == "ok"
-    except Exception:
-        return False
-    finally:
-        _close_quietly(conn)
+    
+    for _ in range(retries):
+        conn = None
+        try:
+            conn = Client(address, authkey=IPC_AUTH_KEY)
+            conn.send({"files": list(files)})
+            response = conn.recv()
+            if isinstance(response, dict) and response.get("status") == "ok":
+                return True
+        except Exception:
+            time.sleep(retry_delay)
+        finally:
+            _close_quietly(conn)
+
+    return False
 
 
 class IPCCoordinator:

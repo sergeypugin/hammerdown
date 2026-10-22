@@ -5,6 +5,8 @@ import logging
 import os
 import re
 import sys
+import tempfile
+import urllib.error
 from pathlib import Path
 from typing import Sequence
 
@@ -14,6 +16,7 @@ from hammerdown.core import (
     get_conversion_estimate_seconds,
 )
 from hammerdown.discovery import expand_paths, output_paths as compute_output_paths
+from hammerdown.google_drive import download_google_url, extract_file_id, is_google_drive_url
 from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
 from hammerdown.merge import (
     append_merged_document,
@@ -65,6 +68,33 @@ def run_batch(args: argparse.Namespace) -> int:
         logger.info("No supported documents found to convert")
         return 0
 
+    # Resolve Google Docs/Drive file URLs by downloading them first.
+    google_downloaded: set[str] = set()
+    google_failed: list[tuple[str, str]] = []
+    google_staging = tempfile.TemporaryDirectory(prefix="hammerdown-remote-")
+    google_staging_dir = Path(google_staging.name)
+    resolved_files: list[str] = []
+    for raw in raw_files:
+        if is_google_drive_url(raw):
+            try:
+                cached = download_google_url(raw, google_staging_dir)
+                if cached is None:
+                    google_failed.append((raw, "unsupported Google Drive link"))
+                    continue
+                google_downloaded.add(str(cached.resolve()))
+                resolved_files.append(str(cached))
+                logger.info("Downloaded %s to %s", raw, cached.name)
+            except urllib.error.HTTPError as e:
+                reason = f"access denied (HTTP {e.code})" if e.code in (401, 403) else f"not found (HTTP {e.code})"
+                google_failed.append((raw, reason))
+                logger.error("Could not download Google Drive URL: %s (%s)", raw, reason)
+            except (urllib.error.URLError, OSError) as e:
+                google_failed.append((raw, f"network error: {e}"))
+                logger.error("Could not download Google Drive URL: %s (network error)", raw)
+        else:
+            resolved_files.append(raw)
+    raw_files = resolved_files
+
     output_dir = getattr(args, "output_dir", None)
     output_root = Path(output_dir).resolve() if output_dir else None
     if output_root is not None and output_root.exists() and not output_root.is_dir():
@@ -79,6 +109,14 @@ def run_batch(args: argparse.Namespace) -> int:
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
     )
+    # Surface Google links that could not be downloaded as explicit errors
+    for url, reason in google_failed:
+        # Give a readable label instead of just Path(url).name (which is often "edit")
+        label = url
+        file_id = extract_file_id(url)
+        if file_id:
+            label = f"Google Doc ({file_id[:8]}...)"
+        targets.append((label, reason))
     if not targets:
         logger.info("No supported documents found to convert")
         return 0
@@ -163,10 +201,20 @@ def run_batch(args: argparse.Namespace) -> int:
         elif output_root is not None:
             target_paths = compute_output_paths(output_path_inputs, targets, output_root)
         else:
-            target_paths = [
-                Path(path).parent / f"hm_{Path(path).stem}_{Path(path).suffix.lower().lstrip('.')}.md"
-                for path, _ in targets
-            ]
+            target_paths = []
+            for path, _ in targets:
+                p = Path(path)
+                # Google-downloaded HTML lives in a temporary staging folder; write
+                # its Markdown output next to the user (cwd) or in -o/--output-dir.
+                if str(p.resolve()) in google_downloaded:
+                    base = output_root if output_root is not None else Path.cwd()
+                    target_paths.append(
+                        base / f"hm_{p.stem}_{p.suffix.lower().lstrip('.')}.md"
+                    )
+                else:
+                    target_paths.append(
+                        p.parent / f"hm_{p.stem}_{p.suffix.lower().lstrip('.')}.md"
+                    )
     except ValueError as exc:
         logger.error("%s", exc)
         if coordinator:
@@ -211,6 +259,12 @@ def run_batch(args: argparse.Namespace) -> int:
                 results.append(True)
                 continue
 
+            # Directly skip if the output exists to avoid re-parsing
+            if args.skip_existing and output_path.exists() and output_path != f_path and merge_target is None:
+                batch_ui.complete_file(idx, True, 0.0, info=status_info)
+                results.append(True)
+                continue
+
             def on_progress(current: int, total: int, unit: str = "pages") -> None:
                 batch_ui.update_progress(idx, current, total, unit)
 
@@ -220,15 +274,20 @@ def run_batch(args: argparse.Namespace) -> int:
             error_count_before = len(batch_ui.errors)
             logger_was_disabled = logger.disabled
             logger.disabled = True
+            is_google_cache = str(f_path.resolve()) in google_downloaded
             try:
                 res = convert_file(
                     f_path,
-                    overwrite=args.overwrite,
+                    overwrite=args.overwrite and not is_google_cache,
                     skip_existing=args.skip_existing if merge_target is None else False,
                     progress_callback=on_progress,
                     completion_callback=on_complete,
                     batch_mode=True,
-                    target_dir=output_path.parent if output_root is not None and merge_target is None else None,
+                    target_dir=(
+                        output_path.parent
+                        if merge_target is None and (output_root is not None or is_google_cache)
+                        else None
+                    ),
                     asset_dir=(
                         merge_asset_paths(f_path, merge_root, merge_target)[0]
                         if merge_target is not None and merge_root is not None
@@ -280,6 +339,10 @@ def run_batch(args: argparse.Namespace) -> int:
             batch_ui.stop()
         if coordinator:
             coordinator.stop()
+        # The downloaded Google HTML files lived in a temporary staging directory
+        # that is removed here; the Markdown output and images were written to
+        # -o/--output-dir or the current directory, so nothing is lost.
+        google_staging.cleanup()
 
     failed_count = sum(not result for result in results)
     merge_failed = False

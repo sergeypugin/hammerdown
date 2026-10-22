@@ -355,7 +355,7 @@ def test_stdout_confirm_reasks_on_unknown_answer(monkeypatch, tmp_path: Path, ca
     assert hammerdown.cli.main(["--stdout", "--confirm", str(source)]) == 0
     captured = capsys.readouterr()
 
-    assert "FILE: notes.txt" in captured.out
+    assert "content" in captured.out
     assert captured.err.count('Please answer "y" or "n".') == 2
     assert "approximately" not in captured.err
 
@@ -392,7 +392,7 @@ def test_stdout_confirm_accepts_trimmed_case_insensitive_y(monkeypatch, tmp_path
     assert hammerdown.cli.main(["--stdout", "--confirm", str(source)]) == 0
     captured = capsys.readouterr()
 
-    assert "FILE: notes.txt" in captured.out
+    assert "content" in captured.out
     assert "Preflight:" in captured.err
     assert "Continue and write Markdown" in captured.err
     assert not (tmp_path / "hm_notes_txt.md").exists()
@@ -483,3 +483,42 @@ def test_merge_with_short_flag_and_skipped_failure(tmp_path: Path):
     content = merged_file.read_text(encoding="utf-8")
     assert "FILE: doc1.txt" in content
     assert "missing.docx" not in content
+
+
+def test_merge_multi_file_selection_with_failure(tmp_path: Path):
+    """Issue 6: When multiple files are selected (right-click/SendTo) and merged,
+    all files should be processed even if one fails."""
+    import hammerdown.cli
+    
+    # Create a valid text file
+    file1 = tmp_path / "doc1.txt"
+    file1.write_text("Hello from file 1\n", encoding="utf-8")
+    
+    # Create a bad file that will fail conversion (non-existent file)
+    bad_file = tmp_path / "missing.docx"
+    
+    merged_file = tmp_path / "partial.md"
+    # Should return 1 because one file failed
+    assert hammerdown.cli.main(["-m", str(merged_file), str(file1), str(bad_file)]) == 1
+    
+    # But the merge file should still contain the successful file
+    assert merged_file.is_file()
+    content = merged_file.read_text(encoding="utf-8")
+    assert "FILE: doc1.txt" in content
+    assert "missing.docx" not in content
+    
+    # Now test with a file that exists but fails conversion (corrupt PDF)
+    # Create a fake PDF that will fail
+    fake_pdf = tmp_path / "fake.pdf"
+    fake_pdf.write_bytes(b"This is not a PDF file")
+    
+    merged_file2 = tmp_path / "partial2.md"
+    # The fake PDF should fail conversion but file1 should still be in merge
+    result = hammerdown.cli.main(["-m", str(merged_file2), str(file1), str(fake_pdf)])
+    # Should fail because one file failed
+    assert result == 1
+    
+    # Merge should still have the successful file
+    assert merged_file2.is_file()
+    content2 = merged_file2.read_text(encoding="utf-8")
+    assert "FILE: doc1.txt" in content2

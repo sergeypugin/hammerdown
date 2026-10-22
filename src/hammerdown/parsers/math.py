@@ -23,7 +23,8 @@ def math_text(text: str) -> str:
 
     # Symbol translation and basic normalization
     rendered = text.translate(_MATH_SYMBOLS)
-    rendered = _DECIMAL_COMMA_RE.sub(r"{,}", rendered)
+    # Replace decimal comma with dot for Typst/LaTeX compatibility
+    rendered = _DECIMAL_COMMA_RE.sub(r".", rendered)
     rendered = _EXP_RE.sub(lambda _: r"\exp", rendered)
     rendered = rendered.replace("\u2003", r"\quad ").replace("\u2004", " ").replace("\xa0", " ")
 

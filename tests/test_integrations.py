@@ -52,8 +52,15 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     assert sendto_cmd.is_file()
     assert "--coordinator --right-click %*" in sendto_cmd.read_text(encoding="utf-8")
     assert "--coordinator --right-click %*" in legacy_launcher.read_text(encoding="utf-8")
+
+    merge_sendto_cmd = sendto_dir / "Hammer down and merge.cmd"
+    assert merge_sendto_cmd.is_file()
+    merge_text = merge_sendto_cmd.read_text(encoding="utf-8")
+    assert "--coordinator --right-click --merge-auto %*" in merge_text
+
     assert r"Software\Classes\Directory\shell\hammerdown" in recorded_keys
     assert r"Software\Classes\Directory\Background\shell\hammerdown" in recorded_keys
+    assert r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge" in recorded_keys
     assert "AppliesTo" not in recorded_values
     assert "AppliesTo" in deleted_values
 

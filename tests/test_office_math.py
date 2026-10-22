@@ -18,11 +18,11 @@ def test_docx_preserves_formula_and_table_order(tmp_path: Path) -> None:
     assert r"\frac{1}{N}" in markdown
     assert r"\sum\_{i=1}^{N}" in markdown
     assert (
-        r"\rho(12) \approx \frac{1}{2{,}891\sqrt{2\pi}}\cdot\exp(-\frac{(12 - 12.66)^{2}}{2\cdot2{,}891^{2}})\approx0{,}13"
+        r"\rho(12) \approx \frac{1}{2.891\sqrt{2\pi}}\cdot\exp(-\frac{(12 - 12.66)^{2}}{2\cdot2.891^{2}})\approx0.13"
         in markdown
     )
 
-    assert r"$$l=(12{,}66\pm0{,}51)" in markdown
+    assert r"$$l=(12.66\pm0.51)" in markdown
     assert markdown.index("8. Результаты прямых измерений") < markdown.index("| Actors |")
     assert markdown.index("| Actors |") < markdown.index("9. Расчет результатов")
     lines = markdown.splitlines()
@@ -45,7 +45,7 @@ def test_omml_normalizes_greek_symbols_functions_and_decimal_commas() -> None:
         "<m:r><m:t>ρ exp 2,891</m:t></m:r></m:oMath>"
     )
 
-    assert omml_to_latex(ET.fromstring(omml)) == r"\rho \exp 2{,}891"
+    assert omml_to_latex(ET.fromstring(omml)) == r"\rho \exp 2.891"
 
 
 def test_odt_normalizes_gaussian_math_from_adjacent_tokens(tmp_path: Path) -> None:
@@ -53,7 +53,7 @@ def test_odt_normalizes_gaussian_math_from_adjacent_tokens(tmp_path: Path) -> No
     markdown, _ = convert_odt(str(source), str(tmp_path))
 
     assert markdown is not None
-    assert r"\cdot\exp(-\frac{(12-12.66)^{2}}{2\cdot2{,}891^{2}})" in markdown
+    assert r"\cdot\exp(-\frac{(12-12.66)^{2}}{2\cdot2.891^{2}})" in markdown
 
 
 def test_mathml_fraction_and_sum() -> None:
