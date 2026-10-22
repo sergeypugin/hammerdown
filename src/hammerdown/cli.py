@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import argparse
 import logging
 import os
@@ -123,6 +125,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("-o", "--output-dir", action="append", metavar="DIR", help="Save Markdown and extracted images under DIR")
     parser.add_argument("-m", "--merge", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file")
+    parser.add_argument("--merge-auto", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stdout", action="store_true", help="Write the merged Markdown document to stdout")
     parser.add_argument(
         "--confirm",
@@ -151,6 +154,11 @@ def _main(argv: Sequence[str] | None = None) -> int:
         parser.error("-o/--output-dir cannot be used in coordinator mode")
     if args.confirm and not args.stdout:
         parser.error("--confirm can only be used with --stdout")
+    # Resolve default merge output for --right-click --merge-auto
+    if args.merge_auto and args.right_click and args.files:
+        first_file = Path(args.files[0]).resolve()
+        args.merge = str(first_file.parent / "hammerdowned.md")
+
     if args.merge and args.overwrite:
         parser.error("--merge cannot be combined with --overwrite")
     if args.merge and args.output_dir:

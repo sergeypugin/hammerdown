@@ -56,7 +56,8 @@ def _install_windows(command: str) -> None:
     merge_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, merge_path) as key:
         winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down and merge")
-        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
+        # Document = pass all selected files in one invocation
+        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Document")
         # Use same icon but we could customize it later
         if icon_path:
             winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
@@ -65,7 +66,7 @@ def _install_windows(command: str) -> None:
         except FileNotFoundError:
             pass
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, merge_path + r"\command") as key:
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --merge "%1"')
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --merge-auto')
 
     bg_key_path = r"Software\Classes\Directory\Background\shell\hammerdown"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path) as key:
@@ -82,7 +83,7 @@ def _install_windows(command: str) -> None:
         cmd_file.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click %*\n', encoding="utf-8")
 
         merge_cmd_file = sendto_dir / "Hammer down and merge.cmd"
-        merge_cmd_file.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click --merge %*\n', encoding="utf-8")
+        merge_cmd_file.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click --merge-auto %*\n', encoding="utf-8")
 
     install_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs" / "hammerdown"
     legacy_launcher = install_dir / "hammerdown_sendto.cmd"
