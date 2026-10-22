@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from hammerdown.google_drive import (
     extract_file_id,
@@ -58,3 +60,37 @@ def test_rejects_non_drive_url():
 def test_rejects_u_folder_url():
     url = "https://drive.google.com/drive/u/0/folders/XYZ"
     assert extract_file_id(url) is None
+
+
+def test_batch_writes_google_markdown_next_to_cwd(tmp_path: Path, monkeypatch):
+    """Converting a Google Drive URL without -o must write the Markdown to the
+    current directory, not into the temporary staging folder that is removed
+    afterwards. This is a regression test for the disappearing output bug."""
+    import argparse
+
+    from hammerdown.batch import run_batch
+
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    downloaded = staging / "MyDocument.gdoc"
+    downloaded.write_text("<html><body><h1>Source</h1></body></html>", encoding="utf-8")
+
+    fake_download = lambda value, target_dir: downloaded
+    monkeypatch.setattr("hammerdown.batch.download_google_url", fake_download)
+    monkeypatch.chdir(tmp_path)
+
+    args = argparse.Namespace(
+        files=["https://docs.google.com/document/d/ABC123/edit"],
+        merge=None,
+        output_dir=None,
+        overwrite=False,
+        skip_existing=False,
+        include=[],
+        exclude=[],
+        stdout=False,
+        confirm=False,
+        coordinator=False,
+        right_click=False,
+    )
+    assert run_batch(args) == 0
+    assert (tmp_path / "hm_MyDocument_gdoc.md").is_file()
