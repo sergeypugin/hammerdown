@@ -87,7 +87,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
         description=APP_DESCRIPTION,
-        epilog=f"Supported formats: {', '.join(extension.lstrip('.') for extension in SUPPORTED_EXTENSIONS)}",
     )
     parser.add_argument("-v", "--version", action="version", version=f"{APP_NAME} {__version__}")
     action = parser.add_mutually_exclusive_group()
