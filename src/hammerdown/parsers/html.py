@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import base64
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Callable, cast
 
 from bs4 import BeautifulSoup, NavigableString, Tag, PageElement
 
+from hammerdown.path_utils import get_images_dir_name
+
 ProgressCallback = Callable[[int, int, str], None]
+
+# Matches an inline base64 image, e.g. data:image/png;base64,iVBORw0KGgo...
+_DATA_IMAGE_RE = re.compile(r"^data:image/([a-zA-Z0-9.+-]+);base64,([a-zA-Z0-9+/=]+)$")
 
 
 def _is_remote_or_absolute(src: str) -> bool:
@@ -27,6 +34,7 @@ def _is_remote_or_absolute(src: str) -> bool:
 def convert_html(
     file_path: str | os.PathLike[str],
     asset_dir: str | os.PathLike[str],
+    images_dir_name: str | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> tuple[str | None, int]:
     source_path = Path(file_path)
@@ -45,7 +53,8 @@ def convert_html(
     body = soup.find("body") or soup
 
     saved_images = 0
-    asset_dir_path = Path(asset_dir)
+    img_dir_name = images_dir_name or get_images_dir_name(source_path)
+    images_dir = Path(asset_dir) / img_dir_name
     source_dir = source_path.parent
 
     # Process images and prepare mapping
@@ -56,6 +65,23 @@ def convert_html(
             if not src_val or not isinstance(src_val, str):
                 continue
 
+            # Inline base64 image (data:image/...;base64,...) is written to disk
+            # instead of being kept as a huge data URI in the Markdown. This
+            # happens for Google Docs exports that inline every picture.
+            data_match = _DATA_IMAGE_RE.match(src_val.strip())
+            if data_match:
+                sub_type = data_match.group(1).split("+", 1)[0] or "png"
+                try:
+                    img_bytes = base64.b64decode(data_match.group(2))
+                except Exception:
+                    continue
+                images_dir.mkdir(parents=True, exist_ok=True)
+                image_name = f"img_{saved_images:03d}.{sub_type}"
+                (images_dir / image_name).write_bytes(img_bytes)
+                img_map[src_val] = f"{img_dir_name}/{image_name}"
+                saved_images += 1
+                continue
+
             # Skip remote or absolute URLs (e.g. Google-hosted images). These
             # are left untouched in the Markdown instead of being downloaded.
             if _is_remote_or_absolute(src_val):
@@ -64,13 +90,12 @@ def convert_html(
             # Local image path (relative to the HTML file, e.g. images/foo.png)
             local_img_path = source_dir / src_val
             if local_img_path.is_file():
-                asset_dir_path.mkdir(parents=True, exist_ok=True)
-                saved_images += 1
+                images_dir.mkdir(parents=True, exist_ok=True)
                 ext = local_img_path.suffix or ".png"
-                new_name = f"hm_images_{source_path.stem}_{saved_images}{ext}"
-                target_path = asset_dir_path / new_name
-                shutil.copy2(local_img_path, target_path)
-                img_map[src_val] = target_path.name
+                image_name = f"img_{saved_images:03d}{ext}"
+                shutil.copy2(local_img_path, images_dir / image_name)
+                img_map[src_val] = f"{img_dir_name}/{image_name}"
+                saved_images += 1
 
     # Convert HTML elements to Markdown
     def process_node(node: PageElement) -> str:
@@ -194,4 +219,8 @@ def convert_html(
 CONVERTERS = {
     ".html": convert_html,
     ".htm": convert_html,
+    ".gdoc": convert_html,
+    ".gsheets": convert_html,
+    ".gslides": convert_html,
+    ".gfile": convert_html,
 }
