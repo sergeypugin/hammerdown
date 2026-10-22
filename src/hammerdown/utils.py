@@ -36,7 +36,7 @@ logger = logging.getLogger("hammerdown")
 
 
 def get_app_description() -> str:
-    """Read and return the short app description from README.md."""
+    """Read and return the short app description from README.md (without version)."""
     # Try to find README.md relative to this file (src/hammerdown/utils.py -> ../../README.md)
     readme_path = Path(__file__).resolve().parent.parent.parent / "README.md"
     if readme_path.is_file():

@@ -177,7 +177,11 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return 0 if update() else 1
 
     if not args.files:
-        print(f"{APP_NAME} {__version__} -- {APP_DESCRIPTION}", file=sys.stderr)
+        # APP_DESCRIPTION already contains colored 'hammerdown' + description + supported formats
+        # Just prepend 'hammerdown ' + version in the same color
+        from hammerdown.ui_constants import COLOR_BOLD, COLOR_RESET
+        name_version_colored = f"{COLOR_BOLD}\033[38;2;254;180;84mhammerdown {__version__}{COLOR_RESET}"
+        print(f"{name_version_colored} -- {APP_DESCRIPTION}", file=sys.stderr)
         print(f"Run '{APP_NAME} --help' for usage.", file=sys.stderr)
         return 0
 
