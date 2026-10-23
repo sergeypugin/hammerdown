@@ -10,24 +10,25 @@ import urllib.error
 from pathlib import Path
 from typing import Sequence
 
-from hammerdown.core import (
+from ..core import (
     TEXT_EXTENSIONS,
     convert_file,
     get_conversion_estimate_seconds,
 )
-from hammerdown.discovery import expand_paths, output_paths as compute_output_paths
-from hammerdown.google_drive import download_google_url, extract_file_id, is_google_drive_url
-from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
-from hammerdown.merge import (
+from ..core.discovery import expand_paths, output_paths as compute_output_paths
+from ..core.google_drive import download_google_url, extract_file_id, is_google_drive_url
+from ..core.ipc import IPCCoordinator, try_delegate_to_coordinator
+from ..core.merge import (
     append_merged_document,
     initialize_merge_file,
     merge_asset_paths,
     merge_root_for_inputs,
     render_merged_markdown,
 )
-from hammerdown.batch_ui import BatchUI
-from hammerdown.stdout_mode import confirm_stdout, run_stdout_conversion
-from hammerdown.utils import format_duration, normalize_path
+from ..ui.batch_ui import BatchUI
+from ..core.stdout_mode import confirm_stdout, run_stdout_conversion
+from ..core.formatting import format_duration
+from ..core.path_utils import normalize_path
 
 logger = logging.getLogger("hammerdown")
 

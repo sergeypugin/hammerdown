@@ -9,11 +9,11 @@ import tempfile
 import time
 from typing import Callable
 
-from hammerdown.estimates import describe, get_conversion_estimate, get_conversion_estimate_seconds
-from hammerdown.parsers import CONVERTERS
-from hammerdown.parsers.charts import render_chart_svg
-from hammerdown.parsers.math import mathml_to_latex, omml_to_latex
-from hammerdown.parsers.office import (
+from .estimates import describe, get_conversion_estimate, get_conversion_estimate_seconds
+from ..parsers import CONVERTERS
+from ..parsers.charts import render_chart_svg
+from ..parsers.math import mathml_to_latex, omml_to_latex
+from ..parsers.office import (
     convert_doc,
     convert_docx,
     convert_odt,
@@ -22,11 +22,23 @@ from hammerdown.parsers.office import (
     convert_xls,
     convert_xlsx,
 )
-from hammerdown.parsers.pdf import convert_pdf_or_ebook
-from hammerdown.parsers.tables import render_table_regions
-from hammerdown.parsers.text import convert_csv, convert_txt_or_md
-from hammerdown.resources import embed_temporary_resources, token_count
-from hammerdown.utils import format_duration, format_progress_bar, normalize_path
+from ..parsers.pdf import convert_pdf_or_ebook
+from ..parsers.tables import render_table_regions
+from ..parsers.text import convert_csv, convert_txt_or_md
+from .description import APP_DESCRIPTION
+from .resources import embed_temporary_resources, token_count
+from .formatting import format_duration, format_progress_bar
+from .path_utils import normalize_path
+from .google_drive import (
+    download_google_url,
+    extract_file_id,
+    is_google_drive_url,
+    build_export_url,
+    fetch_google_title,
+    sanitize_filename,
+    get_google_file_info,
+)
+from .ipc import IPCCoordinator, try_delegate_to_coordinator
 
 logger = logging.getLogger("hammerdown")
 
@@ -34,7 +46,7 @@ ProgressCallback = Callable[[int, int, str], None]
 CompletionCallback = Callable[[bool, float, int, int], None]
 
 APP_NAME: str = "hammerdown"
-APP_DESCRIPTION: str = "Convert PDF and office documents to Markdown"
+
 
 SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(CONVERTERS)
 TEXT_EXTENSIONS: tuple[str, ...] = (".txt", ".md")
@@ -294,11 +306,20 @@ __all__ = [
     "convert_txt_or_md",
     "convert_xls",
     "convert_xlsx",
+    "download_google_url",
+    "extract_file_id",
     "get_conversion_estimate",
     "get_conversion_estimate_seconds",
+    "is_google_drive_url",
     "mathml_to_latex",
     "omml_to_latex",
     "render_chart_svg",
     "render_table_regions",
     "to_markdown",
+    "IPCCoordinator",
+    "try_delegate_to_coordinator",
+    "build_export_url",
+    "fetch_google_title",
+    "sanitize_filename",
+    "get_google_file_info",
 ]

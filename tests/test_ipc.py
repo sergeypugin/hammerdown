@@ -2,7 +2,7 @@ import os
 import uuid
 from pathlib import Path
 import hammerdown.cli
-from hammerdown.ipc import IPCCoordinator, try_delegate_to_coordinator
+from hammerdown import IPCCoordinator, try_delegate_to_coordinator
 
 
 def _unique_test_pipe() -> str | tuple[str, int]:

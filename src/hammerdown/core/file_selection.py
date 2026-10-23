@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import subprocess
 
-from hammerdown import SUPPORTED_EXTENSIONS
-from hammerdown.platform_utils import is_windows
+from . import SUPPORTED_EXTENSIONS
+from .platform_utils import is_windows
 
 
 def _select_files() -> list[str]:

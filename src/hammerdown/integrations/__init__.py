@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from hammerdown.platform_utils import is_macos, is_windows
+from ..core.platform_utils import is_macos, is_windows
 
 logger = logging.getLogger("hammerdown")
 
@@ -49,10 +49,6 @@ def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
     )
 
     interpreter = sys.executable
-    if is_windows() and interpreter:
-        windowed = Path(interpreter).with_name("pythonw.exe")
-        if windowed.is_file():
-            interpreter = str(windowed)
     return app_dir, f'"{interpreter}" "{target}"'
 
 

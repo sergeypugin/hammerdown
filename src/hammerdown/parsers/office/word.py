@@ -11,7 +11,7 @@ from hammerdown.parsers.math import MATH_NS as _MATH_NS
 from hammerdown.parsers.math import math_text as _math_text
 from hammerdown.parsers.math import omml_to_latex as _omml_to_latex
 from hammerdown.parsers.math import xml_name as _xml_name
-from hammerdown.utils import get_images_dir_name
+from hammerdown.core.path_utils import get_images_dir_name
 
 logger = logging.getLogger("hammerdown")
 ProgressCallback = Callable[[int, int, str], None]

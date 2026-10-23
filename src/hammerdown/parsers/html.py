@@ -9,7 +9,7 @@ from typing import Callable, cast
 
 from bs4 import BeautifulSoup, NavigableString, Tag, PageElement
 
-from hammerdown.path_utils import get_images_dir_name
+from hammerdown.core.path_utils import get_images_dir_name
 
 ProgressCallback = Callable[[int, int, str], None]
 

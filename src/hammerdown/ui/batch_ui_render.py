@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from rich.cells import cell_len
 
-from hammerdown.formatting import format_duration
-from hammerdown.ui_constants import (
+from ..core.formatting import format_duration
+from .ui_constants import (
     BATCH_UI_VISIBLE_FILES,
     BATCH_UI_WIDTH,
     PROCESS_COMPLETE_COLOR,
@@ -24,7 +24,7 @@ from hammerdown.ui_constants import (
 )
 
 if TYPE_CHECKING:
-    from hammerdown.batch_ui import BatchUI
+    from .batch_ui import BatchUI
 
 
 def panel_title(label: str, style: str):

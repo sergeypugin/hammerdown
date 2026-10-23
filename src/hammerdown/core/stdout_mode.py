@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from hammerdown.core import convert_file
-from hammerdown.merge import merge_root_for_inputs, render_merged_markdown
-from hammerdown.utils import format_duration
+from . import convert_file
+from .merge import merge_root_for_inputs, render_merged_markdown
+from .formatting import format_duration
 
 logger = logging.getLogger("hammerdown")
 

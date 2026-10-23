@@ -10,7 +10,7 @@ from typing import Callable
 
 from hammerdown.parsers.office.spreadsheet import convert_xlsx
 from hammerdown.parsers.tables import render_table_regions
-from hammerdown.utils import get_images_dir_name
+from hammerdown.core.path_utils import get_images_dir_name
 
 ProgressCallback = Callable[[int, int, str], None]
 

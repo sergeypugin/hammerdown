@@ -6,7 +6,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from hammerdown.platform_utils import is_macos
+from ..core.platform_utils import is_macos
 
 from ._common import _install_launcher, _quote_if_needed, _remove_install_dir
 

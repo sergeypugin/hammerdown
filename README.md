@@ -141,7 +141,7 @@ What this does:
 
 To convert a file or folder, right-click any supported document or folder and select **Hammer down file** (or use **Send to -> Hammer down**). The Markdown output and extracted images are saved directly next to each original document.
 
-On Windows, a second menu item **Hammer down and merge** is also available when multiple files are selected. It converts all selected files and combines them into a single Markdown file (equivalent to `hammerdown --merge output.md file1 file2 ...`). The merged file is saved next to the first selected document as `hammerdowned.md`. This verb uses a distinct orange icon to visually distinguish it from the regular **Hammer down file** action.
+On Windows, a second menu item **Hammer down and merge** can combine a selection of files into one Markdown file (equivalent to `hammerdown --merge output.md file1 file2 ...`). The merged file is saved next to the first selected document as `hammerdowned.md`. This static menu item may also appear when only one file is selected; in that case it creates a merged Markdown output with one document. The verb uses a distinct dark red icon (`#48161b`) to distinguish it from the regular **Hammer down file** action.
 
 To remove file manager integration and clean up shortcuts:
 

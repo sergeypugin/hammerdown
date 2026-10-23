@@ -6,7 +6,7 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from hammerdown.path_utils import get_images_dir_name
+from hammerdown.core.path_utils import get_images_dir_name
 from .html import convert_html
 
 ProgressCallback = Callable[[int, int, str], None]

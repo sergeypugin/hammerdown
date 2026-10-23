@@ -28,7 +28,7 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
         return DummyKey()
 
     def dummy_set_value(key, value_name, reserved, type_, value):
-        recorded_values.append(value_name)
+        recorded_values.append((value_name, value))
 
     def dummy_delete_value(key, value_name):
         deleted_values.append(value_name)
@@ -60,12 +60,15 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
 
     assert r"Software\Classes\Directory\shell\hammerdown" in recorded_keys
     assert r"Software\Classes\Directory\Background\shell\hammerdown" in recorded_keys
-    assert r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge" in recorded_keys
-    assert "AppliesTo" not in recorded_values
+    merge_key = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge"
+    assert merge_key in recorded_keys
+    assert ("MultiSelectModel", "Player") in recorded_values
+    assert ("", 'hammerdown --coordinator --right-click --merge-auto %1') in recorded_values
+    assert all(name != "AppliesTo" for name, _ in recorded_values)
     assert "AppliesTo" in deleted_values
 
 
-def test_installed_command_prefers_pythonw(tmp_path: Path, monkeypatch):
+def test_installed_command_uses_console_python(tmp_path: Path, monkeypatch):
     import sys
 
     from hammerdown.integrations import _installed_command
@@ -81,7 +84,8 @@ def test_installed_command_prefers_pythonw(tmp_path: Path, monkeypatch):
 
     _, command = _installed_command(home_dir=tmp_path)
 
-    assert str(pythonw) in command
+    assert str(python) in command
+    assert str(pythonw) not in command
     assert "hammerdown_runner.py" in command
 
 

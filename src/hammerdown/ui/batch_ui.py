@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from hammerdown.batch_ui_render import (
+from .batch_ui_render import (
     add_queue_columns as _add_queue_columns,
     add_result_columns as _add_result_columns,
     add_status_file_columns as _add_status_file_columns,
@@ -18,9 +18,9 @@ from hammerdown.batch_ui_render import (
     render_summary_panel as _render_summary_panel,
     truncate_filename as _truncate_filename,
 )
-from hammerdown.formatting import format_duration
-from hammerdown.path_utils import enable_vt_mode
-from hammerdown.ui_constants import (
+from ..core.formatting import format_duration
+from ..core.path_utils import enable_vt_mode
+from .ui_constants import (
     BATCH_UI_WIDTH,
     PROGRESS_BAR_WIDTH,
     PROGRESS_DISPLAY_DELAY,

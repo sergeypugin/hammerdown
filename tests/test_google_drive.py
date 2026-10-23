@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from hammerdown.google_drive import (
+from hammerdown import (
     extract_file_id,
     is_google_drive_url,
     build_export_url,

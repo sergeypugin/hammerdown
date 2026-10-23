@@ -17,6 +17,24 @@ def test_keyboard_interrupt_is_reported_as_cancellation(monkeypatch, capsys):
     assert "Cancelled." in capsys.readouterr().err
 
 
+def test_no_args_description_is_defined_in_package_code():
+    description = hammerdown.utils.get_app_description()
+
+    assert description.startswith("a cross-platform tool and Python library")
+    assert "Supported formats:" in description
+    assert "hammerdown --help" in description
+
+
+def test_no_args_output_reads_as_a_complete_sentence(capsys):
+    assert hammerdown.cli.main([]) == 0
+
+    output = capsys.readouterr().err
+    # Strip ANSI escape codes for assertion
+    import re
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
+    assert "hammerdown 3.1.0-pre1 is a cross-platform tool" in clean
+
+
 def test_normalize_wsl_windows_path():
     normalized = hammerdown.utils.normalize_path(r"C:\Users\someone\document.pdf")
     if os.name == "nt":

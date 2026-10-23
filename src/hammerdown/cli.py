@@ -30,13 +30,13 @@ def _prepare_console_window() -> None:
 
 _prepare_console_window()
 
-from hammerdown import APP_NAME, SUPPORTED_EXTENSIONS, __version__
-from hammerdown.batch import run_batch
-from hammerdown.file_selection import _select_files
-from hammerdown.integrations import install as install_integration
-from hammerdown.integrations import uninstall as uninstall_integration
-from hammerdown.updater import update as update_application
-from hammerdown.utils import get_app_description
+from . import APP_NAME, SUPPORTED_EXTENSIONS, __version__
+from .batch import run_batch
+from .core.file_selection import _select_files
+from .integrations import install as install_integration
+from .integrations import uninstall as uninstall_integration
+from .core.updater import update as update_application
+from .utils import get_app_description
 
 logger = logging.getLogger("hammerdown")
 
@@ -197,9 +197,9 @@ def _main(argv: Sequence[str] | None = None) -> int:
     if not args.files:
         # APP_DESCRIPTION contains description + supported formats + help hint (no 'hammerdown' prefix)
         # Print 'hammerdown version' in yellow, then description
-        from hammerdown.ui_constants import COLOR_BOLD, COLOR_RESET
+        from .ui.ui_constants import COLOR_BOLD, COLOR_RESET
         name_version_colored = f"{COLOR_BOLD}\033[38;2;254;180;84mhammerdown {__version__}{COLOR_RESET}"
-        print(f"{name_version_colored} {APP_DESCRIPTION}", file=sys.stderr)
+        print(f"{name_version_colored} is {APP_DESCRIPTION}", file=sys.stderr)
         return 0
 
     raw_files = args.files

@@ -4,7 +4,7 @@ import re
 import zipfile
 from pathlib import Path
 
-from hammerdown.formatting import format_duration
+from .formatting import format_duration
 
 PDF_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".epub", ".mobi", ".fb2", ".xps"})
 LEGACY_EXTENSIONS: frozenset[str] = frozenset({".doc", ".xls", ".ppt"})

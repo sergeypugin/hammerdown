@@ -9,7 +9,7 @@ from urllib.parse import unquote
 
 from hammerdown.parsers.markdown_render import is_math_glue, render_markdown_table
 from hammerdown.parsers.math import mathml_to_latex, xml_name, math_text as _math_text
-from hammerdown.utils import get_images_dir_name
+from hammerdown.core.path_utils import get_images_dir_name
 
 from typing import Callable
 

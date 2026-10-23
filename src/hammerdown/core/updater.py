@@ -15,8 +15,8 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
-from hammerdown import __version__
-from hammerdown.platform_utils import is_macos, is_windows
+from .. import __version__
+from .platform_utils import is_macos, is_windows
 
 logger = logging.getLogger("hammerdown")
 

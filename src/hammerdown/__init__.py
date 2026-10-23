@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from hammerdown.core import (
+from .core import (
     APP_DESCRIPTION,
     APP_NAME,
     DEFAULT_OVERWRITE,
@@ -24,8 +24,17 @@ from hammerdown.core import (
     render_chart_svg,
     render_table_regions,
     to_markdown,
+    download_google_url,
+    extract_file_id,
+    is_google_drive_url,
+    IPCCoordinator,
+    try_delegate_to_coordinator,
+    build_export_url,
+    fetch_google_title,
+    sanitize_filename,
+    get_google_file_info,
 )
-from hammerdown.batch import convert_files
+from .batch import convert_files
 
 __version__ = "3.1.0-pre1"
 

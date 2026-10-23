@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Sequence
 
-from hammerdown.path_utils import get_images_dir_name, normalize_path
+from .path_utils import get_images_dir_name, normalize_path
 
 TREE_BRANCH = "├── "
 TREE_LAST = "└── "

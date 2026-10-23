@@ -63,8 +63,8 @@ def _install_windows(command: str) -> None:
     merge_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, merge_path) as key:
         winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down and merge")
-        # Document = pass all selected files in one invocation
-        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Document")
+        # Player lets the coordinator collect each selected path into one batch.
+        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
         # Use distinct orange icon for merge verb
         if merge_icon_path:
             winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, merge_icon_path)
@@ -73,7 +73,7 @@ def _install_windows(command: str) -> None:
         except FileNotFoundError:
             pass
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, merge_path + r"\command") as key:
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --merge-auto')
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --merge-auto %1')
 
     bg_key_path = r"Software\Classes\Directory\Background\shell\hammerdown"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path) as key:

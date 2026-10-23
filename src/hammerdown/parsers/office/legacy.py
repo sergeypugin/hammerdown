@@ -13,7 +13,7 @@ from typing import Callable, Literal
 from .presentation import convert_pptx
 from .spreadsheet import convert_xlsx
 from .word import convert_docx
-from hammerdown.utils import get_images_dir_name
+from hammerdown.core.path_utils import get_images_dir_name
 
 logger = logging.getLogger("hammerdown")
 ProgressCallback = Callable[[int, int, str], None]

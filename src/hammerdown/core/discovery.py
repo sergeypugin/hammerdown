@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 from typing import Sequence
 
-from hammerdown.core import SUPPORTED_EXTENSIONS
-from hammerdown.utils import normalize_path
+from . import SUPPORTED_EXTENSIONS
+from .path_utils import normalize_path
 
 # Directories that never contain user documents worth converting and that can
 # hold a huge number of files (dependency trees, caches, system trash).
