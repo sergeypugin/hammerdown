@@ -32,7 +32,7 @@ def test_no_args_output_reads_as_a_complete_sentence(capsys):
     # Strip ANSI escape codes for assertion
     import re
     clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
-    assert "hammerdown 3.1.0-pre1 is a cross-platform tool" in clean
+    assert "hammerdown 3.1.1 is a cross-platform tool" in clean
 
 
 def test_normalize_wsl_windows_path():

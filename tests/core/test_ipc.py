@@ -57,7 +57,7 @@ def test_cli_delegates_to_active_coordinator(tmp_path: Path, monkeypatch):
     pipe_address = _unique_test_pipe()
     monkeypatch.setenv("HAMMERDOWN_IPC_PIPE", pipe_address if isinstance(pipe_address, str) else "")
     if not isinstance(pipe_address, str):
-        monkeypatch.setattr("hammerdown.ipc._get_address", lambda pipe_name=None: pipe_address)
+        monkeypatch.setattr("hammerdown.core.ipc._get_address", lambda pipe_name=None: pipe_address)
 
     source = tmp_path / "notes.txt"
     source.write_text("content\n", encoding="utf-8")
