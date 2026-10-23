@@ -14,17 +14,24 @@ def _install_windows(command: str) -> None:
     import winreg
 
     icon_path = ""
+    merge_icon_path = ""
     if getattr(sys, "frozen", False):
         icon_path = sys.executable
+        merge_icon_path = sys.executable
     else:
         try:
             pkg_icon = Path(__file__).resolve().parent.parent / "icon.ico"
+            merge_pkg_icon = Path(__file__).resolve().parent.parent / "icon_merge_orange.ico"
             if pkg_icon.is_file():
                 icon_path = str(pkg_icon)
+            if merge_pkg_icon.is_file():
+                merge_icon_path = str(merge_pkg_icon)
         except Exception:
             pass
         if not icon_path:
             icon_path = command.split('"')[1]
+        if not merge_icon_path:
+            merge_icon_path = icon_path
 
     # Regular "Hammer down file" verb (single file or multi-select without merge)
     all_files_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown"
@@ -58,9 +65,9 @@ def _install_windows(command: str) -> None:
         winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down and merge")
         # Document = pass all selected files in one invocation
         winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Document")
-        # Use same icon but we could customize it later
-        if icon_path:
-            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
+        # Use distinct orange icon for merge verb
+        if merge_icon_path:
+            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, merge_icon_path)
         try:
             winreg.DeleteValue(key, "AppliesTo")
         except FileNotFoundError:
