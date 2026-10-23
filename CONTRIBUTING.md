@@ -181,4 +181,14 @@ To package and test a standalone Windows executable locally using PyInstaller:
 
 `hammerdown.spec` already collects `pymupdf`, `pymupdf4llm`, `onnxruntime`, `tiktoken`, `regex`, `rich`, and the `hammerdown` package, and pre-seeds the tiktoken cache. The `HAMMERDOWN_EXECUTABLE` environment variable controls the output executable name, which the release workflow sets per platform (for example `hammerdown-windows-x64`).
 
+The build entry point is `src/hammerdown/__main__.py`, not `cli.py`: PyInstaller executes the entry script as a top-level `__main__` module, so relative imports inside it fail. `__main__.py` imports `hammerdown.cli` absolutely and `pathex=["src"]` makes the package importable in the frozen app. Keep it that way when adding new packages.
+
+On Windows the executable is built as a GUI-subsystem application (`console=False`). That is what lets Explorer start one process per selected file without flashing a console window for each; the process attaches to the parent terminal when one exists and stays silent otherwise. To build a Windows executable that always opens a console for debugging, set `HAMMERDOWN_CONSOLE=1`:
+
+```sh
+HAMMERDOWN_CONSOLE=1 python -m PyInstaller --noconfirm --clean hammerdown.spec
+```
+
+The setting is a Windows PE-subsystem switch and has no effect on Linux or macOS builds, which stay console applications.
+
 For full technical specifications and processing pipeline architecture, refer to [docs/TECHNICAL.md](docs/TECHNICAL.md).
