@@ -50,7 +50,7 @@ def _install_windows(command: str) -> None:
                     pass
 
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click "%1"')
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click %1')
 
     # "Hammer down and merge" verb (multi-select, merges into single markdown)
     merge_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge"
