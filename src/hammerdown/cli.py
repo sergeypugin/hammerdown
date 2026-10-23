@@ -154,6 +154,17 @@ def _main(argv: Sequence[str] | None = None) -> int:
         parser.error("-o/--output-dir cannot be used in coordinator mode")
     if args.confirm and not args.stdout:
         parser.error("--confirm can only be used with --stdout")
+    # --merge-auto mutual exclusions
+    if args.merge_auto and args.merge:
+        parser.error("--merge-auto cannot be combined with --merge")
+    if args.merge_auto and args.output_dir:
+        parser.error("--merge-auto cannot be combined with --output-dir")
+    if args.merge_auto and args.overwrite:
+        parser.error("--merge-auto cannot be combined with --overwrite")
+    if args.merge_auto and args.skip_existing:
+        parser.error("--merge-auto cannot be combined with --skip-existing")
+    if args.merge_auto and args.stdout:
+        parser.error("--merge-auto cannot be combined with --stdout")
     # Resolve default merge output for --right-click --merge-auto
     if args.merge_auto and args.right_click and args.files:
         first_file = Path(args.files[0]).resolve()
