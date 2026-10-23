@@ -7,18 +7,42 @@ Please follow these guidelines:
 - write commit messages in the Conventional Commits format, for example `feat(cli): add format support` or `fix(tests): resolve assertion mismatch`
 - keep changes minimal and focused on the intended feature or fix
 
-## Local (editable) install
+## Setting up an environment
 
-To test the latest changes without building a release or waiting for a tag, install the package in editable mode and register the file-manager integration:
+Clone the repository, then create a virtual environment and install the project with its development tools. Every command below assumes the environment is active.
 
 ```sh
+python -m venv venv
+```
+
+Activate it:
+
+```sh
+# Windows (cmd or PowerShell)
+venv\Scripts\activate
+
+# Linux and macOS
+source venv/bin/activate
+```
+
+Install dependencies and the package itself:
+
+```sh
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 python -m pip install -e .
 hammerdown --install
 ```
 
+`python -m venv venv` creates an isolated interpreter in `venv/`, so the project's dependencies never leak into your system Python and two projects can require different versions of the same library. The directory is listed in `.gitignore`: it is local to your machine and is recreated from `requirements.txt` on any other checkout. Delete and recreate it whenever dependency pinning gets confusing.
+
+`requirements.txt` holds the runtime dependencies plus `pytest`, `pytest-xdist` and `pyright`. `python -m pip install -e .` installs the project in editable mode, so the `hammerdown` command resolves to your working copy and picks up edits immediately. The editable install also creates `src/hammerdown.egg-info/`, a generated metadata directory that is ignored by git: never edit it by hand.
+
+`python`, not `python3`, is used in all documented commands. On Windows the `python` launcher always exists while `python3` often does not; on Linux both usually point at the same interpreter. This is about the executable name, not about the language version: the supported version range is declared once in `pyproject.toml` (`requires-python = ">=3.10"`) and checked by `pyrightconfig.json`.
+
 The `hammerdown` command now points at your local `src/`, so edits are picked up immediately. Re-run `hammerdown --install` after changing the set of supported formats so the context menu reflects the new extensions.
 
-The repository uses `python` (not `python3`) in its documented commands. On Windows, `python` and `python3` often refer to the same interpreter, but the project assumes `python` for consistency with `pyproject.toml` and the vendored `venv`. The `pyright` configuration points at `./venv`, so run checks through that environment:
+The `pyright` configuration points at `./venv`, so run checks through that environment:
 
 ```sh
 python -m pyright
@@ -85,6 +109,11 @@ src/hammerdown/
 │   ├── platform_utils.py        # is_windows / is_macos / is_linux helpers
 │   ├── ipc.py                   # named-pipe coordinator for multi-file selections
 │   └── windows_console.py       # Windows-only console attach; no-op elsewhere
+├── parsers/
+│   └── math/
+│       ├── __init__.py          # OMML and MathML to LaTeX conversion
+│       ├── symbols.json         # character to LaTeX command catalog
+│       └── symbols.pdf          # source reference the catalog is aligned with
 ├── integrations/
 │   ├── __init__.py              # install/uninstall dispatch, supported-platform gate
 │   ├── _common.py               # shared launcher and cleanup helpers
@@ -164,6 +193,16 @@ in `run_batch`, so the selection is converted exactly once.
 visible worker, while a frozen build uses the same executable for both roles.
 
 ## Building executable for testing on Windows
+
+`hammerdown.spec` is the PyInstaller build recipe. A `.spec` file is executable Python: PyInstaller runs it and takes the resulting `Analysis`, `PYZ` and `EXE` objects as the instructions for the build. It replaces the long command line you would otherwise type, and unlike a command line it can fetch data at build time.
+
+Three things in it are worth knowing:
+
+- `collect_all("package")` copies a dependency's data files, binaries and hidden imports. PyInstaller cannot always detect these statically, so each native dependency (`pymupdf`, `onnxruntime`, `tiktoken`, `regex`, `rich`) is listed explicitly
+- the script pre-seeds the `tiktoken` cache under `build/tiktoken-cache` and bakes it into the executable. Without it the first run would have to download the BPE table, which breaks offline use
+- `HAMMERDOWN_EXECUTABLE` and `HAMMERDOWN_CONSOLE` are read from the environment, so one spec produces differently named binaries for each platform and can optionally keep a visible console
+
+`build/` and `dist/` are PyInstaller output: `build/` holds intermediate analysis and cache files, `dist/` holds the final executable. Both are git-ignored and safe to delete; a clean build recreates them.
 
 To package and test a standalone Windows executable locally using PyInstaller:
 

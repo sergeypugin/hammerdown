@@ -430,7 +430,7 @@ hammerdown LMS.md --overwrite
 Equations inside Word and OpenDocument files are automatically translated into standard LaTeX syntax. Special math characters and Greek letters are mapped using a catalog aligned with official LaTeX references:
 
 - Official Reference: [Rice University LaTeX Symbols Reference](https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf)
-- Bundled Copy: [symbols.pdf](symbols.pdf)
+- Bundled Copy: [symbols.pdf](src/hammerdown/parsers/math/symbols.pdf)
 
 ### Tables and Spreadsheets
 

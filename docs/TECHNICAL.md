@@ -40,7 +40,7 @@ Key naming rules:
 ### Word Documents (.docx, .doc, .odt)
 
 - paragraphs and inline runs are converted to Markdown text, and tables become Markdown tables; headings and list items keep their text but are not promoted to Markdown heading or list syntax
-- equations are translated from internal XML structures into standard LaTeX formulas using character mapping definitions in `src/hammerdown/parsers/symbols.json`
+- equations are translated from internal XML structures into standard LaTeX formulas using character mapping definitions in `src/hammerdown/parsers/math/symbols.json`
 - embedded Word DrawingML charts are exported as vector SVG graphics
 - binary `.doc` legacy files are converted to DOCX first when LibreOffice or Microsoft Word is installed
 
@@ -65,9 +65,9 @@ Key naming rules:
 
 When normalizing math equations from Word and OpenDocument files, `hammerdown` translates special characters into standard LaTeX commands.
 
-The symbol catalog is maintained in `src/hammerdown/parsers/symbols.json` and is aligned with the LaTeX Mathematical Symbols Reference:
+The symbol catalog is maintained in `src/hammerdown/parsers/math/symbols.json` and is aligned with the LaTeX Mathematical Symbols Reference:
 - Official reference: https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf
-- Local copy bundled in repository: [symbols.pdf](../symbols.pdf)
+- Local copy bundled in repository: [symbols.pdf](../src/hammerdown/parsers/math/symbols.pdf)
 
 ## Release and PyPI Immutability
 
@@ -162,6 +162,6 @@ Empirical timings measured across test workloads demonstrate the impact of casca
 
 ## References and External Sources
 
-- math symbols are referenced against the [Rice University LaTeX Symbols Reference](https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf) (local copy: [symbols.pdf](../symbols.pdf))
+- math symbols are referenced against the [Rice University LaTeX Symbols Reference](https://cmor-faculty.rice.edu/~heinken/latex/symbols.pdf) (local copy: [symbols.pdf](../src/hammerdown/parsers/math/symbols.pdf))
 - PDF rendering and extraction rely on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM)
 - office documents are parsed using [python-docx](https://python-docx.readthedocs.io/) for Word, [openpyxl](https://openpyxl.readthedocs.io/) for Excel, and [python-pptx](https://python-pptx.readthedocs.io/) for PowerPoint
