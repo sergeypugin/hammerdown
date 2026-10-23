@@ -71,35 +71,38 @@ def run_batch(args: argparse.Namespace) -> int:
     # Resolve Google Docs/Drive file URLs by downloading them first.
     google_downloaded: set[str] = set()
     google_failed: list[tuple[str, str]] = []
-    google_staging = tempfile.TemporaryDirectory(prefix="hammerdown-remote-")
-    google_staging_dir = Path(google_staging.name)
     resolved_files: list[str] = []
-    for raw in raw_files:
-        if is_google_drive_url(raw):
-            try:
-                cached = download_google_url(raw, google_staging_dir)
-                if cached is None:
-                    google_failed.append((raw, "unsupported Google Drive link"))
-                    continue
-                google_downloaded.add(str(cached.resolve()))
-                resolved_files.append(str(cached))
-                logger.info("Downloaded %s to %s", raw, cached.name)
-            except urllib.error.HTTPError as e:
-                reason = f"access denied (HTTP {e.code})" if e.code in (401, 403) else f"not found (HTTP {e.code})"
-                google_failed.append((raw, reason))
-                logger.error("Could not download Google Drive URL: %s (%s)", raw, reason)
-            except (urllib.error.URLError, OSError) as e:
-                google_failed.append((raw, f"network error: {e}"))
-                logger.error("Could not download Google Drive URL: %s (network error)", raw)
-        else:
-            resolved_files.append(raw)
-    raw_files = resolved_files
+    google_staging = tempfile.TemporaryDirectory(prefix="hammerdown-remote-")
+    try:
+        google_staging_dir = Path(google_staging.name)
+        for raw in raw_files:
+            if is_google_drive_url(raw):
+                try:
+                    cached = download_google_url(raw, google_staging_dir)
+                    if cached is None:
+                        google_failed.append((raw, "unsupported Google Drive link"))
+                        continue
+                    google_downloaded.add(str(cached.resolve()))
+                    resolved_files.append(str(cached))
+                    logger.info("Downloaded %s to %s", raw, cached.name)
+                except urllib.error.HTTPError as e:
+                    reason = f"access denied (HTTP {e.code})" if e.code in (401, 403) else f"not found (HTTP {e.code})"
+                    google_failed.append((raw, reason))
+                    logger.error("Could not download Google Drive URL: %s (%s)", raw, reason)
+                except (urllib.error.URLError, OSError) as e:
+                    google_failed.append((raw, f"network error: {e}"))
+                    logger.error("Could not download Google Drive URL: %s (network error)", raw)
+            else:
+                resolved_files.append(raw)
+        raw_files = resolved_files
 
-    output_dir = getattr(args, "output_dir", None)
-    output_root = Path(output_dir).resolve() if output_dir else None
-    if output_root is not None and output_root.exists() and not output_root.is_dir():
-        logger.error("output directory path is not a directory: %s", output_root)
-        return 1
+        output_dir = getattr(args, "output_dir", None)
+        output_root = Path(output_dir).resolve() if output_dir else None
+        if output_root is not None and output_root.exists() and not output_root.is_dir():
+            logger.error("output directory path is not a directory: %s", output_root)
+            return 1
+    finally:
+        google_staging.cleanup()
 
     include_patterns = [re.compile(pattern) for pattern in getattr(args, "include", [])]
     exclude_patterns = [re.compile(pattern) for pattern in getattr(args, "exclude", [])]
@@ -339,10 +342,6 @@ def run_batch(args: argparse.Namespace) -> int:
             batch_ui.stop()
         if coordinator:
             coordinator.stop()
-        # The downloaded Google HTML files lived in a temporary staging directory
-        # that is removed here; the Markdown output and images were written to
-        # -o/--output-dir or the current directory, so nothing is lost.
-        google_staging.cleanup()
 
     failed_count = sum(not result for result in results)
     merge_failed = False

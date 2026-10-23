@@ -203,3 +203,22 @@ def test_include_can_be_combined_with_output_directory(tmp_path: Path, capsys):
 
     assert (output / "hm_keep_txt.md").is_file()
     assert not (output / "hm_other_txt.md").exists()
+
+def test_output_dir_handles_files_outside_input_roots(tmp_path: Path):
+    """When a file is not under any input directory root, it should be placed
+    directly under output_root with just its filename, not raise ValueError."""
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    (source_root / "notes.txt").write_text("content\n", encoding="utf-8")
+    
+    # File outside the source root
+    external = tmp_path / "external.txt"
+    external.write_text("external content\n", encoding="utf-8")
+    
+    output_root = tmp_path / "output"
+    
+    # Should not raise ValueError
+    assert main(["-o", str(output_root), str(source_root), str(external)]) == 0
+    
+    assert (output_root / "hm_notes_txt.md").is_file()
+    assert (output_root / "hm_external_txt.md").is_file()

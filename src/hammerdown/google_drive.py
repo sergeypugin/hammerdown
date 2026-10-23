@@ -25,9 +25,8 @@ class GoogleFileInfo(NamedTuple):
     title: str | None = None
 
 def is_google_drive_url(value: str) -> bool:
-    """Return True when *value* looks like a Google Docs or Drive URL."""
-    lowered = value.lower()
-    return "docs.google.com" in lowered or "drive.google.com" in lowered
+    """Return True when *value* looks like a downloadable Google Docs or Drive file URL."""
+    return get_google_file_info(value) is not None
 
 
 def get_google_file_info(url: str) -> GoogleFileInfo | None:

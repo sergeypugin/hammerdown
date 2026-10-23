@@ -47,7 +47,7 @@ def test_parses_drive_file_url():
 
 def test_rejects_folder_url():
     url = "https://drive.google.com/drive/folders/10tqaz0bVhVFP-MBV1izVWk0ypUDAd_Qb?usp=sharing"
-    assert is_google_drive_url(url)
+    assert not is_google_drive_url(url)
     assert extract_file_id(url) is None
     assert build_export_url(url, "") is None
 

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import queue
+import tempfile
 import threading
 import time
 from multiprocessing.connection import Client, Listener
+from pathlib import Path
 from typing import Any, Sequence
 
 logger = logging.getLogger("hammerdown")
@@ -13,6 +16,7 @@ logger = logging.getLogger("hammerdown")
 IPC_PIPE_NAME = r"\\.\pipe\hammerdown_coordinator"
 IPC_PORT = 58432
 IPC_AUTH_KEY = b"hammerdown-ipc-secret"
+IPC_LOCK_FILE = Path(tempfile.gettempdir()) / "hammerdown_coordinator.lock"
 
 
 def _get_address(pipe_name: str | tuple[str, int] | None = None) -> str | tuple[str, int]:
@@ -74,6 +78,20 @@ class IPCCoordinator:
         self._thread: threading.Thread | None = None
 
     def start(self) -> bool:
+        # Acquire file lock to prevent race condition when multiple processes
+        # try to become the coordinator simultaneously
+        self._lock_file = open(IPC_LOCK_FILE, "w")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self._lock_file.close()
+            return False
+        
         try:
             self.listener = Listener(self.address, authkey=IPC_AUTH_KEY)
             self._running = True
@@ -81,6 +99,7 @@ class IPCCoordinator:
             self._thread.start()
             return True
         except Exception:
+            self._release_lock()
             return False
 
     def _server_loop(self) -> None:
@@ -122,6 +141,23 @@ class IPCCoordinator:
 
         return collected
 
+    def _release_lock(self) -> None:
+        if hasattr(self, "_lock_file") and self._lock_file:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                self._lock_file.close()
+            except Exception:
+                pass
+            self._lock_file = None
+
     def stop(self) -> None:
         self._running = False
         if self.listener:
@@ -130,3 +166,4 @@ class IPCCoordinator:
             except Exception:
                 pass
             self.listener = None
+        self._release_lock()
