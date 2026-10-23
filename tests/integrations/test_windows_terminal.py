@@ -46,7 +46,9 @@ def test_worker_command_uses_console_interpreter_for_pip_install(monkeypatch):
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     monkeypatch.setattr("os.name", "nt")
     monkeypatch.setattr(sys, "executable", "C:/Python/pythonw.exe")
+    # Avoid WindowsPath instantiation on non-Windows
     monkeypatch.setattr(Path, "is_file", lambda self: True)
+    monkeypatch.setattr(Path, "with_name", lambda self, name: Path(str(self).replace("pythonw.exe", name)))
 
     command = build_context_worker_command(["a.pdf"])
 
