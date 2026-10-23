@@ -37,8 +37,11 @@ tmp_ret = collect_all("hammerdown")
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 a = Analysis(
-    ["src/hammerdown/cli.py"],
-    pathex=[],
+    ["src/hammerdown/__main__.py"],
+    # The entry script is executed by PyInstaller as a top-level __main__
+    # module, so it cannot use relative imports. src/ goes on the search path
+    # to make the hammerdown package importable in the frozen app.
+    pathex=["src"],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -64,7 +67,13 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    # Windows Explorer launches one process per selected file, so the binary
+    # must not own a console: a GUI-subsystem executable attaches to the
+    # caller's terminal when there is one and stays silent otherwise. Set
+    # HAMMERDOWN_CONSOLE=1 for a local build that always shows a console.
+    # Linux and macOS executables keep console=True; the flag is a Windows
+    # PE-subsystem switch and does not change how Unix binaries behave.
+    console=not (os.name == "nt" and os.environ.get("HAMMERDOWN_CONSOLE", "0") != "1"),
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
