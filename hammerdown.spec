@@ -35,6 +35,8 @@ tmp_ret = collect_all("rich")
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all("hammerdown")
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# Explicitly include symbols.json (PyInstaller may miss package-data)
+datas.append((str(Path(SPECPATH) / "src" / "hammerdown" / "parsers" / "math" / "symbols.json"), "hammerdown/parsers/math"))
 
 a = Analysis(
     ["src/hammerdown/__main__.py"],
