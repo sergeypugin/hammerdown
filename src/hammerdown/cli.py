@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import argparse
 import logging
 import os
@@ -9,23 +7,20 @@ import re
 import sys
 from typing import Sequence
 
+from .core.windows_console import attach_parent_console
+
+attach_parent_console()
+
 
 def _prepare_console_window() -> None:
-    if os.name != "nt":
-        return
-    if "--coordinator" not in sys.argv[1:] and "--right-click" not in sys.argv[1:]:
+    if os.name != "nt" or "--coordinator" not in sys.argv[1:]:
         return
 
     import ctypes
 
     hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-    if not hwnd:
-        return
-    if "--coordinator" in sys.argv[1:]:
+    if hwnd:
         ctypes.windll.user32.ShowWindow(hwnd, 0)
-    else:
-        ctypes.windll.user32.ShowWindow(hwnd, 5)
-        ctypes.windll.user32.SetForegroundWindow(hwnd)
 
 
 _prepare_console_window()
@@ -133,6 +128,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
         help="Show a preflight estimate and ask for confirmation before --stdout",
     )
     parser.add_argument("--coordinator", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--context-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--right-click", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(actual_argv)
@@ -145,7 +141,10 @@ def _main(argv: Sequence[str] | None = None) -> int:
         parser.error("-o/--output-dir may be repeated only with the same directory")
     args.output_dir = next(iter(output_dirs), None)
 
-    coordinator_mode = args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
+    coordinator_mode = (
+        (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1")
+        and not args.context_worker
+    )
     if args.output_dir and args.overwrite:
         parser.error("-w/--overwrite cannot be combined with -o/--output-dir")
     if args.overwrite and args.skip_existing:
@@ -165,10 +164,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
         parser.error("--merge-auto cannot be combined with --skip-existing")
     if args.merge_auto and args.stdout:
         parser.error("--merge-auto cannot be combined with --stdout")
-    # Resolve default merge output for --right-click --merge-auto
-    if args.merge_auto and args.right_click and args.files:
-        first_file = Path(args.files[0]).resolve()
-        args.merge = str(first_file.parent / "hammerdowned.md")
 
     if args.merge and args.overwrite:
         parser.error("--merge cannot be combined with --overwrite")

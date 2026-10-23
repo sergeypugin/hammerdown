@@ -29,12 +29,16 @@ from ..ui.batch_ui import BatchUI
 from ..core.stdout_mode import confirm_stdout, run_stdout_conversion
 from ..core.formatting import format_duration
 from ..core.path_utils import normalize_path
+from ..core.platform_utils import is_windows
 
 logger = logging.getLogger("hammerdown")
 
 
 def _ensure_console_window() -> None:
-    """Show the current console or allocate one for a windowed launcher."""
+    """Show the current console or allocate a fallback console on Windows."""
+    if os.name != "nt":
+        return
+
     import ctypes
 
     kernel32 = ctypes.windll.kernel32
@@ -51,14 +55,44 @@ def _ensure_console_window() -> None:
                 if isinstance(handler, logging.StreamHandler) and getattr(handler, "stream", None) is None:
                     handler.setStream(sys.stderr)
         hwnd = kernel32.GetConsoleWindow()
+    kernel32.SetConsoleTitleW("Hammerdown")
     if hwnd:
         user32.ShowWindow(hwnd, 5)
         user32.SetForegroundWindow(hwnd)
 
 
+def hand_off_to_windows_terminal(
+    files: Sequence[str],
+    args: argparse.Namespace,
+    merge_auto: bool,
+) -> bool:
+    """Run an Explorer selection in one Windows Terminal window.
+
+    Returns ``False`` when this is not a Windows context-menu run or when
+    Windows Terminal is unavailable, so the caller can fall back to a console.
+    """
+    if not is_windows() or getattr(args, "context_worker", False):
+        return False
+    if not getattr(args, "coordinator", False):
+        return False
+
+    from ..integrations.windows_terminal import launch_context_worker
+
+    return launch_context_worker(
+        files,
+        merge_auto=merge_auto,
+        include=getattr(args, "include", []),
+        exclude=getattr(args, "exclude", []),
+        overwrite=getattr(args, "overwrite", False),
+        skip_existing=getattr(args, "skip_existing", False),
+        output_dir=getattr(args, "output_dir", None),
+    )
+
+
 def run_batch(args: argparse.Namespace) -> int:
     raw_files = args.files
     merge_requested = getattr(args, "merge", None)
+    merge_auto = getattr(args, "merge_auto", False)
     if merge_requested and getattr(args, "overwrite", False):
         logger.error("--merge cannot be combined with --overwrite")
         return 1
@@ -145,23 +179,26 @@ def run_batch(args: argparse.Namespace) -> int:
         conversion_status = run_stdout_conversion(files, raw_files)
         return 1 if initial_errors or conversion_status else 0
 
-    use_ipc = getattr(args, "coordinator", False) or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
+    context_worker = getattr(args, "context_worker", False)
+    use_ipc = (
+        (getattr(args, "coordinator", False) or os.environ.get("HAMMERDOWN_COORDINATOR") == "1")
+        and not context_worker
+    )
     options = {
         "overwrite": getattr(args, "overwrite", False),
         "skip_existing": getattr(args, "skip_existing", False),
     }
 
-    if use_ipc and files and not any(error for _, error in targets) and try_delegate_to_coordinator(files, options):
-        logger.info("Delegated %d files to active hammerdown coordinator", len(files))
+    coordinator = IPCCoordinator() if use_ipc else None
+    coordinator_started = coordinator.start() if coordinator else False
+    if use_ipc and not coordinator_started:
+        if files and not any(error for _, error in targets) and try_delegate_to_coordinator(files, options):
+            logger.info("Delegated %d files to active hammerdown coordinator", len(files))
         return 0
 
-    coordinator = IPCCoordinator() if use_ipc else None
-    if coordinator and coordinator.start():
-        if os.name == "nt":
-            _ensure_console_window()
-
+    if coordinator is not None and coordinator_started:
         initial_errors = [target for target in targets if target[1] is not None]
-        collected_files = coordinator.collect_files(files, assembly_timeout=0.35)
+        collected_files = coordinator.collect_files(files, assembly_timeout=2.0)
         targets = expand_paths(
             [*raw_files, *collected_files],
             excluded_dir=output_root,
@@ -179,10 +216,21 @@ def run_batch(args: argparse.Namespace) -> int:
             for path, error in targets
         ]
         output_path_inputs = [*raw_files, *collected_files]
+
+        if hand_off_to_windows_terminal(list(dict.fromkeys(output_path_inputs)), args, merge_auto):
+            coordinator.stop()
+            return 0
+        _ensure_console_window()
     elif use_ipc:
         return 0
     else:
         output_path_inputs = raw_files
+
+    # Resolve default merge output for --right-click --merge-auto once the full
+    # selection is known, so the target does not depend on which process won
+    # the coordinator race.
+    if merge_auto and merge_requested is None and files:
+        merge_requested = str(Path(files[0]).parent / "hammerdowned.md")
 
     merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
     merge_sources = [path for path, error in targets if error is None]
@@ -423,6 +471,7 @@ def convert_files(
         stdout=stdout,
         confirm=confirm,
         coordinator=False,
+        context_worker=False,
         right_click=False,
     )
     return run_batch(namespace)

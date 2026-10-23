@@ -43,8 +43,8 @@ def try_delegate_to_coordinator(
     files: Sequence[str],
     options: dict[str, Any],
     pipe_name: str | tuple[str, int] | None = None,
-    retries: int = 15,
-    retry_delay: float = 0.02,
+    retries: int = 50,
+    retry_delay: float = 0.04,
 ) -> bool:
     """Hand files to an already running coordinator.
 
@@ -121,7 +121,7 @@ class IPCCoordinator:
             finally:
                 _close_quietly(conn)
 
-    def collect_files(self, initial_files: Sequence[str], assembly_timeout: float = 0.35) -> list[str]:
+    def collect_files(self, initial_files: Sequence[str], assembly_timeout: float = 2.0) -> list[str]:
         collected: list[str] = list(initial_files)
         seen = set(collected)
         deadline = time.monotonic() + assembly_timeout
@@ -136,6 +136,7 @@ class IPCCoordinator:
                     if item not in seen:
                         seen.add(item)
                         collected.append(item)
+                deadline = time.monotonic() + assembly_timeout
             except queue.Empty:
                 break
 

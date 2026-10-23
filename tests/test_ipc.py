@@ -29,6 +29,30 @@ def test_ipc_coordinator_collects_delegated_files():
         coordinator.stop()
 
 
+def test_collect_files_waits_for_quiet_period_after_each_delegate():
+    import threading
+    import time
+
+    pipe_address = _unique_test_pipe()
+    coordinator = IPCCoordinator(pipe_name=pipe_address)
+    assert coordinator.start()
+
+    try:
+        assert try_delegate_to_coordinator(["first.pdf"], {}, pipe_name=pipe_address)
+
+        def delegate_later():
+            time.sleep(0.1)
+            assert try_delegate_to_coordinator(["second.pdf"], {}, pipe_name=pipe_address)
+
+        worker = threading.Thread(target=delegate_later)
+        worker.start()
+        collected = coordinator.collect_files([], assembly_timeout=0.2)
+        worker.join()
+        assert collected == ["first.pdf", "second.pdf"]
+    finally:
+        coordinator.stop()
+
+
 def test_cli_delegates_to_active_coordinator(tmp_path: Path, monkeypatch):
     pipe_address = _unique_test_pipe()
     monkeypatch.setenv("HAMMERDOWN_IPC_PIPE", pipe_address if isinstance(pipe_address, str) else "")

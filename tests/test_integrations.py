@@ -68,7 +68,7 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     assert "AppliesTo" in deleted_values
 
 
-def test_installed_command_uses_console_python(tmp_path: Path, monkeypatch):
+def test_installed_command_uses_windowed_python(tmp_path: Path, monkeypatch):
     import sys
 
     from hammerdown.integrations import _installed_command
@@ -84,8 +84,7 @@ def test_installed_command_uses_console_python(tmp_path: Path, monkeypatch):
 
     _, command = _installed_command(home_dir=tmp_path)
 
-    assert str(python) in command
-    assert str(pythonw) not in command
+    assert str(pythonw) in command
     assert "hammerdown_runner.py" in command
 
 

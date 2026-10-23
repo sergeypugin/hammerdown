@@ -6,9 +6,25 @@ import shutil
 import sys
 from pathlib import Path
 
-from ..core.platform_utils import is_macos, is_windows
+from ..core.platform_utils import is_linux, is_macos, is_windows
 
 logger = logging.getLogger("hammerdown")
+
+UNSUPPORTED_PLATFORM_MESSAGE = (
+    "File-manager integration is only available on Windows, macOS and Linux. "
+    "The command-line interface still works on {platform}: run 'hammerdown <files>' or "
+    "'hammerdown -m output.md <files>'. To add support for your environment, see CONTRIBUTING.md."
+)
+
+
+def _platform_is_supported() -> bool:
+    return is_windows() or is_macos() or is_linux()
+
+
+def _report_unsupported_platform() -> None:
+    import sys
+
+    logger.error(UNSUPPORTED_PLATFORM_MESSAGE.format(platform=sys.platform))
 
 
 def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
@@ -28,18 +44,7 @@ def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
 
     target = app_dir / "hammerdown_runner.py"
     target.write_text(
-        "import os\n"
         "import sys\n"
-        "\n"
-        "if os.name == 'nt' and ('--coordinator' in sys.argv[1:] or '--right-click' in sys.argv[1:]):\n"
-        "    import ctypes\n"
-        "    hwnd = ctypes.windll.kernel32.GetConsoleWindow()\n"
-        "    if hwnd:\n"
-        "        if '--coordinator' in sys.argv[1:]:\n"
-        "            ctypes.windll.user32.ShowWindow(hwnd, 0)\n"
-        "        else:\n"
-        "            ctypes.windll.user32.ShowWindow(hwnd, 5)\n"
-        "            ctypes.windll.user32.SetForegroundWindow(hwnd)\n"
         "\n"
         "from hammerdown.cli import main\n"
         "\n"
@@ -49,6 +54,10 @@ def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
     )
 
     interpreter = sys.executable
+    if is_windows():
+        windowed = Path(interpreter).with_name("pythonw.exe")
+        if windowed.is_file():
+            interpreter = str(windowed)
     return app_dir, f'"{interpreter}" "{target}"'
 
 
@@ -64,6 +73,9 @@ def _install_unix(command: str) -> None:
 
 
 def install() -> bool:
+    if not _platform_is_supported():
+        _report_unsupported_platform()
+        return False
     try:
         _, command = _installed_command()
         if is_windows():
@@ -80,6 +92,9 @@ def install() -> bool:
 
 
 def uninstall() -> bool:
+    if not _platform_is_supported():
+        _report_unsupported_platform()
+        return False
     try:
         if is_windows():
             from .windows import _uninstall_windows
@@ -100,4 +115,4 @@ def uninstall() -> bool:
         return False
 
 
-__all__ = ["install", "uninstall"]
+__all__ = ["UNSUPPORTED_PLATFORM_MESSAGE", "install", "uninstall"]
