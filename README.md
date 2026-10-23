@@ -141,7 +141,7 @@ What this does:
 
 To convert a file or folder, right-click any supported document or folder and select **Hammer down file** (or use **Send to -> Hammer down**). The Markdown output and extracted images are saved directly next to each original document.
 
-On Windows, a second menu item **Hammer down and merge** is also available when multiple files are selected. It converts all selected files and combines them into a single Markdown file (equivalent to `hammerdown --merge output.md file1 file2 ...`). The merged file is saved next to the first selected document.
+On Windows, a second menu item **Hammer down and merge** is also available when multiple files are selected. It converts all selected files and combines them into a single Markdown file (equivalent to `hammerdown --merge output.md file1 file2 ...`). The merged file is saved next to the first selected document as `hammerdowned.md`. This verb uses a distinct orange icon to visually distinguish it from the regular **Hammer down file** action.
 
 To remove file manager integration and clean up shortcuts:
 
@@ -253,6 +253,16 @@ Options:
 
 > [!tip]
 > Running `hammerdown` without arguments prints a short description, the list of supported formats, and a hint to run `hammerdown --help` for full usage.
+>
+> Example output:
+>
+> ```text
+> hammerdown 3.1.0-pre1 is a cross-platform tool and Python library for converting PDF, Word, Excel, PowerPoint, OpenDocument, CSV, and plain-text documents into clean Markdown. Word charts are rendered as SVG, OpenDocument and Markdown images are extracted, and mathematical formulas are converted to LaTeX.
+>
+> Supported formats: pdf, epub, mobi, fb2, xps, docx, doc, odt, xlsx, xls, pptx, ppt, csv, txt, md, log, html, htm, gdoc, gsheets, gslides, gfile, zip
+>
+> Run 'hammerdown --help' for usage.
+> ```
 
 - `-i`, `--include REGEX` -- only process files whose normalized relative path matches REGEX; may be repeated
 - `-e`, `--exclude REGEX` -- skip files whose normalized relative path matches REGEX; may be repeated; exclusions always take priority
