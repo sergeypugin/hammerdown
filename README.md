@@ -141,6 +141,8 @@ What this does:
 
 To convert a file or folder, right-click any supported document or folder and select **Hammer down file** (or use **Send to -> Hammer down**). The Markdown output and extracted images are saved directly next to each original document.
 
+On Windows, multi-file selections are collected by a hidden background coordinator and opened in a single Windows Terminal window titled `Hammerdown`, so selecting several documents never produces several console windows. When Windows Terminal is not installed, the same run falls back to one regular console window instead.
+
 On Windows, a second menu item **Hammer down and merge** can combine a selection of files into one Markdown file (equivalent to `hammerdown --merge output.md file1 file2 ...`). The merged file is saved next to the first selected document as `hammerdowned.md`. This static menu item may also appear when only one file is selected; in that case it creates a merged Markdown output with one document. The verb uses a distinct dark red icon (`#48161b`) to distinguish it from the regular **Hammer down file** action.
 
 To remove file manager integration and clean up shortcuts:
@@ -151,6 +153,27 @@ hammerdown --uninstall
 
 > [!note]
 > `hammerdown --install` updates both context menu items (**Hammer down file** and **Hammer down and merge**) and SendTo shortcuts. Run it after upgrading to refresh launcher scripts.
+
+#### Supported platforms for file-manager integration
+
+File-manager integration is installed only on these systems:
+
+| OS | Supported | Notes |
+| :--- | :--- | :--- |
+| Windows | yes | File Explorer context menu, SendTo shortcuts |
+| macOS | yes | Finder Quick Action and droplet |
+| Linux | yes | XDG `.desktop` entries, KDE ServiceMenus, Nautilus/Nemo/Caja scripts |
+| FreeBSD and other systems | no | `--install` and `--uninstall` exit with an error |
+
+On unsupported systems the converter itself still works normally from the terminal:
+
+```sh
+hammerdown report.pdf
+hammerdown -m merged.md report.pdf notes.docx
+```
+
+Unknown desktop environments cannot be wired up automatically: every file manager exposes its own extension mechanism, and writing entries blindly could break existing associations with no reliable way to detect or undo it. If you need a context-menu action on a system that is not listed above, add a small adapter as described in [CONTRIBUTING.md](CONTRIBUTING.md#adding-support-for-another-platform) and open a pull request.
+
 
 To update `hammerdown` to the latest version:
 

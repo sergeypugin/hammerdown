@@ -66,6 +66,103 @@ Checklist before submitting changes:
 - markdown outputs have clean line endings without trailing whitespace
 - no broken character encodings appear in generated markdown files
 
+## Adding support for another platform
+
+The converter and the `hammerdown` command work anywhere Python runs. Only the file-manager
+integration is platform-bound: `hammerdown --install` and `hammerdown --uninstall` refuse to run
+on a system that has no adapter, because a wrong guess about someone's desktop can break existing
+file associations and there is no reliable way to detect or undo the damage afterwards.
+
+Supported adapters today: Windows, macOS and Linux distributions. FreeBSD, OpenBSD, illumos and
+other systems are unsupported: the CLI works, the context menu does not. If you want a menu entry
+on your system, write an adapter and send a pull request.
+
+### Where the pieces live
+
+```text
+src/hammerdown/
+├── core/
+│   ├── platform_utils.py        # is_windows / is_macos / is_linux helpers
+│   ├── ipc.py                   # named-pipe coordinator for multi-file selections
+│   └── windows_console.py       # Windows-only console attach; no-op elsewhere
+├── integrations/
+│   ├── __init__.py              # install/uninstall dispatch, supported-platform gate
+│   ├── _common.py               # shared launcher and cleanup helpers
+│   ├── windows.py               # registry verbs, SendTo shortcuts
+│   ├── windows_terminal.py      # hands a collected selection to Windows Terminal
+│   ├── macos.py                 # Finder Quick Action and droplet
+│   └── linux.py                 # XDG desktop entries, KDE menus, file-manager scripts
+├── batch/__init__.py            # run_batch, coordinator wiring, hand-off to the adapter
+└── cli.py                       # argument parsing and early console bootstrap
+```
+
+### What an adapter has to provide
+
+An adapter is one module in `src/hammerdown/integrations/` named after the system, for example
+`freebsd.py`. It exposes two functions and writes only inside the user's home directory or a
+user-scoped registry:
+
+```python
+def _install_<os>(command: str, home_dir: Path | None = None) -> None: ...
+def _uninstall_<os>(home_dir: Path | None = None) -> None: ...
+```
+
+`command` is the already quoted command line that launches hammerdown on this machine, for example
+`"/usr/local/bin/python3" "/home/user/.local/share/hammerdown/hammerdown_runner.py"`. Do not build
+it yourself: `_installed_command()` in `integrations/__init__.py` already handles frozen binaries and
+`pip` installs. Every platform appends its own file list placeholder, so keep `command` as a string
+prefix and add the selection marker in the descriptor you generate.
+
+Reuse the helpers from `integrations/_common.py`:
+
+- `_install_launcher(command, home)` writes an executable shim into `~/.local/bin`
+- `_quote_if_needed(value)` quotes a path only when it contains a space
+- `_remove_install_dir(path)` removes the program directory during uninstall
+
+`home_dir` exists for tests: the test suite passes a temporary directory instead of the real home
+and asserts the files that were created and removed.
+
+### Wiring it up
+
+1. `src/hammerdown/core/platform_utils.py`: add a predicate such as `is_freebsd()` that checks
+   `sys.platform`, next to the existing `is_windows`, `is_macos` and `is_linux` helpers
+2. `src/hammerdown/integrations/__init__.py`: include the predicate in `_platform_is_supported()`
+   and dispatch to the new module in `install()` and `uninstall()`
+3. `src/hammerdown/integrations/<os>.py`: implement `_install_<os>` and `_uninstall_<os>`
+4. `tests/test_integrations.py`: add an install/uninstall round trip against a temporary directory
+   that asserts every created file and that uninstall removes it
+5. `README.md`: add the system to the supported platforms table
+
+Do not import a platform module at the top of `integrations/__init__.py`. Keep the import inside the
+dispatch branch so that an adapter for one OS never gets imported on another.
+
+### Detecting a desktop environment
+
+Linux is a useful reference because it covers several environments at once: it installs XDG entries,
+KDE ServiceMenus and scripts for Nautilus, Nemo and Caja from one module, and each part is guarded
+by the directory it writes into. Follow the same rule: probe for the environment with
+`shutil.which()` or an existing config directory, skip quietly when a probe fails, and never fail
+the whole installation because one optional file manager is missing.
+
+### Windows-specific parts
+
+Three modules are Windows-only and must stay out of other adapters:
+
+- `core/windows_console.py` binds an Explorer launch to the parent console; it returns immediately
+  on other systems
+- `integrations/windows_terminal.py` opens the collected selection in Windows Terminal and falls
+  back to a plain console when `wt.exe` is unavailable
+- `integrations/windows.py` writes registry verbs and uses `MultiSelectModel=Player` with an IPC
+  coordinator, because a static shell verb has no way to require two or more selected files
+
+On Windows, a windowed launcher collects the selection invisibly, then starts one visible worker in
+Windows Terminal. The worker receives `--context-worker`, which keeps it out of the coordinator path
+in `run_batch`, so the selection is converted exactly once.
+
+`pip` installs and frozen binaries reach the same behaviour from different entry points: a
+`pip` install uses `pythonw.exe` as the invisible coordinator and re-executes `python.exe` for the
+visible worker, while a frozen build uses the same executable for both roles.
+
 ## Building executable for testing on Windows
 
 To package and test a standalone Windows executable locally using PyInstaller:
