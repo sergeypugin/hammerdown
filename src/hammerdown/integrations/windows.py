@@ -21,7 +21,7 @@ def _install_windows(command: str) -> None:
     else:
         try:
             pkg_icon = Path(__file__).resolve().parent.parent / "assets" / "icon.ico"
-            merge_pkg_icon = Path(__file__).resolve().parent.parent / "assets" / "icon_merge_orange.ico"
+            merge_pkg_icon = Path(__file__).resolve().parent.parent / "assets" / "icon_merge_darkred.ico"
             if pkg_icon.is_file():
                 icon_path = str(pkg_icon)
             if merge_pkg_icon.is_file():
