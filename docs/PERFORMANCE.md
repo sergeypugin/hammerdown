@@ -24,7 +24,7 @@ The following measurements were gathered across standard sample inputs on a 64-b
 
 ## Estimation Model
 
-The estimation model lives in a single module, `src/hammerdown/estimates.py`, and both the CLI hints and the Python API helpers read from it.
+The estimation model lives in a single module, `src/hammerdown/core/estimates.py`, and both the CLI hints and the Python API helpers read from it.
 
 The reported estimate is a preflight hint computed from document metadata only. Actual wall-clock time drops on multi-core machines because multi-page PDFs are split into page chunks and converted in parallel.
 
@@ -38,19 +38,17 @@ For `.pdf`, `.epub`, `.mobi`, `.fb2`, and `.xps` files, `hammerdown` reads the d
 
 ```mermaid
 flowchart TD
-    A[Input PDF Document] --> B{Page Count?}
-    B -- N = 1 --> C[Process in Main Thread]
-    B -- N > 1 --> D[Calculate Chunk Size]
-    D --> E[Split into N_cpu Continuous Page Chunks]
-    E --> F1[Thread Worker 1: Pages 1 to K]
-    E --> F2[Thread Worker 2: Pages K+1 to 2K]
-    E --> Fdots[...]
-    E --> FN[Thread Worker N_cpu: Remaining Pages to Total]
-    F1 --> G[Combine Markdown Output]
-    F2 --> G
-    Fdots --> G
-    FN --> G
-    G --> H[Final Markdown Document]
+    A[PDF or e-book file] --> B{Page count}
+    B -->|1 page| C[Convert in the main thread]
+    B -->|more than 1 page| D["chunk = max(2, ceil(pages / cpus))"]
+    D --> E[Split into contiguous page chunks]
+    E --> F[Thread pool with up to cpus workers]
+    F --> G[Append chunk results in page order]
+    G --> H[Final Markdown]
+    F -->|a chunk fails| I[Retry its pages one by one]
+    I -->|a page fails| J[Insert an HTML comment warning for that page]
+    I --> G
+    J --> G
 ```
 
 Because `pymupdf4llm` runs in a single stream by default, `hammerdown` takes over PDF chunking logic to parallelize conversion across all available CPU cores:

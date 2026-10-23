@@ -106,9 +106,9 @@ On Windows, selecting multiple files in Explorer normally starts a separate proc
 
 - native multi-select grouping in Explorer is configured via `MultiSelectModel = "Player"` without an `AppliesTo` filter, because Explorer hides a filtered verb unless the filter matches every selected item
 - unsupported files in a mixed selection are skipped and listed in the batch summary instead of being filtered out by Explorer
-- the Explorer verb launches `pythonw.exe`, so delegate processes never allocate a console; the coordinator calls `AllocConsole()` only after it wins the IPC race and rebinds `stdin`, `stdout`, and `stderr`
+- the Explorer verb launches the frozen GUI-subsystem executable (`hammerdown-windows-x64.exe`), so delegate processes never allocate a console; `AllocConsole()` is called only as a fallback via `_ensure_console_window()` when Windows Terminal is unavailable
 - local IPC channels (`\\.\pipe\hammerdown_coordinator` on Windows) catch additional launches when command line limits (8191 characters) are exceeded or files arrive separately
-- incoming paths are assembled over a 0.35-second window by the coordinator before rendering them together in one console window
+- incoming paths are assembled over a 2.0-second window (`assembly_timeout=2.0`) by the coordinator before handing off to Windows Terminal (`wt.exe -w new new-tab --title Hammerdown`) or, if unavailable, allocating a fallback console
 
 ### Recursive Directory Traversal
 When a directory is passed to `hammerdown`, it recursively scans for all files matching `SUPPORTED_EXTENSIONS`, pruning directories that never hold user documents:

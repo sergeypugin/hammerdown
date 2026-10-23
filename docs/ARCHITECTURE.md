@@ -8,38 +8,35 @@ When you convert a document with `hammerdown`, processing follows three stages:
 
 ```mermaid
 flowchart TD
-    subgraph S1 [1. Input Handling]
-        A[Input Document] --> B[CLI / File Dialog / Python API]
-        B --> C[Path Normalization]
+    subgraph S1 [1. Input handling]
+        A[Files, folders or Google Drive links] --> B[Download links to a staging folder]
+        B --> C[Recursive expansion and deduplication]
+        C --> D[Include and exclude filters]
     end
 
-    subgraph S2 [2. Content Parsing & Extraction]
-        C --> D{Format Router}
-
-        D -->|PDF & e-books| P_PDF[PDF Engine<br>Text-only layout reconstruction]
-        D -->|DOCX, DOC, ODT| P_DOC[Word & ODF Engine<br>Math to LaTeX & assets]
-        D -->|XLSX, XLS| P_SHEET[Spreadsheet Engine<br>Matrix segmentation to tables]
-        D -->|PPTX, PPT| P_PPT[Presentation Engine<br>Slides & text frames]
-        D -->|MD, TXT, LOG, CSV| P_TXT[Text Engine<br>Encoding & base64 images]
-
-        P_DOC --> SVG[Chart SVGs]
-        P_DOC --> ODFIMG[OpenDocument Images]
-        P_TXT --> B64[Decoded Images]
-
-        P_PDF --> MD_RAW[Raw Markdown Content]
-        P_DOC --> MD_RAW
-        P_SHEET --> MD_RAW
-        P_PPT --> MD_RAW
-        P_TXT --> MD_RAW
+    subgraph S2 [2. Parsing and extraction]
+        D --> E{Format router}
+        E -->|pdf, epub, mobi, fb2, xps| F[PyMuPDF4LLM page chunks]
+        E -->|docx, doc, odt| G[Word and OpenDocument parser]
+        E -->|xlsx, xls, csv| H[Spreadsheet and CSV parser]
+        E -->|pptx, ppt| I[Presentation parser]
+        E -->|md, txt, log| J[Text parser]
+        E -->|html, htm, zip| K[HTML and archive parser]
+        G --> L[Extracted assets]
+        J --> L
+        K --> L
+        F --> M[Raw Markdown]
+        G --> M
+        H --> M
+        I --> M
+        J --> M
+        K --> M
     end
 
-    subgraph S3 [3. Post-Processing & Output]
-        SVG --> ASSETS["hm_images_report_docx/"]
-        ODFIMG --> ASSETS
-        B64 --> ASSETS
-
-        MD_RAW --> CLEAN[Whitespace Trimming & Newline Normalization]
-        CLEAN --> OUT_FILE["hm_report_docx.md"]
+    subgraph S3 [3. Output]
+        M --> N[Line endings normalized, trailing whitespace trimmed]
+        N --> O["hm_report_docx.md"]
+        L --> P["hm_images_report_docx/"]
     end
 ```
 
@@ -49,24 +46,25 @@ The conversion pipeline consists of three corresponding stages:
 
 ### 1. Input Handling
 
-- **Input Document**: source document path supplied by user or script
-- **CLI / File Dialog / Python API**: parses flags (`-i/--include`, `-e/--exclude`, `-w/--overwrite`, `-s/--skip-existing`, `-o/--output-dir`, `-m/--merge`, `--stdout`, `--confirm`, `-v/--version`), opens the graphical file picker when no files are passed, or accepts direct Python calls
-- **Path Normalization**: resolves Windows and WSL paths, strips quotes, and verifies file existence
+- **Input sources**: paths from the command line, a Python call, a file-manager launch, or public Google Docs and Drive links
+- **CLI and Python API**: parses flags (`-i/--include`, `-e/--exclude`, `-w/--overwrite`, `-s/--skip-existing`, `-o/--output-dir`, `-m/--merge`, `--stdout`, `--confirm`, `-v/--version`) and hands the run to `run_batch`; running with no paths prints a short description instead of opening a dialog
+- **Path normalization**: resolves Windows and WSL paths, strips quotes, and verifies that each path exists
 
 ### 2. Content Parsing & Extraction
 
-- **Format Router**: detects file extension and delegates work to the corresponding parser
-- **PDF Engine**: reconstructs text and layout with PyMuPDF4LLM (OCR disabled) and extracts no images
-- **Word & ODF Engine**: extracts text and tables, translates equations (OMML and MathML) into LaTeX via `symbols.json`, copies OpenDocument images out, and renders Word DrawingML charts as SVG
-- **Spreadsheet Engine**: segments cell matrices, trims empty borders, and builds clean Markdown tables
-- **Presentation Engine**: converts slides, headers, and text frames into structured sections
-- **Text Engine**: auto-detects encodings and decodes inline base64 images into standalone image files
+- **Format router**: `parsers/CONVERTERS` maps every extension to a converter and delegates the work
+- **PDF engine**: reconstructs text and layout with PyMuPDF4LLM (OCR disabled) and extracts no images
+- **Word and OpenDocument engine**: extracts text and tables, translates equations (OMML and MathML) into LaTeX via `parsers/math/symbols.json`, copies OpenDocument images out, and renders Word DrawingML charts as SVG
+- **Spreadsheet engine**: segments cell matrices, trims empty borders, and builds clean Markdown tables
+- **Presentation engine**: converts slides, headers, and text frames into structured sections
+- **Text engine**: auto-detects encodings and decodes inline base64 images into standalone image files
+- **HTML and archive engine**: walks the DOM of `.html` files and of Google Drive `.zip` exports, rewriting local and base64 images into the asset folder
 
 ### 3. Post-Processing & Output
 
-- **Asset Storage**: writes SVG charts and decoded pictures to disk for the formats that expose separate assets. Converting `report.docx` creates the folder `hm_images_report_docx/` next to the source
-- **Whitespace Trimming & Newline Normalization**: converts line endings to `\n`, strips trailing whitespace on every line, and guarantees a final newline
-- **File Output**: writes the final Markdown document next to the source file. Converting `report.docx` creates `hm_report_docx.md`; `-w`/`--overwrite` rewrites plain-text sources in place instead
+- **Asset storage**: writes SVG charts and decoded pictures to disk for the formats that expose separate assets. Converting `report.docx` creates the folder `hm_images_report_docx/` next to the source
+- **Whitespace trimming and newline normalization**: converts line endings to `\n`, strips trailing whitespace on every line, and guarantees a final newline
+- **File output**: writes the final Markdown document next to the source file. Converting `report.docx` creates `hm_report_docx.md`; `-w`/`--overwrite` rewrites plain-text sources in place instead
 
 ## Output Pipelines
 
@@ -116,17 +114,18 @@ In non-TTY runs (pipes, CI, redirected logs) no live view is drawn. Each file is
 
 ## Module Layout
 
-`src/hammerdown/` is split by responsibility, and no module exceeds roughly 400 lines:
+`src/hammerdown/` is split by responsibility:
 
-- entry points: `cli.py` (argparse parser, flag validation, dispatch to `batch`, `integrations`, and `updater`), `__main__.py`
-- orchestration: `batch.py` (`run_batch` and the public `convert_files`, sequential per-file loop), `batch_ui.py` and `batch_ui_render.py` (Rich live progress UI, with all rendering in `batch_ui_render`)
-- input resolution: `discovery.py` (`expand_paths` for recursive resolution, dedup, include/exclude filters, and ignored-directory pruning; `output_paths` for the `-o` layout, which raises on filename collisions)
-- conversion core: `core.py` (`to_markdown`, `convert_file`, `ConversionResult`, and re-exports of parsers and helpers)
-- alternate pipelines: `merge.py` (`merge_root_for_inputs`, `render_merge_header`, `merge_asset_paths`, `render_merged_document`, `render_merged_markdown`, `initialize_merge_file`, `append_merged_document`), `stdout_mode.py` (`approximate_tokens`, `confirm_stdout`, `run_stdout_conversion`)
-- estimates: `estimates.py` (single source of truth for ETA via `describe`, `get_conversion_estimate_seconds`, and `get_conversion_estimate`, plus `PDF_EXTENSIONS`, `LEGACY_EXTENSIONS`, and `FAST_TEXT_EXTENSIONS`)
-- support: `resources.py` (`embed_temporary_resources`, `token_count`), `path_utils.py` (`normalize_path`, `get_images_dir_name`, `enable_vt_mode`), `platform_utils.py` (`is_windows`, `is_macos`), `formatting.py` (`format_duration`, `format_progress_bar`), `ui_constants.py` (colors and layout constants), `utils.py` (thin facade re-exporting the above)
-- platform integration: `ipc.py` (`IPCCoordinator`, `try_delegate_to_coordinator`), `file_selection.py` (PowerShell picker on Windows, tkinter elsewhere), `integrations/` (`install`/`uninstall` plus shared helpers in `_common` and per-platform `windows`, `linux`, `macos`), `updater.py` (`update()`, downloads verified by SHA-256 with digest and size fallbacks plus an executable magic-byte check, and a staged binary swap with rollback)
-- parsers: `parsers/__init__` holds the `CONVERTERS` registry, alongside `text`, `pdf`, `tables`, `markdown_render` (shared `render_markdown_table` and `is_math_glue`), `math`, `charts`, `odt`, and an `office/` subpackage (`word`, `spreadsheet`, `presentation`, `legacy`)
+- entry points: `cli.py` (argparse parser, flag validation, dispatch to `batch`, `integrations`, and `core.updater`), `__main__.py` (the frozen-build entry point)
+- orchestration: `batch/__init__.py` (`run_batch`, the coordinator hand-off, and the public `convert_files`; files are converted one at a time)
+- conversion core: `core/__init__.py` (`to_markdown`, `convert_file`, `ConversionResult`, `SUPPORTED_EXTENSIONS`, and re-exports of parsers and helpers)
+- input resolution: `core/discovery.py` (`expand_paths` for recursive resolution, dedup, include/exclude filters, and ignored-directory pruning; `output_paths` for the `-o` layout, which raises on filename collisions), `core/google_drive.py` (link detection, download, and title extraction)
+- alternate pipelines: `core/merge.py` (`merge_root_for_inputs`, `render_merge_header`, `merge_asset_paths`, `render_merged_document`, `render_merged_markdown`, `initialize_merge_file`, `append_merged_document`), `core/stdout_mode.py` (`approximate_tokens`, `confirm_stdout`, `run_stdout_conversion`)
+- estimates: `core/estimates.py` (single source of truth for the ETA via `describe`, `get_conversion_estimate_seconds`, and `get_conversion_estimate`, plus `PDF_EXTENSIONS`, `LEGACY_EXTENSIONS`, and `FAST_TEXT_EXTENSIONS`)
+- support: `core/resources.py` (`embed_temporary_resources`, `token_count`), `core/path_utils.py` (`normalize_path`, `get_images_dir_name`, `enable_vt_mode`), `core/platform_utils.py` (`is_windows`, `is_macos`, `is_linux`), `core/formatting.py` (`format_duration`, `format_progress_bar`), `utils.py` (thin facade re-exporting the UI and formatting helpers for tests)
+- platform integration: `core/ipc.py` (`IPCCoordinator`, `try_delegate_to_coordinator`), `core/file_selection.py` (PowerShell picker on Windows, tkinter elsewhere), `core/windows_console.py` (binds a windowed Windows process to its parent console), `core/updater.py` (`update()`, downloads verified by SHA-256 with digest and size fallbacks plus an executable magic-byte check, and a staged binary swap with rollback), `integrations/` (`install`/`uninstall`, shared helpers in `_common`, per-platform `windows`, `windows_terminal`, `macos`, `linux`)
+- progress UI: `ui/batch_ui.py` (state and terminal control), `ui/batch_ui_render.py` (Rich panels and tables), `ui/ui_constants.py` (colors, widths, and layout constants)
+- parsers: `parsers/__init__.py` holds the merged `CONVERTERS` registry, alongside `text`, `pdf`, `tables`, `markdown_render` (shared `render_markdown_table` and `is_math_glue`), `math/` (OMML and MathML conversion with `symbols.json`), `charts`, `odt`, `html`, `archive`, and an `office/` subpackage (`word`, `spreadsheet`, `presentation`, `legacy`)
 
 ## Cascade Parser Pipeline for Legacy Formats
 
@@ -134,21 +133,17 @@ Documents with legacy extensions (`.doc`, `.xls`, `.ppt`) are processed through 
 
 ```mermaid
 flowchart TD
-    INPUT[Legacy Office File<br>.doc / .xls / .ppt] --> CHECK{Is Zip Container?}
-
-    CHECK -->|Yes| TIER1[Tier 1: Pure-Python Parser<br>python-docx / openpyxl / python-pptx]
-    TIER1 -->|Success ~170 ms| SUCCESS[Extracted Markdown & Assets]
-    TIER1 -->|Failed / Not OpenXML| WIN_CHECK{Is Windows?}
-
-    CHECK -->|No / True Binary| WIN_CHECK
-
-    WIN_CHECK -->|Yes| TIER2[Tier 2: Microsoft Office via PowerShell<br>Word / Excel / PowerPoint COM]
-    TIER2 -->|Converted to OpenXML| TIER1
-    TIER2 -->|Failed / Not Installed| TIER3
-
-    WIN_CHECK -->|No| TIER3[Tier 3: Headless LibreOffice<br>soffice -env:UserInstallation]
-    TIER3 -->|Converted to OpenXML| TIER1
-    TIER3 -->|Failed / Not Installed| FAIL[Error: Office Converter Required]
+    A["Legacy file: .doc, .xls or .ppt"] --> B{Is it a zip container?}
+    B -->|yes| C[Parse directly with the matching modern parser]
+    C -->|succeeds| Z[Markdown and assets]
+    C -->|fails| D{Windows?}
+    B -->|no| D
+    D -->|yes| E[Convert with desktop Microsoft Office via PowerShell COM]
+    E -->|produces OpenXML| C
+    E -->|fails or not installed| F[Convert with headless LibreOffice]
+    D -->|no| F
+    F -->|produces OpenXML| C
+    F -->|fails or not installed| G["Error: an office converter is required"]
 ```
 
 Launching external office suites (such as LibreOffice or Microsoft Word) incurs high startup latency and system overhead. When a legacy file is really an XML archive underneath, parsing it directly in pure Python takes roughly 170 ms, while routing the same file through LibreOffice takes roughly 5,320 ms. That is a speedup of over 30x with no external software installed.

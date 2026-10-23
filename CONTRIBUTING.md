@@ -67,7 +67,7 @@ python -m pytest
 3. Run golden comparison tests specifically:
 
 ```sh
-python tests/test_golden.py
+python tests/core/test_golden.py
 ```
 
 4. Test direct document conversion manually:
@@ -108,8 +108,32 @@ src/hammerdown/
 ├── core/
 │   ├── platform_utils.py        # is_windows / is_macos / is_linux helpers
 │   ├── ipc.py                   # named-pipe coordinator for multi-file selections
-│   └── windows_console.py       # Windows-only console attach; no-op elsewhere
+│   ├── windows_console.py       # Windows-only console attach; no-op elsewhere
+│   ├── discovery.py             # expand_paths, output_paths, ignore rules
+│   ├── google_drive.py          # Google Docs/Drive download and title extraction
+│   ├── merge.py                 # merged output rendering and asset handling
+│   ├── stdout_mode.py           # --stdout pipeline (base64 inlining, token estimate)
+│   ├── estimates.py             # ETA model (describe, get_conversion_estimate_seconds)
+│   ├── formatting.py            # format_duration, format_progress_bar
+│   ├── path_utils.py            # normalize_path, get_images_dir_name, enable_vt_mode
+│   ├── resources.py             # embed_temporary_resources, token_count
+│   └── updater.py               # self-update with SHA-256 verification
+├── batch/
+│   └── __init__.py              # run_batch, coordinator wiring, convert_files
+├── ui/
+│   ├── batch_ui.py              # state machine, terminal control, live view
+│   ├── batch_ui_render.py       # Rich panels, tables, progress bar rendering
+│   └── ui_constants.py          # colors, widths, layout constants
 ├── parsers/
+│   ├── __init__.py              # CONVERTERS registry
+│   ├── text.py                  # .txt, .md, .log with encoding detection
+│   ├── pdf.py                   # PDF/EPUB/MOBI/FB2/XPS via PyMuPDF4LLM
+│   ├── tables.py                # spreadsheet/table segmentation and rendering
+│   ├── charts.py                # Word DrawingML to SVG
+│   ├── odt.py                   # OpenDocument Text
+│   ├── html.py                  # HTML to Markdown
+│   ├── archive.py               # ZIP-based formats (.docx, .xlsx, .pptx, .epub, .odt)
+│   ├── markdown_render.py       # shared render_markdown_table, is_math_glue
 │   └── math/
 │       ├── __init__.py          # OMML and MathML to LaTeX conversion
 │       ├── symbols.json         # character to LaTeX command catalog
@@ -121,8 +145,8 @@ src/hammerdown/
 │   ├── windows_terminal.py      # hands a collected selection to Windows Terminal
 │   ├── macos.py                 # Finder Quick Action and droplet
 │   └── linux.py                 # XDG desktop entries, KDE menus, file-manager scripts
-├── batch/__init__.py            # run_batch, coordinator wiring, hand-off to the adapter
-└── cli.py                       # argument parsing and early console bootstrap
+├── cli.py                       # argument parsing and early console bootstrap
+└── __main__.py                  # frozen-build entry point (imports cli absolutely)
 ```
 
 ### What an adapter has to provide

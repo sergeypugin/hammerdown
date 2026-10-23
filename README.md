@@ -376,6 +376,9 @@ project/
 
 `--stdout` produces the same merged document as `-m`, but writes it to stdout instead of a file, and does not create any intermediate `hm_*.md` files:
 
+- with **a single file**, `--stdout` emits just that file's raw Markdown (no merge header, no separator lines) — ideal for clean piping
+- with **multiple files**, it emits the merged document with directory tree and per-file separators
+
 ```sh
 hammerdown --stdout project/ > summary.md
 ```
