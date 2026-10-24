@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> **Note on historical releases:** Some early releases (v0.1.0–v1.2.1, v3.0.4, v3.1.0-pre1, v3.1.1) have only auto-generated "Full Changelog" notes on GitHub. Releases v3.1.2 and v3.1.3 had a packaging bug (missing `symbols.json` in Windows executable) — **v3.1.4 is the first fully working release in the 3.1.x series**.
+
 ---
 
 ## [3.1.4] - 2026-10-24
@@ -21,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.1.3] - 2026-10-24
 
+> ⚠️ **Broken release** — first attempt to include `symbols.json`, but incomplete. Windows executable fails with `FileNotFoundError`. Use v3.1.4+.
+
 ### Fixed
 - Remove temporary test files left in repository
 
@@ -31,12 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.1.2] - 2026-10-24
 
+> ⚠️ **Broken release** — missing `symbols.json` in Windows executable. Use v3.1.4+.
+
 ### Fixed
 - Test: fix version assertion and import path in tests after reorganization
 
 ---
 
 ## [3.1.1] - 2026-10-24
+
+> ℹ️ Release notes were auto-generated only (no manual entry).
 
 ### Changed
 - CI: fix `git tag` pattern for v* matching (use `-l` flag)
@@ -74,7 +82,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0-pre1] - 2026-10-23
+
+> ℹ️ Prerelease. Release notes were auto-generated only.
+
+### Added
+- Google Docs/Drive file link support (HTML export via ZIP)
+- Google Docs/Drive export download and ignore cache
+
+---
+
 ## [3.0.4] - 2026-10-11
+
+> ℹ️ Release notes were auto-generated only.
 
 ### Fixed
 - **Windows**: show context verb for mixed selections and allocate one console
@@ -223,11 +243,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.1] - 2026-10-09
 
+> ℹ️ Release notes were auto-generated only.
+
 *No detailed notes available (auto-generated changelog only)*
 
 ---
 
 ## [1.2.0] - 2026-10-09
+
+> ℹ️ Release notes were auto-generated only.
 
 *No detailed notes available (auto-generated changelog only)*
 
@@ -235,16 +259,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.0] - 2026-10-09
 
+> ℹ️ Release notes were auto-generated only.
+
 *No detailed notes available (auto-generated changelog only)*
 
 ---
 
 ## [1.0.0] - 2026-10-08
 
+> ℹ️ Release notes were auto-generated only.
+
 *Initial release (renamed from md-maker)*
 
 ---
 
 ## [0.1.0] - 2026-10-08
+
+> ℹ️ Release notes were auto-generated only.
 
 *Initial md-maker release*
