@@ -230,13 +230,30 @@ jobs:
       - name: Generate checksums
         run: sha256sum ./artifacts/* > ./artifacts/SHA256SUMS.txt
 
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        run: |
+          # Extract section for current tag (e.g., v3.1.4 -> 3.1.4)
+          VERSION=${GITHUB_REF_NAME#v}
+          # Use awk to print from "## [VERSION] - DATE" to next "## [" or EOF
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\] -" { in_section=1 }
+            in_section && $0 ~ "^## \\[" && !($0 ~ "^## \\[" ver "\\] -") { exit }
+            in_section { print }
+          ' CHANGELOG.md > release_body.md
+          # Remove trailing whitespace
+          sed -i 's/[[:space:]]*$//' release_body.md
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat release_body.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       # Stable releases are tagged vX.Y.Z. Any tag with a suffix (for example
       # vX.Y.Z-pre or vX.Y.Z-pre1) is a prerelease: it is never marked latest
       # and is not published to PyPI.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release_body.md
           files: ./artifacts/*
           prerelease: ${{ needs.classify.outputs.stable != 'true' }}
           make_latest: ${{ needs.classify.outputs.stable == 'true' && 'true' || 'false' }}
