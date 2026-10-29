@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.2] - 2026-10-29
+
+### Fixed
+- **Windows Context Menu**: restored double quotes `"%1"` in registry commands (resolves issue where files with spaces were split into multiple arguments)
+- **Packaging**: include all assets in `src/hammerdown/assets/` in the PyPI wheel and source distribution (fixes missing red/orange icons in context menu)
+- **Tests**: updated integration tests to enforce correct quoting for Windows shell verbs
+
+---
+
 ## [3.2.1] - 2026-10-29
 
 ### Fixed

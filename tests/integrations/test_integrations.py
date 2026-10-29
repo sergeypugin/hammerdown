@@ -63,7 +63,7 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     merge_key = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge"
     assert merge_key in recorded_keys
     assert ("MultiSelectModel", "Player") in recorded_values
-    assert ("", 'hammerdown --coordinator --right-click --merge-auto %1') in recorded_values
+    assert ("", 'hammerdown --coordinator --right-click --merge-auto "%1"') in recorded_values
     assert all(name != "AppliesTo" for name, _ in recorded_values)
     assert "AppliesTo" in deleted_values
 

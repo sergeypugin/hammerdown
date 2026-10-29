@@ -30,7 +30,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-hammerdown = ["assets/icon.ico", "assets/icon.png", "parsers/math/symbols.json"]
+hammerdown = ["assets/*", "parsers/math/symbols.json"]
 
 [tool.setuptools.dynamic]
 version = {attr = "hammerdown.__version__"}
