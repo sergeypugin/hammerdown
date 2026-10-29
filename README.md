@@ -182,13 +182,13 @@ hammerdown --upgrade
 ```
 
 > [!note]
-> **Upgrading from versions prior to 3.2.0:** due to a packaging configuration issue in versions 3.1.0 through 3.1.4 on PyPI, use `pip install --upgrade hammerdown` to update to 3.2.0+. Starting with version 3.2.0, `hammerdown --upgrade` (or `hammerdown --update`) works automatically.
+> **Upgrading from versions prior to 3.2.1:** due to a packaging configuration issue in versions 3.1.0 through 3.1.4 on PyPI, use `pip install --upgrade hammerdown` to update to 3.2.1+. Starting with version 3.2.1, `hammerdown --upgrade` (or `hammerdown --update`) works automatically.
 
 ### Versioning and release tags
 
-`hammerdown` follows semantic versioning. A tag `vX.Y.Z` (for example `v3.1.0`) is a **stable** release: it is marked as the latest and published to PyPI. A tag with a prerelease suffix (for example `v3.1.0-pre1`) is a **preview**: it is published as a GitHub release but is never marked latest and is not pushed to PyPI.
+`hammerdown` follows semantic versioning. A tag `vX.Y.Z` (for example `v3.2.1`) is a **stable** release: it is marked as the latest and published to PyPI. A tag with a prerelease suffix (for example `v3.2.1-pre1`) is a **preview**: it is published as a GitHub release but is never marked latest and is not pushed to PyPI.
 
-Releases are published directly by pushing version tags (`git tag v3.2.0 && git push origin v3.2.0`). The CI release workflow builds standalone binaries for Windows, Linux, and macOS, extracts release notes from `CHANGELOG.md`, and publishes the package to PyPI.
+Releases are published directly by pushing version tags (`git tag v3.2.1 && git push origin v3.2.1`). The CI release workflow builds standalone binaries for Windows, Linux, and macOS, extracts release notes from `CHANGELOG.md`, and publishes the package to PyPI.
 
 ### Logging and Progress Tracking
 

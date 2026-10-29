@@ -36,7 +36,7 @@ from .core import (
 )
 from .batch import convert_files
 
-__version__ = "3.2.0"
+__version__ = "3.2.1"
 
 __all__ = [
     "APP_NAME",

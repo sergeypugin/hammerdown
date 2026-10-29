@@ -9,14 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note on historical releases:** Some early releases (v0.1.0–v1.2.1, v3.0.4, v3.1.0-pre1, v3.1.1) have only auto-generated "Full Changelog" notes on GitHub.
 >
 > [!CAUTION]
-> **Broken PyPI releases:** v3.1.0 through v3.1.4 published on PyPI had a packaging configuration issue in `pyproject.toml` missing `core`, `batch`, and `ui` subpackages (causing `ModuleNotFoundError: No module named 'hammerdown.core'`). **v3.2.0 is the first fully working PyPI release in the 3.x series** — please upgrade via `pip install --upgrade hammerdown`.
+> **Broken PyPI releases:** v3.1.0 through v3.1.4 published on PyPI had a packaging configuration issue in `pyproject.toml` missing `core`, `batch`, and `ui` subpackages (causing `ModuleNotFoundError: No module named 'hammerdown.core'`). **v3.2.1 is the first fully working PyPI release in the 3.x series** — please upgrade via `pip install --upgrade hammerdown`.
 
 ---
 
-## [3.2.0] - 2026-10-29
+## [3.2.1] - 2026-10-29
 
 ### Fixed
 - **PyPI wheel package**: use automatic package discovery `[tool.setuptools.packages.find]` in `pyproject.toml` so subpackages (`core`, `batch`, `ui`) are properly included in PyPI wheel builds (resolves `ModuleNotFoundError: No module named 'hammerdown.core'`)
+- **CI release pipeline**: add repository checkout step to release notes generator and set `contents: read` permissions on PyPI publishing job
 
 ### Added
 - **CLI `--upgrade` flag**: add `--upgrade` as a supported CLI alias for `--update`
