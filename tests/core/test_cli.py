@@ -537,7 +537,9 @@ def test_merge_multi_file_selection_with_failure(tmp_path: Path):
     # Should fail because one file failed
     assert result == 1
     
-    # Merge should still have the successful file
+    # Merge should still have the successful file and the failure placeholder
     assert merged_file2.is_file()
     content2 = merged_file2.read_text(encoding="utf-8")
     assert "FILE: doc1.txt" in content2
+    assert "FILE: fake.pdf" in content2
+    assert "[!] File conversion failed:" in content2

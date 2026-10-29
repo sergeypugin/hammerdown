@@ -98,27 +98,34 @@ def render_merged_document(
     content: str,
     merge_root: Path,
     asset_prefix: Path | None = None,
+    error: str | None = None,
 ) -> str:
     source_path = Path(source).resolve()
     relative = relative_path_for_source(source_path, merge_root)
-    image_prefix = asset_prefix if asset_prefix is not None else relative.parent
-    image_dir = get_images_dir_name(source_path)
-    if image_prefix != Path("."):
-        prefix = image_prefix.as_posix().rstrip("/")
-        content = content.replace(f"{image_dir}/", f"{prefix}/{image_dir}/")
-        content = content.replace(f"{image_dir}\\", f"{prefix}/{image_dir}/")
+    if error:
+        cleaned = f"[!] File conversion failed: {error}"
+    else:
+        image_prefix = asset_prefix if asset_prefix is not None else relative.parent
+        image_dir = get_images_dir_name(source_path)
+        if image_prefix != Path("."):
+            prefix = image_prefix.as_posix().rstrip("/")
+            content = content.replace(f"{image_dir}/", f"{prefix}/{image_dir}/")
+            content = content.replace(f"{image_dir}\\", f"{prefix}/{image_dir}/")
+        cleaned = content.strip()
 
-    cleaned = content.strip()
     section = f"{SECTION_SEPARATOR}\nFILE: {relative.as_posix()}\n{SECTION_SEPARATOR}"
     if cleaned:
         section = f"{section}\n{cleaned}"
     return section
 
 
-def render_merged_markdown(converted: Sequence[tuple[str, str]], merge_root: Path) -> str:
-    sources = [source for source, _ in converted]
+def render_merged_markdown(converted: Sequence[tuple[str, str, str | None]], merge_root: Path) -> str:
+    sources = [source for source, _, _ in converted]
     sections = [render_merge_header(sources, merge_root)]
-    sections.extend(render_merged_document(source, content, merge_root) for source, content in converted)
+    sections.extend(
+        render_merged_document(source, content, merge_root, error=err)
+        for source, content, err in converted
+    )
     return "\n\n".join(sections) + "\n"
 
 
@@ -133,6 +140,7 @@ def append_merged_document(
     content: str,
     merge_root: Path,
     asset_prefix: Path,
+    error: str | None = None,
 ) -> None:
     with merge_target.open("a", encoding="utf-8", newline="\n") as output:
-        output.write("\n" + render_merged_document(source, content, merge_root, asset_prefix) + "\n")
+        output.write("\n" + render_merged_document(source, content, merge_root, asset_prefix, error=error) + "\n")

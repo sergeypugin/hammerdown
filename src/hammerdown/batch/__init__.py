@@ -351,12 +351,29 @@ def run_batch(args: argparse.Namespace) -> int:
                 logger.disabled = logger_was_disabled
             succeeded = bool(res)
             if not succeeded:
-                reason = getattr(res, "error", None)
+                reason = getattr(res, "error", None) or "conversion failed"
                 if len(batch_ui.errors) > error_count_before:
                     name, previous_reason = batch_ui.errors[-1]
                     batch_ui.errors[-1] = (name, reason or previous_reason)
                 else:
-                    batch_ui.errors.append((f_path.name, reason or "conversion failed"))
+                    batch_ui.errors.append((f_path.name, reason))
+
+                if merge_target is not None and merge_root is not None:
+                    try:
+                        if not merge_initialized:
+                            initialize_merge_file(merge_target, merge_sources, merge_root)
+                            merge_initialized = True
+                        _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target)
+                        append_merged_document(
+                            merge_target,
+                            f_path,
+                            "",
+                            merge_root,
+                            asset_prefix,
+                            error=reason,
+                        )
+                    except OSError:
+                        pass
             if succeeded and merge_target is not None and merge_root is not None:
                 if res.markdown is None:
                     succeeded = False

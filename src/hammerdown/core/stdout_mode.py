@@ -83,7 +83,7 @@ def run_stdout_conversion(files: Sequence[str], raw_inputs: Sequence[str]) -> in
     """Stream a merged Markdown document to stdout without writing files."""
     if not files:
         return 0
-    converted: list[tuple[str, str]] = []
+    converted: list[tuple[str, str, str | None]] = []
     failed = False
     for file_path in files:
         logger_was_disabled = logger.disabled
@@ -98,15 +98,20 @@ def run_stdout_conversion(files: Sequence[str], raw_inputs: Sequence[str]) -> in
         finally:
             logger.disabled = logger_was_disabled
         if result.success and result.markdown is not None:
-            converted.append((file_path, result.markdown))
+            converted.append((file_path, result.markdown, None))
         else:
             failed = True
-            print(f"[!] {Path(file_path).name}: {result.error or 'conversion failed'}", file=sys.stderr)
+            err_msg = result.error or "conversion failed"
+            converted.append((file_path, "", err_msg))
+            print(f"[!] {Path(file_path).name}: {err_msg}", file=sys.stderr)
     if converted:
         # If there's only a single file, output just its raw markdown for clean piping
         if len(converted) == 1:
-            sys.stdout.write(converted[0][1])
+            if converted[0][2]:
+                sys.stdout.write(f"[!] File conversion failed: {converted[0][2]}\n")
+            else:
+                sys.stdout.write(converted[0][1])
         else:
-            root = merge_root_for_inputs(raw_inputs, [Path(path) for path, _ in converted])
+            root = merge_root_for_inputs(raw_inputs, [Path(path) for path, _, _ in converted])
             sys.stdout.write(render_merged_markdown(converted, root))
     return 1 if failed else 0
