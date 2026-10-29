@@ -175,37 +175,20 @@ hammerdown -m merged.md report.pdf notes.docx
 Unknown desktop environments cannot be wired up automatically: every file manager exposes its own extension mechanism, and writing entries blindly could break existing associations with no reliable way to detect or undo it. If you need a context-menu action on a system that is not listed above, add a small adapter as described in [CONTRIBUTING.md](CONTRIBUTING.md#adding-support-for-another-platform) and open a pull request.
 
 
-To update `hammerdown` to the latest version:
+To update `hammerdown` to the latest version, use the built-in updater (which also refreshes launcher scripts and context menu entries):
 
 ```sh
-hammerdown --update
+hammerdown --upgrade
 ```
 
-> [!warning]
-> **Legacy version ambiguity (versions below 2.0.0):** due to a release synchronization conflict on version 1.5.2, run the clean recovery sequence below to avoid environment inconsistencies:
->
-> ```sh
-> pip uninstall hammerdown -y
-> pip install --no-cache-dir hammerdown
-> hammerdown --install
-> ```
->
-> Starting from version 1.5.2, `hammerdown --update` automatically refreshes all launcher scripts and file manager integrations without manual reinstallation.
+> [!note]
+> **Upgrading from versions prior to 3.2.0:** due to a packaging configuration issue in versions 3.1.0 through 3.1.4 on PyPI, use `pip install --upgrade hammerdown` to update to 3.2.0+. Starting with version 3.2.0, `hammerdown --upgrade` (or `hammerdown --update`) works automatically.
 
 ### Versioning and release tags
 
 `hammerdown` follows semantic versioning. A tag `vX.Y.Z` (for example `v3.1.0`) is a **stable** release: it is marked as the latest and published to PyPI. A tag with a prerelease suffix (for example `v3.1.0-pre1`) is a **preview**: it is published as a GitHub release but is never marked latest and is not pushed to PyPI.
 
-On every push to `main`, the CI workflow inspects the commit messages since the previous `v*` tag and bumps the version automatically, following Conventional Commits:
-
-- `feat!:` or `fix!:` (breaking change) bumps the **major** version
-- `feat:` bumps the **minor** version
-- `fix:` or `perf:` bumps the **patch** version
-- `docs`/`style`/`refactor`/`test`/`build`/`ci`/`chore` do not trigger a bump
-
-The bump applies **once** to the whole range between two tags (the strongest single change wins), not per commit. The bot commit it creates is excluded from the next run, which keeps the workflow from looping. Preview tags (`-pre`, `-pre1`) are created manually when you want a testable build before the next stable release.
-
-Release tags are protected by tag rulesets (`Protect release tags`) on GitHub; the release bot needs `contents: write` permission and must be allowed to create tags for the automatic bump to work.
+Releases are published directly by pushing version tags (`git tag v3.2.0 && git push origin v3.2.0`). The CI release workflow builds standalone binaries for Windows, Linux, and macOS, extracts release notes from `CHANGELOG.md`, and publishes the package to PyPI.
 
 ### Logging and Progress Tracking
 

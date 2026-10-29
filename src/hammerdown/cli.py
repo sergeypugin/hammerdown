@@ -89,7 +89,13 @@ def _main(argv: Sequence[str] | None = None) -> int:
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--install", action="store_true", help="Install the file-manager integration")
     action.add_argument("--uninstall", action="store_true", help="Remove the file-manager integration")
-    parser.add_argument("--update", action="store_true", help="Update hammerdown to the latest version")
+    parser.add_argument(
+        "--update",
+        "--upgrade",
+        dest="update",
+        action="store_true",
+        help="Update hammerdown to the latest version",
+    )
     parser.add_argument(
         "-i",
         "--include",

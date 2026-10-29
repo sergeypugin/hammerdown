@@ -9,11 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Note on historical releases:** Some early releases (v0.1.0–v1.2.1, v3.0.4, v3.1.0-pre1, v3.1.1) have only auto-generated "Full Changelog" notes on GitHub.
 >
 > [!CAUTION]
-> **Broken releases:** v3.1.2 and v3.1.3 had a packaging bug (missing `symbols.json` in Windows executable). These releases were **deleted from GitHub Releases** but remain on PyPI. **v3.1.4 is the first fully working release in the 3.1.x series** — please use v3.1.4 or later.
+> **Broken PyPI releases:** v3.1.0 through v3.1.4 published on PyPI had a packaging configuration issue in `pyproject.toml` missing `core`, `batch`, and `ui` subpackages (causing `ModuleNotFoundError: No module named 'hammerdown.core'`). **v3.2.0 is the first fully working PyPI release in the 3.x series** — please upgrade via `pip install --upgrade hammerdown`.
+
+---
+
+## [3.2.0] - 2026-10-29
+
+### Fixed
+- **PyPI wheel package**: use automatic package discovery `[tool.setuptools.packages.find]` in `pyproject.toml` so subpackages (`core`, `batch`, `ui`) are properly included in PyPI wheel builds (resolves `ModuleNotFoundError: No module named 'hammerdown.core'`)
+
+### Added
+- **CLI `--upgrade` flag**: add `--upgrade` as a supported CLI alias for `--update`
+- **Merge & stdout error blocks**: when a file fails conversion during `--merge` or `--stdout`, an explicit failure block `[!] File conversion failed: <reason>` is rendered directly inside the merged output under the file's section header instead of omitting the section completely
 
 ---
 
 ## [3.1.4] - 2026-10-24
+
+> [!CAUTION]
+> **Broken PyPI package (remains on PyPI)** — `pyproject.toml` omitted `core/`, `batch/`, and `ui/` subpackages from wheel builds. Standalone Windows executable worked, but `pip install hammerdown` failed with `ModuleNotFoundError: No module named 'hammerdown.core'`. Use v3.1.5+.
 
 ### Fixed
 - **Windows executable**: explicitly bundle `symbols.json` in PyInstaller build (was missing in v3.1.2/v3.1.3, causing `FileNotFoundError: [Errno 2] No such file or directory: 'hammerdown/parsers/math/symbols.json'` on math parser import)
@@ -50,6 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.1.1] - 2026-10-24
 
+> [!CAUTION]
+> **Broken PyPI package (remains on PyPI)** — `pyproject.toml` omitted `core/`, `batch/`, and `ui/` subpackages from wheel builds. Fails with `ModuleNotFoundError: No module named 'hammerdown.core'`. Use v3.2.0+.
+
 > [!NOTE]
 > Release notes were auto-generated only (no manual entry).
 
@@ -61,6 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [3.1.0] - 2026-10-24
+
+> [!CAUTION]
+> **Broken PyPI package (remains on PyPI)** — `pyproject.toml` omitted `core/`, `batch/`, and `ui/` subpackages from wheel builds after source reorganization. Fails with `ModuleNotFoundError: No module named 'hammerdown.core'`. Use v3.2.0+.
 
 ### Added
 - **Google Drive/Google Docs support**: fetch public documents, sheets, slides via URL; download and convert to Markdown with images
