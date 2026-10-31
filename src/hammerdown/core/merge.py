@@ -16,11 +16,27 @@ SECTION_SEPARATOR = "=" * 48
 # Convertible binary formats that hammerdown supports
 CONVERTIBLE_BINARY_FORMATS = {".pdf", ".docx", ".xlsx", ".doc", ".xls", ".pptx", ".ppt", ".odt"}
 
+# All binary formats (convertible and non-convertible)
+BINARY_FORMATS = {
+    ".pdf", ".docx", ".xlsx", ".doc", ".xls", ".pptx", ".ppt", ".odt", ".epub", ".mobi",
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2",
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".ico", ".tiff",
+    ".mp3", ".mp4", ".wav", ".flac", ".m4a", ".aac", ".wma", ".avi", ".mov", ".mkv",
+    ".exe", ".dll", ".so", ".dylib", ".app", ".apk",
+    ".bin", ".dat", ".db", ".sqlite",
+}
+
 
 def _is_convertible_binary(file_path: str | Path) -> bool:
     """Check if a file is a binary format that hammerdown can convert."""
     extension = Path(file_path).suffix.lower()
     return extension in CONVERTIBLE_BINARY_FORMATS
+
+
+def _is_binary_file(file_path: str | Path) -> bool:
+    """Check if a file is a binary format (not plain text)."""
+    extension = Path(file_path).suffix.lower()
+    return extension in BINARY_FORMATS
 
 
 def _is_supported_format(file_path: str | Path) -> bool:
@@ -133,7 +149,7 @@ def render_merged_document(
     section = f"{SECTION_SEPARATOR}\nFILE: {relative.as_posix()}\n{SECTION_SEPARATOR}"
     if cleaned:
         section = f"{section}\n{cleaned}"
-    elif is_binary and not error:
+    if is_binary:
         conversion_status = "YES" if _is_convertible_binary(source_path) else "NO"
         section = f"{section}\n[Binary file] Can be converted with hammerdown: {conversion_status}"
     return section

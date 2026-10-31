@@ -170,6 +170,7 @@ def discover_all_files_for_tree(
     - "text_convertible": supported formats for conversion
     - "source_code": all text files (source code)
     - "binary_document": binary documents (pdf, docx, etc.)
+    - "binary_unsupported": binary files not supported by hammerdown (when include_binary=True)
     - "skip": binary non-convertible files (only when include_binary=False)
     """
     seen_paths: set[Path] = set()
@@ -226,6 +227,9 @@ def discover_all_files_for_tree(
                                 yield (str(file_path), "binary_document")
                             else:
                                 yield (str(file_path), "skip")
+                        elif include_binary:
+                            # Unsupported binary files when include_binary is True
+                            yield (str(file_path), "binary_unsupported")
                     except OSError:
                         continue
         elif candidate.is_file():
@@ -242,3 +246,6 @@ def discover_all_files_for_tree(
                         yield (str(candidate), "binary_document")
                     else:
                         yield (str(candidate), "skip")
+                elif include_binary:
+                    # Unsupported binary files when include_binary is True
+                    yield (str(candidate), "binary_unsupported")

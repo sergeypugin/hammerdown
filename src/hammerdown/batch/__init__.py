@@ -25,6 +25,7 @@ from ..core.merge import (
     merge_root_for_inputs,
     render_merged_markdown,
     _is_convertible_binary,
+    _is_binary_file,
 )
 from ..ui.batch_ui import BatchUI
 from ..core.stdout_mode import confirm_stdout, run_stdout_conversion
@@ -383,7 +384,7 @@ def run_batch(args: argparse.Namespace) -> int:
                             initialize_merge_file(merge_target, merge_sources, merge_root)
                             merge_initialized = True
                         _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target)
-                        is_binary = f_path.suffix.lower() in {'.pdf', '.docx', '.xlsx', '.doc', '.xls', '.pptx', '.ppt', '.odt', '.epub', '.mobi'}
+                        is_binary = _is_binary_file(f_path)
                         append_merged_document(
                             merge_target,
                             f_path,
@@ -408,7 +409,7 @@ def run_batch(args: argparse.Namespace) -> int:
                             initialize_merge_file(merge_target, merge_sources, merge_root)
                             merge_initialized = True
                         _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target)
-                        is_binary = f_path.suffix.lower() in {'.pdf', '.docx', '.xlsx', '.doc', '.xls', '.pptx', '.ppt', '.odt', '.epub', '.mobi'}
+                        is_binary = _is_binary_file(f_path)
                         append_merged_document(
                             merge_target,
                             f_path,
