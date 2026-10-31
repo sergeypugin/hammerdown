@@ -68,6 +68,7 @@ class BatchUI:
         self.current_idx: int = -1
         self._progress_started_at = 0.0
         self.errors: list[tuple[str, str]] = []
+        self.skipped_files: list[tuple[str, str]] = []
         self.total_tokens = 0
         self.skipped_count = 0
         self.overwritten_count = 0
@@ -136,6 +137,35 @@ class BatchUI:
                 title=_panel_title(f"Error list ({len(self.errors)})", "red"),
                 title_align="left",
                 border_style="red",
+                box=box.ROUNDED,
+                width=BATCH_UI_WIDTH,
+            )
+        )
+
+    def print_skipped_list(self) -> None:
+        if not self.skipped_files:
+            return
+        from rich import box
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        self._console = self._console or Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+        skipped_table = Table.grid(expand=True, padding=(0, 0))
+        _add_status_file_columns(skipped_table)
+        for file_name, reason in self.skipped_files:
+            skipped_table.add_row(
+                Text("[~]", style="dim"),
+                Text(_truncate_filename(file_name, QUEUE_FILE_WIDTH), style="dim", no_wrap=True),
+                Text(reason, style="dim"),
+            )
+        self._console.print(
+            Panel(
+                skipped_table,
+                title=_panel_title(f"Skipped files ({len(self.skipped_files)})", "dim"),
+                title_align="left",
+                border_style="dim",
                 box=box.ROUNDED,
                 width=BATCH_UI_WIDTH,
             )
@@ -236,6 +266,16 @@ class BatchUI:
         self._file_images[index] = 0
         self._file_tokens[index] = 0
         self.errors.append((self.files[index].name, reason))
+        if self.can_redraw:
+            self.render()
+
+    def skip_file(self, index: int, reason: str) -> None:
+        self.statuses[index] = "[~]"
+        self.details[index] = "-"
+        self._file_durations[index] = "-"
+        self._file_images[index] = 0
+        self._file_tokens[index] = 0
+        self.skipped_files.append((self.files[index].name, reason))
         if self.can_redraw:
             self.render()
 

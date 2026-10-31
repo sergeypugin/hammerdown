@@ -76,6 +76,8 @@ def marker_for(ui: BatchUI, index: int, state: str) -> tuple[str, str]:
         return "[✓]", "green"
     if state == "[!]":
         return "[!]", "red"
+    if state == "[~]":
+        return "[~]", "dim"
     if state == "[>]":
         total = ui._progress_total[index]
         current = ui._progress_current[index]
@@ -103,7 +105,7 @@ def render_process_panel(ui: BatchUI, final: bool = False):
     from rich.text import Text
 
     total = len(ui.files)
-    completed = sum(status in {"[x]", "[!]"} for status in ui.statuses)
+    completed = sum(status in {"[x]", "[!]", "[~]"} for status in ui.statuses)
     percent = completed / total if total else 0
     title = panel_title(
         f"Processing {total} files {percent:.0%} ({completed}/{total})",
@@ -144,7 +146,7 @@ def render_process_panel(ui: BatchUI, final: bool = False):
                 duration = elapsed_str
             images = ""
             tokens = ""
-        elif state == "[!]":
+        elif state == "[!]" or state == "[~]":
             duration = "-"
             images = "-"
             tokens = "-"
@@ -187,7 +189,7 @@ def render_summary_panel(ui: BatchUI):
     timing.add_column(width=22, no_wrap=True, overflow="ellipsis")
     timing.add_column(width=22, no_wrap=True, overflow="ellipsis")
     timing.add_column(width=16, no_wrap=True, overflow="ellipsis")
-    completed = sum(status in {"[x]", "[!]"} for status in ui.statuses)
+    completed = sum(status in {"[x]", "[!]", "[~]"} for status in ui.statuses)
     failed = len(ui.errors)
     error_label = Text(f"Errors: {failed}", style="red") if failed else Text("")
     timing.add_row(

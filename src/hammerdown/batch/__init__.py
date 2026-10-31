@@ -307,13 +307,15 @@ def run_batch(args: argparse.Namespace) -> int:
                 status_info = "overwrite ignored (binary file)"
 
             if merge_skipped:
-                batch_ui.complete_file(idx, True, 0.0, info=status_info)
+                reason = f"existing merge output: {merge_target.name}"
+                batch_ui.skip_file(idx, reason)
                 results.append(True)
                 continue
 
             # Directly skip if the output exists to avoid re-parsing
             if args.skip_existing and output_path.exists() and output_path != f_path and merge_target is None:
-                batch_ui.complete_file(idx, True, 0.0, info=status_info)
+                reason = f"existing output: {output_path.name}"
+                batch_ui.skip_file(idx, reason)
                 results.append(True)
                 continue
 
@@ -428,6 +430,8 @@ def run_batch(args: argparse.Namespace) -> int:
         batch_ui.print_summary()
     if batch_ui.errors:
         batch_ui.print_error_list()
+    if batch_ui.skipped_files:
+        batch_ui.print_skipped_list()
     batch_ui.print_results()
 
     if (
