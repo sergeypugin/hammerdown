@@ -5,12 +5,28 @@ from pathlib import Path
 from typing import Sequence
 
 from .path_utils import get_images_dir_name, normalize_path
+from ..parsers import CONVERTERS
 
 TREE_BRANCH = "├── "
 TREE_LAST = "└── "
 TREE_PIPE = "│   "
 TREE_SPACE = "    "
 SECTION_SEPARATOR = "=" * 48
+
+# Convertible binary formats that hammerdown supports
+CONVERTIBLE_BINARY_FORMATS = {".pdf", ".docx", ".xlsx", ".doc", ".xls", ".pptx", ".ppt", ".odt"}
+
+
+def _is_convertible_binary(file_path: str | Path) -> bool:
+    """Check if a file is a binary format that hammerdown can convert."""
+    extension = Path(file_path).suffix.lower()
+    return extension in CONVERTIBLE_BINARY_FORMATS
+
+
+def _is_supported_format(file_path: str | Path) -> bool:
+    """Check if a file format is supported by hammerdown."""
+    extension = Path(file_path).suffix.lower()
+    return extension in CONVERTERS
 
 
 def merge_root_for_inputs(raw_inputs: Sequence[str], source_files: Sequence[Path]) -> Path:
@@ -99,6 +115,7 @@ def render_merged_document(
     merge_root: Path,
     asset_prefix: Path | None = None,
     error: str | None = None,
+    is_binary: bool = False,
 ) -> str:
     source_path = Path(source).resolve()
     relative = relative_path_for_source(source_path, merge_root)
@@ -116,15 +133,24 @@ def render_merged_document(
     section = f"{SECTION_SEPARATOR}\nFILE: {relative.as_posix()}\n{SECTION_SEPARATOR}"
     if cleaned:
         section = f"{section}\n{cleaned}"
+    elif is_binary and not error:
+        conversion_status = "YES" if _is_convertible_binary(source_path) else "NO"
+        section = f"{section}\n[Binary file] Can be converted with hammerdown: {conversion_status}"
     return section
 
 
-def render_merged_markdown(converted: Sequence[tuple[str, str, str | None]], merge_root: Path) -> str:
+def render_merged_markdown(
+    converted: Sequence[tuple[str, str, str | None]],
+    merge_root: Path,
+    binary_flags: Sequence[bool] | None = None,
+) -> str:
     sources = [source for source, _, _ in converted]
     sections = [render_merge_header(sources, merge_root)]
+    if binary_flags is None:
+        binary_flags = [False] * len(converted)
     sections.extend(
-        render_merged_document(source, content, merge_root, error=err)
-        for source, content, err in converted
+        render_merged_document(source, content, merge_root, error=err, is_binary=is_binary)
+        for (source, content, err), is_binary in zip(converted, binary_flags)
     )
     return "\n\n".join(sections) + "\n"
 
@@ -141,6 +167,7 @@ def append_merged_document(
     merge_root: Path,
     asset_prefix: Path,
     error: str | None = None,
+    is_binary: bool = False,
 ) -> None:
     with merge_target.open("a", encoding="utf-8", newline="\n") as output:
-        output.write("\n" + render_merged_document(source, content, merge_root, asset_prefix, error=error) + "\n")
+        output.write("\n" + render_merged_document(source, content, merge_root, asset_prefix, error=error, is_binary=is_binary) + "\n")

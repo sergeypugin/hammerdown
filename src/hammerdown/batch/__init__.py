@@ -15,7 +15,7 @@ from ..core import (
     convert_file,
     get_conversion_estimate_seconds,
 )
-from ..core.discovery import expand_paths, output_paths as compute_output_paths
+from ..core.discovery import expand_paths, discover_all_files_for_tree, output_paths as compute_output_paths
 from ..core.google_drive import download_google_url, extract_file_id, is_google_drive_url
 from ..core.ipc import IPCCoordinator, try_delegate_to_coordinator
 from ..core.merge import (
@@ -24,6 +24,7 @@ from ..core.merge import (
     merge_asset_paths,
     merge_root_for_inputs,
     render_merged_markdown,
+    _is_convertible_binary,
 )
 from ..ui.batch_ui import BatchUI
 from ..core.stdout_mode import confirm_stdout, run_stdout_conversion
@@ -93,6 +94,12 @@ def run_batch(args: argparse.Namespace) -> int:
     raw_files = args.files
     merge_requested = getattr(args, "merge", None)
     merge_auto = getattr(args, "merge_auto", False)
+    tree_mode = getattr(args, "tree", False)
+    all_formats = getattr(args, "all_formats", False)
+
+    if tree_mode:
+        merge_requested = merge_requested or "hammerdowned.md"
+        merge_auto = False
     if merge_requested and getattr(args, "overwrite", False):
         logger.error("--merge cannot be combined with --overwrite")
         return 1
@@ -141,12 +148,22 @@ def run_batch(args: argparse.Namespace) -> int:
 
     include_patterns = [re.compile(pattern) for pattern in getattr(args, "include", [])]
     exclude_patterns = [re.compile(pattern) for pattern in getattr(args, "exclude", [])]
-    targets = expand_paths(
-        raw_files,
-        excluded_dir=output_root,
-        include_patterns=include_patterns,
-        exclude_patterns=exclude_patterns,
-    )
+
+    if tree_mode:
+        tree_items = list(discover_all_files_for_tree(raw_files, include_binary=all_formats))
+        targets = []
+        for file_path, category in tree_items:
+            if category == "skip":
+                targets.append((file_path, "skipped (binary, not supported)"))
+            else:
+                targets.append((file_path, None))
+    else:
+        targets = expand_paths(
+            raw_files,
+            excluded_dir=output_root,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
     # Surface Google links that could not be downloaded as explicit errors
     for url, reason in google_failed:
         # Give a readable label instead of just Path(url).name (which is often "edit")
@@ -306,7 +323,7 @@ def run_batch(args: argparse.Namespace) -> int:
             elif args.overwrite:
                 status_info = "overwrite ignored (binary file)"
 
-            if merge_skipped:
+            if merge_skipped and merge_target is not None:
                 reason = f"existing merge output: {merge_target.name}"
                 batch_ui.skip_file(idx, reason)
                 results.append(True)
@@ -366,6 +383,7 @@ def run_batch(args: argparse.Namespace) -> int:
                             initialize_merge_file(merge_target, merge_sources, merge_root)
                             merge_initialized = True
                         _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target)
+                        is_binary = f_path.suffix.lower() in {'.pdf', '.docx', '.xlsx', '.doc', '.xls', '.pptx', '.ppt', '.odt', '.epub', '.mobi'}
                         append_merged_document(
                             merge_target,
                             f_path,
@@ -373,6 +391,7 @@ def run_batch(args: argparse.Namespace) -> int:
                             merge_root,
                             asset_prefix,
                             error=reason,
+                            is_binary=is_binary,
                         )
                     except OSError:
                         pass
@@ -389,12 +408,14 @@ def run_batch(args: argparse.Namespace) -> int:
                             initialize_merge_file(merge_target, merge_sources, merge_root)
                             merge_initialized = True
                         _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target)
+                        is_binary = f_path.suffix.lower() in {'.pdf', '.docx', '.xlsx', '.doc', '.xls', '.pptx', '.ppt', '.odt', '.epub', '.mobi'}
                         append_merged_document(
                             merge_target,
                             f_path,
                             res.markdown,
                             merge_root,
                             asset_prefix,
+                            is_binary=is_binary,
                         )
                         merged_count += 1
                     except OSError as exc:

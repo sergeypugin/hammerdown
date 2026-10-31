@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Sequence
+from typing import Generator, Sequence
 
 from . import SUPPORTED_EXTENSIONS
 from .path_utils import normalize_path
@@ -20,6 +20,20 @@ IGNORED_DIRECTORY_NAMES: frozenset[str] = frozenset(
         "system volume information",
     }
 )
+
+# Binary document formats for tree mode with --all-formats
+BINARY_DOCUMENT_EXTENSIONS: frozenset[str] = frozenset({
+    ".pdf", ".docx", ".doc", ".xlsx", ".xls",
+    ".pptx", ".ppt", ".odt", ".epub", ".mobi",
+})
+
+# Text file extensions (source code)
+TEXT_FILE_EXTENSIONS: frozenset[str] = frozenset({
+    ".txt", ".md", ".py", ".js", ".ts", ".json",
+    ".yaml", ".yml", ".xml", ".html", ".css", ".java",
+    ".cpp", ".c", ".h", ".rs", ".go", ".rb", ".php",
+    ".sh", ".bash", ".sql", ".csv",
+})
 
 
 def _is_ignored_directory(name: str) -> bool:
@@ -141,3 +155,90 @@ def output_paths(
         )
         raise ValueError(f"output filename collision: {details}")
     return paths
+
+
+def discover_all_files_for_tree(
+    paths: Sequence[str],
+    include_binary: bool = False,
+    excluded_dir: Path | None = None,
+    include_patterns: Sequence[re.Pattern[str]] = (),
+    exclude_patterns: Sequence[re.Pattern[str]] = (),
+) -> Generator[tuple[str, str], None, None]:
+    """Discover all files for tree mode with category classification.
+
+    Yields (file_path, category) tuples where category is one of:
+    - "text_convertible": supported formats for conversion
+    - "source_code": all text files (source code)
+    - "binary_document": binary documents (pdf, docx, etc.)
+    - "skip": binary non-convertible files (only when include_binary=False)
+    """
+    seen_paths: set[Path] = set()
+    excluded_dir = excluded_dir.resolve() if excluded_dir is not None else None
+
+    def matches(path: Path, root: Path | None) -> bool:
+        if root is not None:
+            try:
+                relative = path.relative_to(root).as_posix()
+            except ValueError:
+                relative = path.name
+        else:
+            relative = path.name
+        if include_patterns and not any(pattern.search(relative) for pattern in include_patterns):
+            return False
+        return not any(pattern.search(relative) for pattern in exclude_patterns)
+
+    for raw in paths:
+        try:
+            candidate = Path(normalize_path(raw)).resolve()
+        except Exception:
+            continue
+
+        if not candidate.exists():
+            continue
+
+        if candidate.is_dir():
+            for root, dirnames, filenames in os.walk(candidate):
+                pruned: list[str] = []
+                for name in dirnames:
+                    if _is_ignored_directory(name):
+                        continue
+                    if excluded_dir is not None and (Path(root) / name).resolve().is_relative_to(excluded_dir):
+                        continue
+                    pruned.append(name)
+                dirnames[:] = pruned
+                for name in sorted(filenames):
+                    if _is_ignored_file(name):
+                        continue
+                    try:
+                        file_path = (Path(root) / name).resolve()
+                        if file_path in seen_paths or not matches(file_path, candidate):
+                            continue
+                        seen_paths.add(file_path)
+
+                        ext = file_path.suffix.lower()
+
+                        if ext in SUPPORTED_EXTENSIONS:
+                            yield (str(file_path), "text_convertible")
+                        elif ext in TEXT_FILE_EXTENSIONS:
+                            yield (str(file_path), "source_code")
+                        elif ext in BINARY_DOCUMENT_EXTENSIONS:
+                            if include_binary:
+                                yield (str(file_path), "binary_document")
+                            else:
+                                yield (str(file_path), "skip")
+                    except OSError:
+                        continue
+        elif candidate.is_file():
+            if candidate not in seen_paths and matches(candidate, None):
+                seen_paths.add(candidate)
+                ext = candidate.suffix.lower()
+
+                if ext in SUPPORTED_EXTENSIONS:
+                    yield (str(candidate), "text_convertible")
+                elif ext in TEXT_FILE_EXTENSIONS:
+                    yield (str(candidate), "source_code")
+                elif ext in BINARY_DOCUMENT_EXTENSIONS:
+                    if include_binary:
+                        yield (str(candidate), "binary_document")
+                    else:
+                        yield (str(candidate), "skip")

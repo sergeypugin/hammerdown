@@ -125,6 +125,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
         help="Skip conversion if the target Markdown file already exists",
     )
     parser.add_argument("-o", "--output-dir", action="append", metavar="DIR", help="Save Markdown and extracted images under DIR")
+    parser.add_argument("-t", "--tree", action="store_true", help="Gather all files into a single merged markdown (like gitingest)")
+    parser.add_argument("--all-formats", action="store_true", help="Include binary documents (.pdf, .docx, etc.) in tree mode")
     parser.add_argument("-m", "--merge", nargs="?", const="hammerdowned.md", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file (defaults to hammerdowned.md)")
     parser.add_argument("--merge-auto", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stdout", action="store_true", help="Write the merged Markdown document to stdout")
@@ -157,6 +159,18 @@ def _main(argv: Sequence[str] | None = None) -> int:
         (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1")
         and not args.context_worker
     )
+
+    tree_mode = getattr(args, "tree", False)
+    if tree_mode:
+        if args.output_dir:
+            parser.error("--tree cannot be combined with -o/--output-dir")
+        if args.overwrite:
+            parser.error("--tree cannot be combined with -w/--overwrite")
+
+    all_formats = getattr(args, "all_formats", False)
+    if all_formats and not tree_mode:
+        parser.error("--all-formats can only be used with --tree")
+
     if args.output_dir and args.overwrite:
         parser.error("-w/--overwrite cannot be combined with -o/--output-dir")
     if args.overwrite and args.skip_existing:
