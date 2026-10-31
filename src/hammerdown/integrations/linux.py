@@ -53,10 +53,12 @@ def _desktop_file_content(exec_cmd: str) -> str:
         "\n"
         "[Desktop Action Tree]\n"
         "Name=Hammerdown tree\n"
+        "Icon=hammerdown_tree\n"
         "Exec=" + exec_cmd + " --tree %F\n"
         "\n"
         "[Desktop Action TreeAll]\n"
         "Name=Hammerdown tree with all formats\n"
+        "Icon=hammerdown_tree_all\n"
         "Exec=" + exec_cmd + " --tree --all-formats %F\n"
     )
 
@@ -79,26 +81,37 @@ def _kde_servicemenu_content(exec_cmd: str) -> str:
         "\n"
         "[Desktop Action HammerDownTree]\n"
         "Name=Hammerdown tree\n"
-        "Icon=hammerdown\n"
+        "Icon=hammerdown_tree\n"
         f"Exec={exec_cmd} --tree %F\n"
         "\n"
         "[Desktop Action HammerDownTreeAll]\n"
         "Name=Hammerdown tree with all formats\n"
-        "Icon=hammerdown\n"
+        "Icon=hammerdown_tree_all\n"
         f"Exec={exec_cmd} --tree --all-formats %F\n"
     )
 
 
-def _find_icon_png() -> Path | None:
-    pkg_dir = Path(__file__).resolve().parent.parent
-    candidates = [
-        pkg_dir / "icon.png",
-        pkg_dir.parent.parent / "assets" / "icon.png",
-    ]
-    for p in candidates:
-        if p.is_file():
-            return p
-    return None
+def _find_icon_pngs() -> dict[str, Path]:
+    pkg_dir = Path(__file__).resolve().parent.parent / "assets"
+    root_assets = Path(__file__).resolve().parent.parent.parent.parent / "assets"
+
+    mapping = {
+        "hammerdown.png": ["icon.png"],
+        "hammerdown_tree.png": ["icon_tree_blue.png", "icon.png"],
+        "hammerdown_tree_all.png": ["icon_tree_all_maroon.png", "icon.png"],
+    }
+
+    found: dict[str, Path] = {}
+    for target_name, candidates in mapping.items():
+        for cand in candidates:
+            for parent in (pkg_dir, root_assets):
+                p = parent / cand
+                if p.is_file():
+                    found[target_name] = p
+                    break
+            if target_name in found:
+                break
+    return found
 
 
 def _install_linux(command: str, home_dir: Path | None = None) -> None:
@@ -149,19 +162,19 @@ def _install_linux(command: str, home_dir: Path | None = None) -> None:
         except OSError:
             pass
 
-    icon_src = _find_icon_png()
-    if icon_src:
-        icon_dest_dir = home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps"
-        icon_dest_dir.mkdir(parents=True, exist_ok=True)
+    icon_map = _find_icon_pngs()
+    icon_dest_dir = home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps"
+    icon_dest_dir.mkdir(parents=True, exist_ok=True)
+    app_dir = home / ".local" / "share" / "hammerdown"
+    app_dir.mkdir(parents=True, exist_ok=True)
+
+    for target_name, src_path in icon_map.items():
         try:
-            shutil.copy2(icon_src, icon_dest_dir / "hammerdown.png")
+            shutil.copy2(src_path, icon_dest_dir / target_name)
         except OSError:
             pass
-
-        app_dir = home / ".local" / "share" / "hammerdown"
-        app_dir.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.copy2(icon_src, app_dir / "hammerdown.png")
+            shutil.copy2(src_path, app_dir / target_name)
         except OSError:
             pass
 

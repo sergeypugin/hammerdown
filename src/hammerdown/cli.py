@@ -51,22 +51,59 @@ def update() -> bool:
     return update_application(install_callback=install)
 
 
+import fnmatch
+
+
 def normalize_filter_pattern(value: str) -> str:
     stripped = value.strip()
     if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
-        return stripped[1:-1]
-    return stripped
+        stripped = stripped[1:-1].strip()
+
+    normalized = stripped
+    if "\\" in normalized:
+        if normalized.startswith(".\\"):
+            normalized = "./" + normalized[2:]
+        if normalized.endswith("\\") and not normalized.endswith("\\\\"):
+            normalized = normalized[:-1] + "/"
+        normalized = re.sub(r"\\(?=[/a-zA-Z0-9_\s]|$)", "/", normalized)
+
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    if len(normalized) > 1 and normalized.endswith("/"):
+        normalized = normalized[:-1]
+
+    return normalized
+
+
+def pattern_to_regex(pattern_str: str) -> str:
+    norm = normalize_filter_pattern(pattern_str)
+    is_glob = any(c in norm for c in ("*", "?")) or ("[" in norm and "]" in norm)
+    if is_glob and not re.search(r"\.\*|\.\+|\(\?|\{\d", norm):
+        try:
+            return fnmatch.translate(norm)
+        except re.error:
+            pass
+    try:
+        re.compile(norm)
+        return norm
+    except re.error as reg_exc:
+        if is_glob:
+            try:
+                return fnmatch.translate(norm)
+            except re.error:
+                pass
+        raise reg_exc
 
 
 def validate_filter_patterns(parser: argparse.ArgumentParser, values: Sequence[str], flag: str) -> list[str]:
     normalized: list[str] = []
     for value in values:
-        pattern = normalize_filter_pattern(value)
         try:
-            re.compile(pattern)
-        except re.error as exc:
+            regex_pattern = pattern_to_regex(value)
+            re.compile(regex_pattern)
+        except (re.error, ValueError) as exc:
             parser.error(f"{flag} invalid regular expression {value!r}: {exc}")
-        normalized.append(pattern)
+        normalized.append(regex_pattern)
     return normalized
 
 
@@ -141,9 +178,11 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(actual_argv)
 
-    if args.merge and args.files:
+    if args.merge:
         merge_lower = args.merge.lower()
-        if any(merge_lower.endswith(ext) for ext in SUPPORTED_EXTENSIONS) and os.path.exists(args.merge):
+        is_dir = os.path.isdir(args.merge)
+        is_supported_file = any(merge_lower.endswith(ext) for ext in SUPPORTED_EXTENSIONS) and os.path.exists(args.merge)
+        if is_dir or is_supported_file:
             args.files.insert(0, args.merge)
             args.merge = "hammerdowned.md"
 

@@ -151,7 +151,15 @@ def run_batch(args: argparse.Namespace) -> int:
     exclude_patterns = [re.compile(pattern) for pattern in getattr(args, "exclude", [])]
 
     if tree_mode:
-        tree_items = list(discover_all_files_for_tree(raw_files, include_binary=all_formats))
+        tree_items = list(
+            discover_all_files_for_tree(
+                raw_files,
+                include_binary=all_formats,
+                excluded_dir=output_root,
+                include_patterns=include_patterns,
+                exclude_patterns=exclude_patterns,
+            )
+        )
         targets = []
         for file_path, category in tree_items:
             if category == "skip":
@@ -521,14 +529,14 @@ def convert_files(
 
 
 def _normalize_patterns(patterns: Sequence[str], flag: str) -> list[str]:
+    from ..cli import pattern_to_regex
+
     normalized_patterns: list[str] = []
     for pattern in patterns:
-        normalized = pattern.strip()
-        if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {"'", '"'}:
-            normalized = normalized[1:-1]
+        regex_pattern = pattern_to_regex(pattern)
         try:
-            re.compile(normalized)
+            re.compile(regex_pattern)
         except re.error as exc:
-            raise ValueError(f"{flag} invalid regular expression {pattern!r}: {exc}") from exc
-        normalized_patterns.append(normalized)
+            raise ValueError(f"{flag} invalid filter pattern {pattern!r}: {exc}") from exc
+        normalized_patterns.append(regex_pattern)
     return normalized_patterns

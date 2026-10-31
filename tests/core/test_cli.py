@@ -329,6 +329,75 @@ def test_invalid_filter_regex_is_argparse_error(tmp_path: Path):
     assert not (tmp_path / "hm_notes_txt.md").exists()
 
 
+def test_directory_with_trailing_slash_converts_files(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    web_dir = tmp_path / "3_Web"
+    web_dir.mkdir()
+    doc = web_dir / "sample.txt"
+    doc.write_text("Hello Web", encoding="utf-8")
+
+    # Simulate Windows tab-completion: .\3_Web\
+    trailing_path = f".{os.sep}3_Web{os.sep}"
+    assert hammerdown.cli.main([trailing_path]) == 0
+    assert (web_dir / "hm_sample_txt.md").is_file()
+
+
+def test_merge_with_directory_without_explicit_output_filename(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    web_dir = tmp_path / "3_Web"
+    web_dir.mkdir()
+    doc = web_dir / "sample.txt"
+    doc.write_text("Hello Web from merge", encoding="utf-8")
+
+    trailing_path = f".{os.sep}3_Web{os.sep}"
+    assert hammerdown.cli.main(["-m", trailing_path]) == 0
+    merged = tmp_path / "hammerdowned.md"
+    assert merged.is_file()
+    assert "Hello Web from merge" in merged.read_text(encoding="utf-8")
+
+
+def test_include_with_tab_completed_path_and_glob_patterns(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    web_dir = tmp_path / "3_Web"
+    web_dir.mkdir()
+    (web_dir / "keep.txt").write_text("keep me", encoding="utf-8")
+    (web_dir / "skip.md").write_text("skip me", encoding="utf-8")
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    (other_dir / "ignore.txt").write_text("ignore me", encoding="utf-8")
+
+    # 1. Include with tab-completed path (e.g. .\3_Web\)
+    trailing_include = f".{os.sep}3_Web{os.sep}"
+    assert hammerdown.cli.main(["-i", trailing_include, str(tmp_path)]) == 0
+    assert (web_dir / "hm_keep_txt.md").is_file()
+    assert not (other_dir / "hm_ignore_txt.md").exists()
+
+
+def test_include_with_glob_pattern(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "match.txt").write_text("match text", encoding="utf-8")
+    (tmp_path / "skip.md").write_text("skip md", encoding="utf-8")
+
+    assert hammerdown.cli.main(["-i", "*.txt", str(tmp_path)]) == 0
+    assert (tmp_path / "hm_match_txt.md").is_file()
+    assert not (tmp_path / "hm_skip_md.md").exists()
+
+
+def test_tree_mode_with_include_filter(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    web_dir = tmp_path / "3_Web"
+    web_dir.mkdir()
+    (web_dir / "keep.txt").write_text("keep this content", encoding="utf-8")
+    (web_dir / "skip.md").write_text("skip this content", encoding="utf-8")
+
+    assert hammerdown.cli.main(["-t", "-i", "*.txt", str(web_dir)]) == 0
+    merged = tmp_path / "hammerdowned.md"
+    assert merged.is_file()
+    content = merged.read_text(encoding="utf-8")
+    assert "keep.txt" in content
+    assert "skip.md" not in content
+
+
 def test_stdout_contains_only_merged_markdown_and_does_not_write_files(tmp_path: Path, capsys):
     first = tmp_path / "one.txt"
     second = tmp_path / "two.txt"

@@ -13,41 +13,67 @@ from ._common import _remove_install_dir
 def _install_windows(command: str) -> None:
     import winreg
 
+    app_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "hammerdown"
+    app_dir.mkdir(parents=True, exist_ok=True)
+
+    # Locate package icons
     icon_path = ""
     tree_icon_path = ""
     tree_all_icon_path = ""
+
+    assets_dir: Path | None = None
     if getattr(sys, "frozen", False):
-        icon_path = sys.executable
-        tree_icon_path = sys.executable
-        tree_all_icon_path = sys.executable
-    else:
-        try:
-            assets_dir = Path(__file__).resolve().parent.parent / "assets"
-            pkg_icon = assets_dir / "icon.ico"
-            tree_pkg_icon = assets_dir / "icon_tree_blue.ico"
-            tree_all_pkg_icon = assets_dir / "icon_tree_all_maroon.ico"
-            
-            if pkg_icon.is_file():
-                icon_path = str(pkg_icon)
-            if tree_pkg_icon.is_file():
-                tree_icon_path = str(tree_pkg_icon)
-            if tree_all_pkg_icon.is_file():
-                tree_all_icon_path = str(tree_all_pkg_icon)
-        except Exception:
-            pass
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates = [Path(meipass) / "hammerdown" / "assets", Path(meipass) / "assets"]
+        else:
+            exe_parent = Path(sys.executable).parent
+            candidates = [exe_parent / "hammerdown" / "assets", exe_parent / "assets"]
+        for d in candidates:
+            if d.is_dir():
+                assets_dir = d
+                break
+    if assets_dir is None:
+        p = Path(__file__).resolve().parent.parent / "assets"
+        if p.is_dir():
+            assets_dir = p
+
+    if assets_dir:
+        import shutil
+
+        for filename in ("icon.ico", "icon_tree_blue.ico", "icon_tree_all_maroon.ico"):
+            src = assets_dir / filename
+            if src.is_file():
+                try:
+                    shutil.copy2(src, app_dir / filename)
+                except OSError:
+                    pass
+
+    if (app_dir / "icon.ico").is_file():
+        icon_path = str(app_dir / "icon.ico")
+    if (app_dir / "icon_tree_blue.ico").is_file():
+        tree_icon_path = str(app_dir / "icon_tree_blue.ico")
+    if (app_dir / "icon_tree_all_maroon.ico").is_file():
+        tree_all_icon_path = str(app_dir / "icon_tree_all_maroon.ico")
+
+    if getattr(sys, "frozen", False):
         if not icon_path:
-            icon_path = command.split('"')[1]
+            icon_path = sys.executable
         if not tree_icon_path:
             tree_icon_path = icon_path
         if not tree_all_icon_path:
             tree_all_icon_path = icon_path
 
-    # Cleanup old verbs first to ensure a clean state
-    old_verbs = ["hammerdown", "hammerdown_merge", "hammerdown_tree", "hammerdown_tree_all"]
-    for verb in old_verbs:
+    # Thoroughly cleanup all legacy and current verb entries across all registry hives
+    verbs_to_clean = ["hammerdown", "hammerdown_merge", "hammerdown_tree", "hammerdown_tree_all", "Convert to Markdown"]
+    for verb in verbs_to_clean:
+        _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\*\shell\{verb}")
         _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\AllFilesystemObjects\shell\{verb}")
         _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\Directory\shell\{verb}")
         _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\Directory\Background\shell\{verb}")
+        for ext in SUPPORTED_EXTENSIONS:
+            _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\SystemFileAssociations\{ext}\shell\{verb}")
+            _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\.{ext}\shell\{verb}")
 
     # 1. "Hammerdown" (Standard conversion)
     hd_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown"
@@ -63,23 +89,25 @@ def _install_windows(command: str) -> None:
 
     # 2. "Hammerdown tree" (Blue icon)
     tree_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree"
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, tree_path) as key:
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammerdown tree")
-        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
-        if tree_icon_path:
-            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, tree_icon_path)
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, tree_path + r"\command") as key:
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --tree "%1"')
+    for key_path in (tree_path, r"Software\Classes\Directory\shell\hammerdown_tree"):
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammerdown tree")
+            winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
+            if tree_icon_path:
+                winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, tree_icon_path)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --tree "%1"')
 
     # 3. "Hammerdown tree with all formats" (Maroon icon)
     tree_all_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree_all"
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, tree_all_path) as key:
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammerdown tree with all formats")
-        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
-        if tree_all_icon_path:
-            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, tree_all_icon_path)
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, tree_all_path + r"\command") as key:
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --tree --all-formats "%1"')
+    for key_path in (tree_all_path, r"Software\Classes\Directory\shell\hammerdown_tree_all"):
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammerdown tree with all formats")
+            winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
+            if tree_all_icon_path:
+                winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, tree_all_icon_path)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --tree --all-formats "%1"')
 
     bg_key_path = r"Software\Classes\Directory\Background\shell\hammerdown"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path) as key:
@@ -148,16 +176,15 @@ def _remove_registry_tree(root: Any, path: str) -> None:
 def _uninstall_windows() -> None:
     import winreg
 
-    for ext in SUPPORTED_EXTENSIONS:
-        _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\SystemFileAssociations\{ext}\shell\hammerdown")
-        _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\SystemFileAssociations\{ext}\shell\Convert to Markdown")
-    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown")
-    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge")
-    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree")
-    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree_all")
-    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown")
-    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown_tree")
-    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown_tree_all")
+    verbs_to_clean = ["hammerdown", "hammerdown_merge", "hammerdown_tree", "hammerdown_tree_all", "Convert to Markdown"]
+    for verb in verbs_to_clean:
+        _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\*\shell\{verb}")
+        _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\AllFilesystemObjects\shell\{verb}")
+        _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\Directory\shell\{verb}")
+        _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\Directory\Background\shell\{verb}")
+        for ext in SUPPORTED_EXTENSIONS:
+            _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\SystemFileAssociations\{ext}\shell\{verb}")
+            _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\.{ext}\shell\{verb}")
     sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
     (sendto_dir / "Hammerdown.cmd").unlink(missing_ok=True)
     (sendto_dir / "Hammerdown tree.cmd").unlink(missing_ok=True)
