@@ -20,10 +20,10 @@ def test_output_dir_preserves_nested_layout_and_extracts_images(tmp_path: Path):
     assert main(["-o", str(output_root), str(source_root)]) == 0
 
     markdown = output_root / "nested" / "hm_notes_txt.md"
-    image_file = output_root / "nested" / "hm_images_notes_txt" / "embedded_img_0.png"
+    image_file = output_root / "nested" / "hm_images_notes_txt" / "embedded_img_1.png"
     assert markdown.is_file()
     assert image_file.read_bytes() == b"sample image bytes"
-    assert "hm_images_notes_txt/embedded_img_0.png" in markdown.read_text(encoding="utf-8")
+    assert "hm_images_notes_txt/embedded_img_1.png" in markdown.read_text(encoding="utf-8")
 
 
 def test_base64_image_extraction_preserves_supported_mime_extensions(tmp_path: Path):
@@ -37,12 +37,12 @@ def test_base64_image_extraction_preserves_supported_mime_extensions(tmp_path: P
 
     assert main([str(source)]) == 0
     output = tmp_path / "hm_images_images_md"
-    assert (output / "embedded_img_0.svg").read_bytes() == b"<svg></svg>"
-    assert (output / "embedded_img_1.jpeg").read_bytes() == b"jpeg bytes"
+    assert (output / "embedded_img_1.svg").read_bytes() == b"<svg></svg>"
+    assert (output / "embedded_img_2.jpeg").read_bytes() == b"jpeg bytes"
     converted = tmp_path / "hm_images_md.md"
     markdown = converted.read_text(encoding="utf-8")
-    assert "hm_images_images_md/embedded_img_0.svg" in markdown
-    assert "hm_images_images_md/embedded_img_1.jpeg" in markdown
+    assert "hm_images_images_md/embedded_img_1.svg" in markdown
+    assert "hm_images_images_md/embedded_img_2.jpeg" in markdown
 
 
 def test_skip_existing_checks_output_dir_target(tmp_path: Path):
@@ -86,16 +86,16 @@ def test_merge_writes_assets_under_namespaced_tree_without_per_file_markdown(tmp
     assert main(["--merge", str(merged), str(source), str(nested_source)]) == 0
 
     asset_root = tmp_path / "hm_merged_into_o_images"
-    first_image = asset_root / "hm_images_file1_md" / "embedded_img_0.png"
-    second_image = asset_root / "src" / "hm_images_f2_md" / "embedded_img_0.png"
+    first_image = asset_root / "hm_images_file1_md" / "embedded_img_1.png"
+    second_image = asset_root / "src" / "hm_images_f2_md" / "embedded_img_1.png"
     assert first_image.read_bytes() == b"file one image"
     assert second_image.read_bytes() == b"file two image"
     assert not (tmp_path / "hm_file1_md.md").exists()
     assert not (nested / "hm_f2_md.md").exists()
 
     content = merged.read_text(encoding="utf-8")
-    assert "hm_merged_into_o_images/hm_images_file1_md/embedded_img_0.png" in content
-    assert "hm_merged_into_o_images/src/hm_images_f2_md/embedded_img_0.png" in content
+    assert "hm_merged_into_o_images/hm_images_file1_md/embedded_img_1.png" in content
+    assert "hm_merged_into_o_images/src/hm_images_f2_md/embedded_img_1.png" in content
 
 
 def test_merge_rejects_overwrite(tmp_path: Path):
