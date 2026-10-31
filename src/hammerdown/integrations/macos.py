@@ -19,20 +19,20 @@ def _remove_silently(path: Path) -> None:
             pass
 
 
-def _create_macos_workflow(workflow_dir: Path, launcher: Path | str) -> None:
+def _create_macos_workflow(workflow_dir: Path, launcher: Path | str, name: str = "Hammerdown", extra_flags: str = "") -> None:
     contents_dir = workflow_dir / "Contents"
     contents_dir.mkdir(parents=True, exist_ok=True)
 
     info_data = {
-        "CFBundleIdentifier": "com.hammerdown.quickaction",
-        "CFBundleName": "Hammer down",
+        "CFBundleIdentifier": f"com.hammerdown.quickaction.{name.lower().replace(' ', '_')}",
+        "CFBundleName": name,
         "CFBundleShortVersionString": "1.0",
         "CFBundleVersion": "1",
         "NSServices": [
             {
                 "NSBackgroundColorName": "background",
                 "NSIconName": "NSTouchBarDocument",
-                "NSMenuItem": {"default": "Hammer down"},
+                "NSMenuItem": {"default": name},
                 "NSMessage": "runWorkflowAsService",
                 "NSRequiredContext": {"NSApplicationIdentifier": "com.apple.finder"},
                 "NSSendFileTypes": ["public.item"],
@@ -43,6 +43,7 @@ def _create_macos_workflow(workflow_dir: Path, launcher: Path | str) -> None:
         plistlib.dump(info_data, fp, fmt=plistlib.FMT_XML)
 
     exec_target = _quote_if_needed(launcher)
+    cmd_str = f'exec {exec_target} {extra_flags} "$@"'.replace("  ", " ")
     wflow_data = {
         "AMApplicationBuild": "523",
         "AMApplicationVersion": "2.10",
@@ -65,7 +66,7 @@ def _create_macos_workflow(workflow_dir: Path, launcher: Path | str) -> None:
                     "ActionBundlePath": "/System/Library/Automator/Run Shell Script.action",
                     "ActionName": "Run Shell Script",
                     "ActionParameters": {
-                        "COMMAND_STRING": f'exec {exec_target} "$@"',
+                        "COMMAND_STRING": cmd_str,
                         "CheckedForUserDefaultShell": True,
                         "inputMethod": 1,
                         "shell": "/bin/sh",
@@ -167,9 +168,11 @@ def _install_macos(command: str, home_dir: Path | None = None) -> None:
 
     services_dir = home / "Library" / "Services"
     services_dir.mkdir(parents=True, exist_ok=True)
-    _create_macos_workflow(services_dir / "Hammer down.workflow", launcher)
+    _create_macos_workflow(services_dir / "Hammerdown.workflow", launcher, name="Hammerdown")
+    _create_macos_workflow(services_dir / "Hammerdown tree.workflow", launcher, name="Hammerdown tree", extra_flags="--tree")
+    _create_macos_workflow(services_dir / "Hammerdown tree with all formats.workflow", launcher, name="Hammerdown tree with all formats", extra_flags="--tree --all-formats")
 
-    app_dest = home / "Applications" / "Hammer down.app"
+    app_dest = home / "Applications" / "Hammerdown.app"
     _create_macos_droplet(app_dest, launcher)
 
     if is_macos():
@@ -184,8 +187,12 @@ def _install_macos(command: str, home_dir: Path | None = None) -> None:
 def _uninstall_macos(home_dir: Path | None = None) -> None:
     home = home_dir or Path.home()
     (home / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)
+    _remove_silently(home / "Library" / "Services" / "Hammerdown.workflow")
+    _remove_silently(home / "Library" / "Services" / "Hammerdown tree.workflow")
+    _remove_silently(home / "Library" / "Services" / "Hammerdown tree with all formats.workflow")
     _remove_silently(home / "Library" / "Services" / "Hammer down.workflow")
     _remove_silently(home / "Library" / "Services" / "Hammer down file.workflow")
+    _remove_silently(home / "Applications" / "Hammerdown.app")
     _remove_silently(home / "Applications" / "Hammer down.app")
     _remove_install_dir(home / ".local" / "share" / "hammerdown")
 

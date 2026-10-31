@@ -39,7 +39,7 @@ def _desktop_file_content(exec_cmd: str) -> str:
         "[Desktop Entry]\n"
         "Version=1.0\n"
         "Type=Application\n"
-        "Name=Hammer down\n"
+        "Name=Hammerdown\n"
         "GenericName=Document to Markdown Converter\n"
         "Comment=Convert PDF and office documents to Markdown\n"
         f"Exec={exec_cmd} %F\n"
@@ -49,6 +49,15 @@ def _desktop_file_content(exec_cmd: str) -> str:
         "Categories=Utility;Office;\n"
         "StartupNotify=false\n"
         "NoDisplay=false\n"
+        "Actions=Tree;TreeAll;\n"
+        "\n"
+        "[Desktop Action Tree]\n"
+        "Name=Hammerdown tree\n"
+        "Exec=" + exec_cmd + " --tree %F\n"
+        "\n"
+        "[Desktop Action TreeAll]\n"
+        "Name=Hammerdown tree with all formats\n"
+        "Exec=" + exec_cmd + " --tree --all-formats %F\n"
     )
 
 
@@ -59,14 +68,24 @@ def _kde_servicemenu_content(exec_cmd: str) -> str:
         "Type=Service\n"
         "ServiceTypes=KonqPopupMenu/Plugin\n"
         f"MimeType={mimes}\n"
-        "Actions=HammerDown;\n"
+        "Actions=HammerDown;HammerDownTree;HammerDownTreeAll;\n"
         "X-KDE-Priority=TopLevel\n"
         "X-KDE-Submenu=\n"
         "\n"
         "[Desktop Action HammerDown]\n"
-        "Name=Hammer down file\n"
+        "Name=Hammerdown\n"
         "Icon=hammerdown\n"
         f"Exec={exec_cmd} %F\n"
+        "\n"
+        "[Desktop Action HammerDownTree]\n"
+        "Name=Hammerdown tree\n"
+        "Icon=hammerdown\n"
+        f"Exec={exec_cmd} --tree %F\n"
+        "\n"
+        "[Desktop Action HammerDownTreeAll]\n"
+        "Name=Hammerdown tree with all formats\n"
+        "Icon=hammerdown\n"
+        f"Exec={exec_cmd} --tree --all-formats %F\n"
     )
 
 
@@ -105,10 +124,28 @@ def _install_linux(command: str, home_dir: Path | None = None) -> None:
         home / ".config" / "caja" / "scripts",
     ):
         script_parent.mkdir(parents=True, exist_ok=True)
-        script_file = script_parent / "Hammer down file"
+        
+        # Standard conversion
+        script_file = script_parent / "Hammerdown"
         script_file.write_text(f'exec "{launcher}" "$@"\n', encoding="utf-8")
         try:
             script_file.chmod(script_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except OSError:
+            pass
+
+        # Tree mode
+        tree_script = script_parent / "Hammerdown tree"
+        tree_script.write_text(f'exec "{launcher}" --tree "$@"\n', encoding="utf-8")
+        try:
+            tree_script.chmod(tree_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except OSError:
+            pass
+
+        # Tree with all formats
+        tree_all_script = script_parent / "Hammerdown tree with all formats"
+        tree_all_script.write_text(f'exec "{launcher}" --tree --all-formats "$@"\n', encoding="utf-8")
+        try:
+            tree_all_script.chmod(tree_all_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         except OSError:
             pass
 
@@ -142,9 +179,18 @@ def _uninstall_linux(home_dir: Path | None = None) -> None:
     (home / ".local" / "share" / "applications" / "hammerdown.desktop").unlink(missing_ok=True)
     (home / ".local" / "share" / "kio" / "servicemenus" / "hammerdown.desktop").unlink(missing_ok=True)
     (home / ".local" / "share" / "kservices5" / "ServiceMenus" / "hammerdown.desktop").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown tree").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown tree with all formats").unlink(missing_ok=True)
     (home / ".local" / "share" / "nautilus" / "scripts" / "Hammer down file").unlink(missing_ok=True)
     (home / ".local" / "share" / "nautilus" / "scripts" / "Convert to Markdown").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nemo" / "scripts" / "Hammerdown").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nemo" / "scripts" / "Hammerdown tree").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nemo" / "scripts" / "Hammerdown tree with all formats").unlink(missing_ok=True)
     (home / ".local" / "share" / "nemo" / "scripts" / "Hammer down file").unlink(missing_ok=True)
+    (home / ".config" / "caja" / "scripts" / "Hammerdown").unlink(missing_ok=True)
+    (home / ".config" / "caja" / "scripts" / "Hammerdown tree").unlink(missing_ok=True)
+    (home / ".config" / "caja" / "scripts" / "Hammerdown tree with all formats").unlink(missing_ok=True)
     (home / ".config" / "caja" / "scripts" / "Hammer down file").unlink(missing_ok=True)
     (home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "hammerdown.png").unlink(missing_ok=True)
 

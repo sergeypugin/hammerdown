@@ -33,39 +33,48 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     def dummy_delete_value(key, value_name):
         deleted_values.append(value_name)
 
+    def dummy_open_key(root, subkey, *args):
+        return DummyKey()
+
+    def dummy_enum_key(key, idx):
+        raise OSError()
+
+    def dummy_delete_key(root, path):
+        pass
+
     import sys
     import types
 
     fake_winreg = types.ModuleType("winreg")
     setattr(fake_winreg, "HKEY_CURRENT_USER", "HKEY_CURRENT_USER")
     setattr(fake_winreg, "REG_SZ", 1)
+    setattr(fake_winreg, "KEY_READ", 1)
+    setattr(fake_winreg, "KEY_WRITE", 2)
     setattr(fake_winreg, "CreateKey", dummy_create_key)
     setattr(fake_winreg, "SetValueEx", dummy_set_value)
     setattr(fake_winreg, "DeleteValue", dummy_delete_value)
+    setattr(fake_winreg, "OpenKey", dummy_open_key)
+    setattr(fake_winreg, "EnumKey", dummy_enum_key)
+    setattr(fake_winreg, "DeleteKey", dummy_delete_key)
     monkeypatch.setitem(sys.modules, "winreg", fake_winreg)
 
     from hammerdown.integrations.windows import _install_windows
 
     _install_windows("hammerdown")
 
-    sendto_cmd = sendto_dir / "Hammer down.cmd"
+    sendto_cmd = sendto_dir / "Hammerdown.cmd"
     assert sendto_cmd.is_file()
     assert "--coordinator --right-click %*" in sendto_cmd.read_text(encoding="utf-8")
     assert "--coordinator --right-click %*" in legacy_launcher.read_text(encoding="utf-8")
 
-    merge_sendto_cmd = sendto_dir / "Hammer down and merge.cmd"
-    assert merge_sendto_cmd.is_file()
-    merge_text = merge_sendto_cmd.read_text(encoding="utf-8")
-    assert "--coordinator --right-click --merge-auto %*" in merge_text
+    tree_sendto_cmd = sendto_dir / "Hammerdown tree.cmd"
+    assert tree_sendto_cmd.is_file()
+    assert "--coordinator --right-click --tree %*" in tree_sendto_cmd.read_text(encoding="utf-8")
 
     assert r"Software\Classes\Directory\shell\hammerdown" in recorded_keys
     assert r"Software\Classes\Directory\Background\shell\hammerdown" in recorded_keys
-    merge_key = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge"
-    assert merge_key in recorded_keys
-    assert ("MultiSelectModel", "Player") in recorded_values
-    assert ("", 'hammerdown --coordinator --right-click --merge-auto "%1"') in recorded_values
-    assert all(name != "AppliesTo" for name, _ in recorded_values)
-    assert "AppliesTo" in deleted_values
+    tree_key = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree"
+    assert tree_key in recorded_keys
 
 
 def test_installed_command_uses_windowed_python(tmp_path: Path, monkeypatch):
@@ -134,7 +143,7 @@ def test_install_and_uninstall_linux(tmp_path: Path):
     desktop_text = desktop_file.read_text(encoding="utf-8")
     assert "[Desktop Entry]" in desktop_text
     assert "Type=Application" in desktop_text
-    assert "Name=Hammer down" in desktop_text
+    assert "Name=Hammerdown" in desktop_text
     assert "Exec=" in desktop_text
     assert "%F" in desktop_text
     assert "application/pdf;" in desktop_text
@@ -145,24 +154,24 @@ def test_install_and_uninstall_linux(tmp_path: Path):
     kde6_text = kde6_file.read_text(encoding="utf-8")
     assert "Type=Service" in kde6_text
     assert "ServiceTypes=KonqPopupMenu/Plugin" in kde6_text
-    assert "Actions=HammerDown;" in kde6_text
+    assert "Actions=HammerDown;HammerDownTree;HammerDownTreeAll;" in kde6_text
     assert "X-KDE-Priority=TopLevel" in kde6_text
     assert "[Desktop Action HammerDown]" in kde6_text
-    assert "Name=Hammer down file" in kde6_text
+    assert "Name=Hammerdown" in kde6_text
     assert "%F" in kde6_text
 
     kde5_file = tmp_path / ".local" / "share" / "kservices5" / "ServiceMenus" / "hammerdown.desktop"
     assert kde5_file.is_file()
     assert kde5_file.read_text(encoding="utf-8") == kde6_text
 
-    nautilus_script = tmp_path / ".local" / "share" / "nautilus" / "scripts" / "Hammer down file"
+    nautilus_script = tmp_path / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown"
     assert nautilus_script.is_file()
     assert f'exec "{launcher}" "$@"' in nautilus_script.read_text(encoding="utf-8")
 
-    nemo_script = tmp_path / ".local" / "share" / "nemo" / "scripts" / "Hammer down file"
+    nemo_script = tmp_path / ".local" / "share" / "nemo" / "scripts" / "Hammerdown"
     assert nemo_script.is_file()
 
-    caja_script = tmp_path / ".config" / "caja" / "scripts" / "Hammer down file"
+    caja_script = tmp_path / ".config" / "caja" / "scripts" / "Hammerdown"
     assert caja_script.is_file()
 
     icon_file = tmp_path / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "hammerdown.png"
@@ -189,18 +198,18 @@ def test_install_and_uninstall_macos(tmp_path: Path):
     launcher = tmp_path / ".local" / "bin" / "hammerdown"
     assert launcher.is_file()
 
-    workflow_dir = tmp_path / "Library" / "Services" / "Hammer down.workflow"
+    workflow_dir = tmp_path / "Library" / "Services" / "Hammerdown.workflow"
     assert workflow_dir.is_dir()
 
     info_plist_path = workflow_dir / "Contents" / "Info.plist"
     assert info_plist_path.is_file()
     with open(info_plist_path, "rb") as fp:
         info_data = plistlib.load(fp)
-    assert info_data["CFBundleIdentifier"] == "com.hammerdown.quickaction"
-    assert info_data["CFBundleName"] == "Hammer down"
+    assert info_data["CFBundleIdentifier"] == "com.hammerdown.quickaction.hammerdown"
+    assert info_data["CFBundleName"] == "Hammerdown"
     assert len(info_data["NSServices"]) == 1
     service = info_data["NSServices"][0]
-    assert service["NSMenuItem"]["default"] == "Hammer down"
+    assert service["NSMenuItem"]["default"] == "Hammerdown"
     assert service["NSMessage"] == "runWorkflowAsService"
     assert service["NSRequiredContext"]["NSApplicationIdentifier"] == "com.apple.finder"
     assert "public.item" in service["NSSendFileTypes"]
