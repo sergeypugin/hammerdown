@@ -543,3 +543,42 @@ def test_merge_multi_file_selection_with_failure(tmp_path: Path):
     assert "FILE: doc1.txt" in content2
     assert "FILE: fake.pdf" in content2
     assert "[!] File conversion failed:" in content2
+
+
+def test_merge_without_explicit_filename(tmp_path: Path):
+    file1 = tmp_path / "doc1.txt"
+    file1.write_text("Hello from file 1\n", encoding="utf-8")
+    file2 = tmp_path / "doc2.txt"
+    file2.write_text("Hello from file 2\n", encoding="utf-8")
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        assert hammerdown.cli.main(["--merge", str(file1), str(file2)]) == 0
+    finally:
+        os.chdir(original_cwd)
+
+    default_merged = tmp_path / "hammerdowned.md"
+    assert default_merged.is_file()
+    content = default_merged.read_text(encoding="utf-8")
+    assert "FILE: doc1.txt" in content
+    assert "FILE: doc2.txt" in content
+    assert "Hello from file 1" in content
+    assert "Hello from file 2" in content
+
+
+def test_merge_with_explicit_filename_still_works(tmp_path: Path):
+    file1 = tmp_path / "doc1.txt"
+    file1.write_text("Hello from file 1\n", encoding="utf-8")
+    file2 = tmp_path / "doc2.txt"
+    file2.write_text("Hello from file 2\n", encoding="utf-8")
+
+    custom_merged = tmp_path / "custom_output.md"
+    assert hammerdown.cli.main(["--merge", str(custom_merged), str(file1), str(file2)]) == 0
+
+    assert custom_merged.is_file()
+    content = custom_merged.read_text(encoding="utf-8")
+    assert "FILE: doc1.txt" in content
+    assert "FILE: doc2.txt" in content
+    assert "Hello from file 1" in content
+    assert "Hello from file 2" in content

@@ -125,7 +125,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
         help="Skip conversion if the target Markdown file already exists",
     )
     parser.add_argument("-o", "--output-dir", action="append", metavar="DIR", help="Save Markdown and extracted images under DIR")
-    parser.add_argument("-m", "--merge", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file")
+    parser.add_argument("-m", "--merge", nargs="?", const="hammerdowned.md", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file (defaults to hammerdowned.md)")
     parser.add_argument("--merge-auto", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stdout", action="store_true", help="Write the merged Markdown document to stdout")
     parser.add_argument(
@@ -138,6 +138,12 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--right-click", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("files", nargs="*", help="Files to convert")
     args = parser.parse_args(actual_argv)
+
+    if args.merge and args.files:
+        merge_lower = args.merge.lower()
+        if any(merge_lower.endswith(ext) for ext in SUPPORTED_EXTENSIONS) and os.path.exists(args.merge):
+            args.files.insert(0, args.merge)
+            args.merge = "hammerdowned.md"
 
     args.include = validate_filter_patterns(parser, args.include, "--include")
     args.exclude = validate_filter_patterns(parser, args.exclude, "--exclude")
