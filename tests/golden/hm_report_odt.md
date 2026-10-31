@@ -1,4 +1,4 @@
-![Image](hm_images_report_odt/img_000.jpeg)
+![Image](hm_images_report_odt/img_001.jpeg)
 
 | Группа | К работе допущен |
 

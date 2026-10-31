@@ -72,9 +72,9 @@ def test_google_zip_conversion(tmp_path: Path):
     content = out_md.read_text(encoding="utf-8")
     assert "# Title" in content
     assert "Hello [link](http://example.com)" in content
-    assert "![Test image](hm_images_test_doc_zip/img_000.png)" in content
+    assert "![Test image](hm_images_test_doc_zip/img_001.png)" in content
 
-    img_file = out_dir / "hm_images_test_doc_zip" / "img_000.png"
+    img_file = out_dir / "hm_images_test_doc_zip" / "img_001.png"
     assert img_file.is_file()
     assert img_file.read_bytes() == b"fake_png_data"
 
@@ -99,8 +99,8 @@ def test_html_images_inside_tables_and_lists(tmp_path: Path):
     assert out_md.is_file()
 
     content = out_md.read_text(encoding="utf-8")
-    assert "![Table image](hm_images_inline_images_html/img_000.png)" in content
-    assert "![List image](hm_images_inline_images_html/img_001.png)" in content
+    assert "![Table image](hm_images_inline_images_html/img_001.png)" in content
+    assert "![List image](hm_images_inline_images_html/img_002.png)" in content
     assert "![Remote](https://lh3.googleusercontent.com/remote.png)" in content
     assert "Hello [link](http://example.com)" in content
 
@@ -155,9 +155,9 @@ def test_data_image_is_written_to_disk(tmp_path: Path):
     out_md = out_dir / "hm_data_img_html.md"
     assert out_md.is_file()
     content = out_md.read_text(encoding="utf-8")
-    assert "![Inline](hm_images_data_img_html/img_000.png)" in content
+    assert "![Inline](hm_images_data_img_html/img_001.png)" in content
     assert "data:image/" not in content
 
-    img_file = out_dir / "hm_images_data_img_html" / "img_000.png"
+    img_file = out_dir / "hm_images_data_img_html" / "img_001.png"
     assert img_file.is_file()
     assert img_file.read_bytes() == b"fake png bytes"

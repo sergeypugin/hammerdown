@@ -76,7 +76,7 @@ def convert_html(
                 except Exception:
                     continue
                 images_dir.mkdir(parents=True, exist_ok=True)
-                image_name = f"img_{saved_images:03d}.{sub_type}"
+                image_name = f"img_{saved_images + 1:03d}.{sub_type}"
                 (images_dir / image_name).write_bytes(img_bytes)
                 img_map[src_val] = f"{img_dir_name}/{image_name}"
                 saved_images += 1
@@ -92,7 +92,7 @@ def convert_html(
             if local_img_path.is_file():
                 images_dir.mkdir(parents=True, exist_ok=True)
                 ext = local_img_path.suffix or ".png"
-                image_name = f"img_{saved_images:03d}{ext}"
+                image_name = f"img_{saved_images + 1:03d}{ext}"
                 shutil.copy2(local_img_path, images_dir / image_name)
                 img_map[src_val] = f"{img_dir_name}/{image_name}"
                 saved_images += 1

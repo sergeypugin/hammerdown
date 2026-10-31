@@ -62,7 +62,7 @@ def _render_node(
                 return []
             image_dir = output_dir / img_dir_name
             image_dir.mkdir(parents=True, exist_ok=True)
-            image_name = f"img_{len(images):03d}{extension}"
+            image_name = f"img_{len(images) + 1:03d}{extension}"
             (image_dir / image_name).write_bytes(image_data)
             images[href] = f"![Image]({img_dir_name}/{image_name})"
         return [images[href]]

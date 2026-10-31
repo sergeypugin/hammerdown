@@ -48,7 +48,7 @@ def convert_txt_or_md(
             if not img_dir.exists():
                 img_dir.mkdir(parents=True, exist_ok=True)
 
-            img_name = f"embedded_img_{saved_imgs}.{ext}"
+            img_name = f"embedded_img_{saved_imgs + 1}.{ext}"
             (img_dir / img_name).write_bytes(img_bytes)
             saved_imgs += 1
             return f"{img_dir_name}/{img_name}"
