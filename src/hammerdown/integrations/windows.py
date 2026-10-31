@@ -75,6 +75,26 @@ def _install_windows(command: str) -> None:
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, merge_path + r"\command") as key:
         winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --merge-auto "%1"')
 
+    # "Hammerdown tree" verb
+    tree_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, tree_path) as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammerdown tree")
+        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
+        if icon_path:
+            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, tree_path + r"\command") as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --tree "%1"')
+
+    # "Hammerdown tree with all formats" verb
+    tree_all_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree_all"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, tree_all_path) as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammerdown tree with all formats")
+        winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
+        if icon_path:
+            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, tree_all_path + r"\command") as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --tree --all-formats "%1"')
+
     bg_key_path = r"Software\Classes\Directory\Background\shell\hammerdown"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path) as key:
         winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammer down directory")
@@ -122,6 +142,8 @@ def _uninstall_windows() -> None:
         _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\SystemFileAssociations\{ext}\shell\Convert to Markdown")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge")
+    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree")
+    _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree_all")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\shell\hammerdown")
     _remove_registry_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell\hammerdown")
     sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
