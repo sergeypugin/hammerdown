@@ -280,7 +280,7 @@ Options:
 - `-v`, `--version` -- display version information
 
 > [!note]
-> The `-f` / `--force`, `--in-place`, and `--quiet` flags are not supported. Long option names use two dashes and hyphenated words, so `--skip_existing` is rejected in favor of `--skip-existing`. Single-dash long forms such as `-version` and `-tree` are rejected with a two-dash suggestion; use `-v` / `--version` and `-t` / `--tree`.
+> The `-f` / `--force`, `--in-place`, and `--quiet` flags are not supported. Long option names use two dashes and hyphenated words, so `--skip_existing` is rejected in favor of `--skip-existing`. Single-dash long forms such as `-version` and `-tree` are rejected with a two-dash suggestion; use `-v` / `--version` and `-t` / `--tree`. Abbreviated long forms such as `--v` and `--tre` are not accepted either; Hammerdown suggests the exact option, and an ambiguous prefix lists all possible matches.
 
 #### Tree Mode
 

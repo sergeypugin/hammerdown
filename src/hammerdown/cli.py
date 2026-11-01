@@ -63,21 +63,44 @@ def validate_filter_patterns(parser: argparse.ArgumentParser, values: Sequence[s
     return list(values)
 
 
-def reject_single_dash_long_options(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
-    long_options = {
-        option[2:]
+def _long_options(parser: argparse.ArgumentParser) -> set[str]:
+    return {
+        option
         for action in parser._actions
         for option in action.option_strings
         if option.startswith("--")
     }
+
+
+def reject_single_dash_long_options(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
+    long_names = {option[2:] for option in _long_options(parser)}
     for token in argv:
         if token == "--":
             break
         if not token.startswith("-") or token.startswith("--") or token == "-":
             continue
         name = token[1:].split("=", 1)[0]
-        if name in long_options:
+        if name in long_names:
             parser.error(f"unrecognized option {token!r}; did you mean '--{name}'?")
+
+
+def reject_abbreviated_long_options(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
+    long_options = _long_options(parser)
+    for token in argv:
+        if token == "--":
+            break
+        if not token.startswith("--") or token == "--":
+            continue
+        option = token.split("=", 1)[0]
+        if option in long_options:
+            continue
+        matches = sorted(candidate for candidate in long_options if candidate.startswith(option))
+        if not matches:
+            continue
+        if len(matches) == 1:
+            parser.error(f"unrecognized option {token!r}; did you mean '{matches[0]}'?")
+        formatted = ", ".join(repr(candidate) for candidate in matches)
+        parser.error(f"unrecognized option {token!r}; possible matches: {formatted}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -94,6 +117,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
         description=APP_DESCRIPTION,
+        allow_abbrev=False,
     )
     parser.add_argument("-v", "--version", action="version", version=f"{APP_NAME} {__version__}")
     action = parser.add_mutually_exclusive_group()
@@ -171,6 +195,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--right-click", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("files", nargs="*", help="Files to convert")
     reject_single_dash_long_options(parser, actual_argv)
+    reject_abbreviated_long_options(parser, actual_argv)
     args = parser.parse_intermixed_args(actual_argv)
 
     conversion_options_present = any(

@@ -261,6 +261,36 @@ def test_single_dash_long_options_are_rejected_with_suggestion(argv, suggestion,
     assert f"did you mean '{suggestion}'" in error
 
 
+@pytest.mark.parametrize(
+    ("argv", "suggestion"),
+    [
+        (["--v"], "--version"),
+        (["--vers"], "--version"),
+        (["--tre", "notes.txt"], "--tree"),
+        (["--all-for", "notes.txt"], "--all-formats"),
+    ],
+)
+def test_abbreviated_long_options_are_rejected_with_suggestion(argv, suggestion, capsys):
+    with pytest.raises(SystemExit) as exc:
+        hammerdown.cli.main(argv)
+
+    assert exc.value.code == 2
+    error = capsys.readouterr().err
+    assert f"did you mean '{suggestion}'" in error
+
+
+def test_ambiguous_long_option_lists_candidates(capsys):
+    with pytest.raises(SystemExit) as exc:
+        hammerdown.cli.main(["--in"])
+
+    assert exc.value.code == 2
+    error = capsys.readouterr().err
+    assert "possible matches" in error
+    assert "--include" in error
+    assert "--include-gitignored" in error
+    assert "--install" in error
+
+
 def test_version_option(capsys):
     try:
         hammerdown.cli.main(["--version"])
