@@ -4,7 +4,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 from .batch_ui_render import (
     add_queue_columns as _add_queue_columns,
@@ -113,7 +113,7 @@ class BatchUI:
         self._live.update(_LiveBatchRenderable(self, final=True), refresh=False)
         self.stop()
 
-    def print_error_list(self) -> None:
+    def print_error_list(self, *, file: TextIO | None = None) -> None:
         if not self.errors:
             return
         from rich import box
@@ -122,7 +122,11 @@ class BatchUI:
         from rich.table import Table
         from rich.text import Text
 
-        self._console = self._console or Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+        if file is None:
+            self._console = self._console or Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+            console = self._console
+        else:
+            console = Console(file=file, width=BATCH_UI_WIDTH, force_terminal=file.isatty())
         error_table = Table.grid(expand=True, padding=(0, 0))
         _add_status_file_columns(error_table)
         for file_name, reason in self.errors:
@@ -131,7 +135,7 @@ class BatchUI:
                 Text(_truncate_filename(file_name, QUEUE_FILE_WIDTH), style="red", no_wrap=True),
                 Text(reason, style="white"),
             )
-        self._console.print(
+        console.print(
             Panel(
                 error_table,
                 title=_panel_title(f"Error list ({len(self.errors)})", "red"),
@@ -142,7 +146,7 @@ class BatchUI:
             )
         )
 
-    def print_skipped_list(self) -> None:
+    def print_skipped_list(self, *, file: TextIO | None = None) -> None:
         if not self.skipped_files:
             return
         from rich import box
@@ -151,7 +155,11 @@ class BatchUI:
         from rich.table import Table
         from rich.text import Text
 
-        self._console = self._console or Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+        if file is None:
+            self._console = self._console or Console(width=BATCH_UI_WIDTH, force_terminal=sys.stdout.isatty())
+            console = self._console
+        else:
+            console = Console(file=file, width=BATCH_UI_WIDTH, force_terminal=file.isatty())
         skipped_table = Table.grid(expand=True, padding=(0, 0))
         _add_status_file_columns(skipped_table)
         for file_name, reason in self.skipped_files:
@@ -160,7 +168,7 @@ class BatchUI:
                 Text(_truncate_filename(file_name, QUEUE_FILE_WIDTH), style="dim", no_wrap=True),
                 Text(reason, style="dim"),
             )
-        self._console.print(
+        console.print(
             Panel(
                 skipped_table,
                 title=_panel_title(f"Skipped files ({len(self.skipped_files)})", "dim"),
@@ -168,6 +176,33 @@ class BatchUI:
                 border_style="dim",
                 box=box.ROUNDED,
                 width=BATCH_UI_WIDTH,
+            )
+        )
+
+    def print_ignore_files(self, paths: list[str], *, file: TextIO | None = None) -> None:
+        if not paths:
+            return
+        from rich import box
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        output = file if file is not None else sys.stdout
+        panel_width = max(BATCH_UI_WIDTH, max(len(path) for path in paths) + 4)
+        console = Console(file=output, width=panel_width, force_terminal=output.isatty())
+        table = Table.grid(expand=True, padding=(0, 0))
+        table.add_column(ratio=1)
+        for path in paths:
+            table.add_row(Text(path, style="white", overflow="fold"))
+        console.print(
+            Panel(
+                table,
+                title=_panel_title(f"Ignore files used ({len(paths)})", "cyan"),
+                title_align="left",
+                border_style="cyan",
+                box=box.ROUNDED,
+                width=panel_width,
             )
         )
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
 import sys
 import tempfile
 import urllib.error
@@ -15,7 +14,7 @@ from ..core import (
     convert_file,
     get_conversion_estimate_seconds,
 )
-from ..core.discovery import expand_paths, discover_all_files_for_tree, output_paths as compute_output_paths
+from ..core.discovery import DiscoveryResult, discover_paths, discover_tree, output_paths as compute_output_paths
 from ..core.google_drive import download_google_url, extract_file_id, is_google_drive_url
 from ..core.ipc import IPCCoordinator, try_delegate_to_coordinator
 from ..core.merge import (
@@ -79,6 +78,9 @@ def hand_off_to_windows_terminal(
         return False
 
     from ..integrations.windows_terminal import launch_context_worker
+
+    if getattr(args, "include_gitignored", False):
+        return False
 
     return launch_context_worker(
         files,
@@ -147,32 +149,67 @@ def run_batch(args: argparse.Namespace) -> int:
     finally:
         google_staging.cleanup()
 
-    include_patterns = [re.compile(pattern) for pattern in getattr(args, "include", [])]
-    exclude_patterns = [re.compile(pattern) for pattern in getattr(args, "exclude", [])]
+    from ..core.filters import compile_cli_filters
 
-    if tree_mode:
-        tree_items = list(
-            discover_all_files_for_tree(
-                raw_files,
-                include_binary=all_formats,
+    include_spec, exclude_spec = compile_cli_filters(
+        getattr(args, "include", []),
+        getattr(args, "exclude", []),
+    )
+
+    def discover(paths: Sequence[str]) -> DiscoveryResult:
+        if tree_mode:
+            return discover_tree(
+                paths,
+                all_formats=all_formats,
                 excluded_dir=output_root,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
+                include_patterns=include_spec,
+                exclude_patterns=exclude_spec,
+                include_gitignored=getattr(args, "include_gitignored", False),
             )
-        )
-        targets = []
-        for file_path, category in tree_items:
-            if category == "skip":
-                targets.append((file_path, "skipped (binary, not supported)"))
-            else:
-                targets.append((file_path, None))
-    else:
-        targets = expand_paths(
-            raw_files,
+        return discover_paths(
+            paths,
             excluded_dir=output_root,
-            include_patterns=include_patterns,
-            exclude_patterns=exclude_patterns,
+            include_patterns=include_spec,
+            exclude_patterns=exclude_spec,
+            include_gitignored=getattr(args, "include_gitignored", False),
         )
+
+    def explicitly_selected_files(paths: Sequence[str]) -> set[Path]:
+        selected: set[Path] = set()
+        for raw_path in paths:
+            try:
+                candidate = Path(raw_path).resolve()
+                if candidate.is_file():
+                    selected.add(candidate)
+            except OSError:
+                continue
+        return selected
+
+    def targets_from_discovery(result: DiscoveryResult, paths: Sequence[str]) -> list[tuple[str, str | None]]:
+        discovered_targets: list[tuple[str, str | None]] = [
+            (target.path, None) for target in result.targets
+        ]
+        discovered_targets.extend(result.errors)
+        if not tree_mode:
+            selected = explicitly_selected_files(paths)
+            for skip in result.skipped:
+                if skip.reason == "unsupported format" and Path(skip.path).resolve() in selected:
+                    discovered_targets.append((skip.path, skip.reason))
+        return discovered_targets
+
+    def skips_from_discovery(result: DiscoveryResult, paths: Sequence[str]):
+        selected = explicitly_selected_files(paths) if not tree_mode else set()
+        ignore_paths = {Path(path).resolve() for path in result.ignore_files}
+        return [
+            skip for skip in result.skipped
+            if Path(skip.path).resolve() not in ignore_paths
+            and not (skip.reason == "unsupported format" and Path(skip.path).resolve() in selected)
+        ]
+
+    discovery = discover(raw_files)
+    targets = targets_from_discovery(discovery, raw_files)
+    discovery_skips = skips_from_discovery(discovery, raw_files)
+    ignore_files = list(discovery.ignore_files)
     # Surface Google links that could not be downloaded as explicit errors
     for url, reason in google_failed:
         # Give a readable label instead of just Path(url).name (which is often "edit")
@@ -181,10 +218,6 @@ def run_batch(args: argparse.Namespace) -> int:
         if file_id:
             label = f"Google Doc ({file_id[:8]}...)"
         targets.append((label, reason))
-    if not targets:
-        logger.info("No supported documents found to convert")
-        return 0
-
     targets.sort(key=lambda item: item[0].lower())
     files = [path for path, error in targets if error is None]
     ui_files = [path for path, _ in targets]
@@ -197,6 +230,10 @@ def run_batch(args: argparse.Namespace) -> int:
         initial_errors = [(path, error) for path, error in targets if error is not None]
         for path, error in initial_errors:
             print(f"[!] {Path(path).name}: {error}", file=sys.stderr)
+        reporting_ui = BatchUI(ui_files, estimates=estimates)
+        reporting_ui.skipped_files.extend((Path(skip.path).name, skip.reason) for skip in discovery_skips)
+        reporting_ui.print_ignore_files(ignore_files, file=sys.stderr)
+        reporting_ui.print_skipped_list(file=sys.stderr)
         file_estimates = [estimate for (_, error), estimate in zip(targets, estimates) if error is None]
         if getattr(args, "confirm", False) and files and not confirm_stdout(files, file_estimates):
             return 1
@@ -218,22 +255,32 @@ def run_batch(args: argparse.Namespace) -> int:
     coordinator = IPCCoordinator() if use_ipc else None
     coordinator_started = coordinator.start() if coordinator else False
     if use_ipc and not coordinator_started:
-        if files and not any(error for _, error in targets) and try_delegate_to_coordinator(files, options):
-            logger.info("Delegated %d files to active hammerdown coordinator", len(files))
-        return 0
+        if getattr(args, "include_gitignored", False):
+            coordinator = None
+            use_ipc = False
+        else:
+            if files and not any(error for _, error in targets) and try_delegate_to_coordinator(files, options):
+                logger.info("Delegated %d files to active hammerdown coordinator", len(files))
+                return 0
+            reporting_ui = BatchUI(ui_files, estimates=estimates)
+            reporting_ui.errors.extend((path, error) for path, error in targets if error is not None)
+            reporting_ui.skipped_files.extend((Path(skip.path).name, skip.reason) for skip in discovery_skips)
+            reporting_ui.print_error_list()
+            reporting_ui.print_ignore_files(ignore_files)
+            reporting_ui.print_skipped_list()
+            return 1 if reporting_ui.errors else 0
 
     if coordinator is not None and coordinator_started:
         initial_errors = [target for target in targets if target[1] is not None]
         collected_files = coordinator.collect_files(files, assembly_timeout=2.0)
-        targets = expand_paths(
-            [*raw_files, *collected_files],
-            excluded_dir=output_root,
-            include_patterns=include_patterns,
-            exclude_patterns=exclude_patterns,
+        rescan_paths = [*raw_files, *collected_files]
+        rescanned = discover(rescan_paths)
+        targets = targets_from_discovery(rescanned, rescan_paths)
+        targets.extend(target for target in initial_errors if target not in targets)
+        discovery_skips.extend(
+            skip for skip in skips_from_discovery(rescanned, rescan_paths) if skip not in discovery_skips
         )
-        targets.extend(
-            target for target in initial_errors if target not in targets
-        )
+        ignore_files = sorted(set(ignore_files).union(rescanned.ignore_files))
         targets.sort(key=lambda item: item[0].lower())
         files = [path for path, error in targets if error is None]
         ui_files = [path for path, _ in targets]
@@ -303,6 +350,11 @@ def run_batch(args: argparse.Namespace) -> int:
     merged_count = 0
     merge_initialized = False
     batch_ui = BatchUI(ui_files, estimates=estimates)
+    batch_ui.skipped_files.extend((Path(skip.path).name, skip.reason) for skip in discovery_skips)
+    batch_ui.print_ignore_files(ignore_files)
+
+    if not targets:
+        logger.info("No supported documents found to convert")
 
     if batch_ui.can_redraw:
         batch_ui.start()
@@ -495,6 +547,7 @@ def convert_files(
     merge: str | os.PathLike[str] | None = None,
     stdout: bool = False,
     confirm: bool = False,
+    include_gitignored: bool = False,
 ) -> int:
     """Convert selected files using the same public options as the CLI."""
     if confirm and not stdout:
@@ -509,8 +562,8 @@ def convert_files(
         raise ValueError("overwrite cannot be combined with skip_existing")
     if overwrite and output_dir is not None:
         raise ValueError("overwrite cannot be combined with output_dir")
-    include_patterns = _normalize_patterns(include, "include")
-    exclude_patterns = _normalize_patterns(exclude, "exclude")
+    include_patterns = _validated_patterns(include, "include")
+    exclude_patterns = _validated_patterns(exclude, "exclude")
     namespace = argparse.Namespace(
         files=[os.fspath(path) for path in files],
         include=include_patterns,
@@ -521,6 +574,7 @@ def convert_files(
         merge=os.fspath(merge) if merge is not None else None,
         stdout=stdout,
         confirm=confirm,
+        include_gitignored=include_gitignored,
         coordinator=False,
         context_worker=False,
         right_click=False,
@@ -528,15 +582,14 @@ def convert_files(
     return run_batch(namespace)
 
 
-def _normalize_patterns(patterns: Sequence[str], flag: str) -> list[str]:
-    from ..cli import pattern_to_regex
+def _validated_patterns(patterns: Sequence[str], flag: str) -> list[str]:
+    from ..core.filters import compile_cli_filters
 
-    normalized_patterns: list[str] = []
-    for pattern in patterns:
-        regex_pattern = pattern_to_regex(pattern)
-        try:
-            re.compile(regex_pattern)
-        except re.error as exc:
-            raise ValueError(f"{flag} invalid filter pattern {pattern!r}: {exc}") from exc
-        normalized_patterns.append(regex_pattern)
-    return normalized_patterns
+    try:
+        if flag == "include":
+            compile_cli_filters(patterns, ())
+        else:
+            compile_cli_filters((), patterns)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{flag} invalid filter pattern: {exc}") from exc
+    return list(patterns)

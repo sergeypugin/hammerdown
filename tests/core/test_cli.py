@@ -116,7 +116,7 @@ def test_help_describes_filter_and_conversion_options(capsys):
 
     assert exc.value.code == 0
     output = capsys.readouterr().out
-    assert "regex/glob pathspec" in output
+    assert "GitWildMatch/pathspec" in output
     assert "--include-gitignored" in output
     assert "--all-formats" in output
     assert "never an input resource" in output
@@ -398,22 +398,25 @@ def test_include_and_exclude_filter_order_and_repeated_patterns(tmp_path: Path, 
     keep_a = root / "keep_a.txt"
     keep_b = nested / "keep_b.md"
     exclude = nested / "exclude_keep.txt"
+    excluded_include = root / "keep_excluded.txt"
     ignore = root / "other.txt"
-    for path in (keep_a, keep_b, exclude, ignore):
+    for path in (keep_a, keep_b, exclude, excluded_include, ignore):
         path.write_text(path.name, encoding="utf-8")
 
     assert hammerdown.cli.main([
-        "-i", "keep", "-i", "other", "-e", "exclude", str(root)
+        "-i", "keep*", "-i", "other*", "-e", "exclude*",
+        "-e", "keep_excluded*", str(root)
     ]) == 0
     capsys.readouterr()
 
     assert (root / "hm_keep_a_txt.md").is_file()
     assert (nested / "hm_keep_b_md.md").is_file()
     assert (nested / "hm_exclude_keep_txt.md").exists() is False
+    assert (root / "hm_keep_excluded_txt.md").exists() is False
     assert (root / "hm_other_txt.md").is_file()
 
 
-def test_include_selects_subset_and_quoted_pattern_is_normalized(tmp_path: Path, capsys):
+def test_include_selects_russian_filename_with_spaces_from_quoted_pattern(tmp_path: Path, capsys):
     root = tmp_path / "docs"
     root.mkdir()
     selected = root / "Русское предложение (x).txt"
@@ -422,7 +425,7 @@ def test_include_selects_subset_and_quoted_pattern_is_normalized(tmp_path: Path,
     other.write_text("other", encoding="utf-8")
 
     assert hammerdown.cli.main([
-        "-i", "'Русское предложение \\(x\\)'", str(root)
+        "-i", "'Русское предложение (x).txt'", str(root)
     ]) == 0
     capsys.readouterr()
 
@@ -430,15 +433,29 @@ def test_include_selects_subset_and_quoted_pattern_is_normalized(tmp_path: Path,
     assert not (root / "hm_other_txt.md").exists()
 
 
-def test_invalid_filter_regex_is_argparse_error(tmp_path: Path):
+def test_include_pattern_preserves_escaped_parentheses(tmp_path: Path, capsys):
+    root = tmp_path / "docs"
+    root.mkdir()
+    selected = root / "report(final).txt"
+    other = root / "report-final.txt"
+    selected.write_text("selected", encoding="utf-8")
+    other.write_text("other", encoding="utf-8")
+
+    assert hammerdown.cli.main(["-i", r"report\(final\).txt", str(root)]) == 0
+    capsys.readouterr()
+
+    assert (root / "hm_report(final)_txt.md").is_file()
+    assert not (root / "hm_report-final_txt.md").exists()
+
+
+def test_filter_pattern_is_not_validated_as_regex(tmp_path: Path, capsys):
     source = tmp_path / "notes.txt"
     source.write_text("text", encoding="utf-8")
 
-    with pytest.raises(SystemExit) as exc:
-        hammerdown.cli.main(["--include", "[", str(source)])
+    assert hammerdown.cli.main(["--include", "[", str(source)]) == 0
 
-    assert exc.value.code == 2
     assert not (tmp_path / "hm_notes_txt.md").exists()
+    assert "cli include filter" in capsys.readouterr().out
 
 
 def test_directory_with_trailing_slash_converts_files(tmp_path: Path, monkeypatch):
@@ -489,6 +506,22 @@ def test_include_with_tab_completed_path_and_glob_patterns(tmp_path: Path, monke
     assert hammerdown.cli.main(["-i", trailing_include, str(tmp_path)]) == 0
     assert (web_dir / "hm_keep_txt.md").is_file()
     assert not (other_dir / "hm_ignore_txt.md").exists()
+
+
+@pytest.mark.parametrize("separator", ["/", "\\"])
+def test_include_normalizes_windows_and_posix_separators(
+    tmp_path: Path, separator: str
+):
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "keep.txt").write_text("keep", encoding="utf-8")
+    (nested / "skip.md").write_text("skip", encoding="utf-8")
+
+    pattern = f"nested{separator}keep.txt"
+    assert hammerdown.cli.main(["-i", pattern, str(tmp_path)]) == 0
+
+    assert (nested / "hm_keep_txt.md").is_file()
+    assert not (nested / "hm_skip_md.md").exists()
 
 
 def test_include_with_glob_pattern(tmp_path: Path, monkeypatch):

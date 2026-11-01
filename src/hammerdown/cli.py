@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
 import sys
 from typing import Sequence
 
@@ -51,60 +50,17 @@ def update() -> bool:
     return update_application(install_callback=install)
 
 
-import fnmatch
-
-
-def normalize_filter_pattern(value: str) -> str:
-    stripped = value.strip()
-    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
-        stripped = stripped[1:-1].strip()
-
-    normalized = stripped
-    if "\\" in normalized:
-        if normalized.startswith(".\\"):
-            normalized = "./" + normalized[2:]
-        if normalized.endswith("\\") and not normalized.endswith("\\\\"):
-            normalized = normalized[:-1] + "/"
-        normalized = re.sub(r"\\(?=[/a-zA-Z0-9_\s]|$)", "/", normalized)
-
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
-    if len(normalized) > 1 and normalized.endswith("/"):
-        normalized = normalized[:-1]
-
-    return normalized
-
-
-def pattern_to_regex(pattern_str: str) -> str:
-    norm = normalize_filter_pattern(pattern_str)
-    is_glob = any(c in norm for c in ("*", "?")) or ("[" in norm and "]" in norm)
-    if is_glob and not re.search(r"\.\*|\.\+|\(\?|\{\d", norm):
-        try:
-            return fnmatch.translate(norm)
-        except re.error:
-            pass
-    try:
-        re.compile(norm)
-        return norm
-    except re.error as reg_exc:
-        if is_glob:
-            try:
-                return fnmatch.translate(norm)
-            except re.error:
-                pass
-        raise reg_exc
-
-
 def validate_filter_patterns(parser: argparse.ArgumentParser, values: Sequence[str], flag: str) -> list[str]:
-    normalized: list[str] = []
-    for value in values:
-        try:
-            regex_pattern = pattern_to_regex(value)
-            re.compile(regex_pattern)
-        except (re.error, ValueError) as exc:
-            parser.error(f"{flag} invalid regular expression {value!r}: {exc}")
-        normalized.append(regex_pattern)
-    return normalized
+    from .core.filters import compile_cli_filters
+
+    try:
+        if flag == "--include":
+            compile_cli_filters(values, ())
+        else:
+            compile_cli_filters((), values)
+    except (TypeError, ValueError) as exc:
+        parser.error(f"{flag} invalid filter pattern: {exc}")
+    return list(values)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -138,16 +94,16 @@ def _main(argv: Sequence[str] | None = None) -> int:
         "--include",
         action="append",
         default=[],
-        metavar="REGEX",
-        help="Include files whose normalized relative path matches this regex/glob pathspec; may be repeated",
+        metavar="PATTERN",
+        help="Include files matching this GitWildMatch/pathspec pattern; may be repeated",
     )
     parser.add_argument(
         "-e",
         "--exclude",
         action="append",
         default=[],
-        metavar="REGEX",
-        help="Exclude files whose normalized relative path matches this regex/glob pathspec; may be repeated",
+        metavar="PATTERN",
+        help="Exclude files matching this GitWildMatch/pathspec pattern; may be repeated",
     )
     parser.add_argument(
         "-w",

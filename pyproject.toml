@@ -19,6 +19,7 @@ dependencies = [
     "rich",
     "beautifulsoup4",
     "lxml",
+    "pathspec",
 ]
 
 [project.scripts]

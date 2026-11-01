@@ -198,7 +198,7 @@ def test_include_can_be_combined_with_output_directory(tmp_path: Path, capsys):
     (root / "other.txt").write_text("other", encoding="utf-8")
     output = tmp_path / "output"
 
-    assert main(["-i", "keep", "-o", str(output), str(root)]) == 0
+    assert main(["-i", "keep*", "-o", str(output), str(root)]) == 0
     capsys.readouterr()
 
     assert (output / "hm_keep_txt.md").is_file()

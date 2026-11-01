@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Generator, Sequence
+from typing import Generator, Pattern, Sequence
+
+from pathspec import PathSpec
 
 from . import SUPPORTED_EXTENSIONS
+from .ignore import IgnoreFile, ignore_files_for, ignore_scope_for, is_ignored, read_ignore_file
 from .path_utils import normalize_path
 
 # Directories that never contain user documents worth converting and that can
@@ -21,19 +25,46 @@ IGNORED_DIRECTORY_NAMES: frozenset[str] = frozenset(
     }
 )
 
-# Binary document formats for tree mode with --all-formats
-BINARY_DOCUMENT_EXTENSIONS: frozenset[str] = frozenset({
-    ".pdf", ".docx", ".doc", ".xlsx", ".xls",
-    ".pptx", ".ppt", ".odt", ".epub", ".mobi",
-})
+# Text-like formats useful in tree mode, whether or not Hammerdown converts them.
+TEXT_FILE_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".txt", ".md", ".rst", ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs",
+        ".ts", ".tsx", ".json", ".jsonc", ".yaml", ".yml", ".toml", ".xml",
+        ".html", ".htm", ".css", ".scss", ".less", ".java", ".kt", ".kts",
+        ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".rs", ".go", ".rb",
+        ".php", ".sh", ".bash", ".zsh", ".sql", ".csv", ".tsv", ".log",
+        ".ini", ".cfg", ".conf", ".properties", ".gradle", ".dockerfile",
+        ".makefile", ".graphql", ".proto", ".swift", ".scala", ".vue", ".svelte",
+    }
+)
+TEXT_CONVERTIBLE_EXTENSIONS: frozenset[str] = frozenset({".txt", ".md", ".csv", ".html", ".htm"})
+TEXT_FILE_NAMES: frozenset[str] = frozenset(
+    {"dockerfile", "makefile", "gnumakefile", "justfile", "license", "readme", "changelog", "gemfile", "rakefile", "procfile"}
+)
 
-# Text file extensions (source code)
-TEXT_FILE_EXTENSIONS: frozenset[str] = frozenset({
-    ".txt", ".md", ".py", ".js", ".ts", ".json",
-    ".yaml", ".yml", ".xml", ".html", ".css", ".java",
-    ".cpp", ".c", ".h", ".rs", ".go", ".rb", ".php",
-    ".sh", ".bash", ".sql", ".csv",
-})
+FilterPattern = Pattern[str] | PathSpec
+FilterPatternInput = FilterPattern | Sequence[FilterPattern]
+
+
+@dataclass(frozen=True)
+class DiscoveredTarget:
+    path: str
+    category: str | None = None
+
+
+@dataclass(frozen=True)
+class DiscoverySkip:
+    path: str
+    reason: str
+
+
+@dataclass
+class DiscoveryResult:
+    targets: list[DiscoveredTarget] = field(default_factory=list)
+    skipped: list[DiscoverySkip] = field(default_factory=list)
+    errors: list[tuple[str, str]] = field(default_factory=list)
+    ignore_files: list[str] = field(default_factory=list)
+    _legacy_items: list[tuple[str, str | None]] = field(default_factory=list, repr=False)
 
 
 def _is_ignored_directory(name: str) -> bool:
@@ -41,79 +72,256 @@ def _is_ignored_directory(name: str) -> bool:
 
 
 def _is_ignored_file(name: str) -> bool:
-    return (
-        name.startswith("~$")
-        or name.startswith(".")
-        or (name.startswith("hm_") and name.lower().endswith(".md"))
+    return name.startswith("~$") or name.startswith(".") or (name.startswith("hm_") and name.lower().endswith(".md"))
+
+
+def _relative_path(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.name
+
+
+def _iter_filter_patterns(patterns: FilterPatternInput) -> Generator[FilterPattern, None, None]:
+    if isinstance(patterns, (re.Pattern, PathSpec)):
+        yield patterns
+        return
+    yield from patterns
+
+
+def _has_filter_patterns(patterns: FilterPatternInput) -> bool:
+    if isinstance(patterns, re.Pattern):
+        return True
+    if isinstance(patterns, PathSpec):
+        return bool(patterns.patterns)
+    return any(_has_filter_patterns(pattern) for pattern in patterns)
+
+
+def _matches_pattern(pattern: FilterPattern, relative: str) -> bool:
+    if isinstance(pattern, re.Pattern):
+        return pattern.search(relative) is not None
+    return pattern.match_file(relative)
+
+
+def _passes_cli_filters(
+    path: Path,
+    root: Path,
+    include_patterns: FilterPatternInput,
+    exclude_patterns: FilterPatternInput,
+) -> tuple[bool, str | None]:
+    relative = _relative_path(path, root).replace("\\", "/")
+    while relative.startswith("./"):
+        relative = relative[2:]
+    if any(_matches_pattern(pattern, relative) for pattern in _iter_filter_patterns(exclude_patterns)):
+        return False, "cli exclude filter"
+    if _has_filter_patterns(include_patterns) and not any(
+        _matches_pattern(pattern, relative) for pattern in _iter_filter_patterns(include_patterns)
+    ):
+        return False, "cli include filter"
+    return True, None
+
+
+def _is_text_file(path: Path) -> bool:
+    try:
+        with path.open("rb") as stream:
+            sample = stream.read(8192)
+        if b"\x00" in sample:
+            return False
+        sample.decode("utf-8")
+        return True
+    except (OSError, UnicodeError):
+        return False
+
+
+def _tree_category(path: Path, all_formats: bool) -> str | None:
+    extension = path.suffix.lower()
+    supported = extension in SUPPORTED_EXTENSIONS
+    if extension in TEXT_CONVERTIBLE_EXTENSIONS and supported:
+        return "text_convertible" if _is_text_file(path) else None
+    if extension in TEXT_FILE_EXTENSIONS or path.name.lower() in TEXT_FILE_NAMES:
+        return "source_code" if _is_text_file(path) else None
+    if all_formats and supported:
+        return "binary_document"
+    return None
+
+
+def discover_paths(
+    paths: Sequence[str],
+    excluded_dir: Path | None = None,
+    include_patterns: FilterPatternInput = (),
+    exclude_patterns: FilterPatternInput = (),
+    include_gitignored: bool = False,
+) -> DiscoveryResult:
+    """Discover Hammerdown-convertible files with structured skip and error details."""
+    return _discover(
+        paths,
+        tree_mode=False,
+        all_formats=False,
+        excluded_dir=excluded_dir,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        include_gitignored=include_gitignored,
     )
 
 
-def expand_paths(
+def discover_tree(
     paths: Sequence[str],
+    all_formats: bool = False,
     excluded_dir: Path | None = None,
-    include_patterns: Sequence[re.Pattern[str]] = (),
-    exclude_patterns: Sequence[re.Pattern[str]] = (),
-) -> list[tuple[str, str | None]]:
-    """Resolve CLI inputs into ordered ``(path, error)`` targets."""
-    targets: list[tuple[str, str | None]] = []
-    seen_paths: set[Path] = set()
+    include_patterns: FilterPatternInput = (),
+    exclude_patterns: FilterPatternInput = (),
+    include_gitignored: bool = False,
+) -> DiscoveryResult:
+    """Discover tree-mode files, distinguishing convertibles from source text."""
+    return _discover(
+        paths,
+        tree_mode=True,
+        all_formats=all_formats,
+        excluded_dir=excluded_dir,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        include_gitignored=include_gitignored,
+    )
+
+
+def _discover(
+    paths: Sequence[str],
+    tree_mode: bool,
+    all_formats: bool,
+    excluded_dir: Path | None,
+    include_patterns: FilterPatternInput,
+    exclude_patterns: FilterPatternInput,
+    include_gitignored: bool,
+) -> DiscoveryResult:
+    result = DiscoveryResult()
+    seen_targets: set[Path] = set()
+    seen_skips: set[tuple[Path, str]] = set()
+    ignore_cache: dict[Path, IgnoreFile | None] = {}
+    ignore_paths: set[Path] = set()
     excluded_dir = excluded_dir.resolve() if excluded_dir is not None else None
 
-    def matches(path: Path, root: Path | None) -> bool:
-        if root is not None:
-            try:
-                relative = path.relative_to(root).as_posix()
-            except ValueError:
-                relative = path.name
-        else:
-            relative = path.name
-        if include_patterns and not any(pattern.search(relative) for pattern in include_patterns):
-            return False
-        return not any(pattern.search(relative) for pattern in exclude_patterns)
+    def add_skip(path: Path, reason: str) -> None:
+        identity = (path.resolve(), reason)
+        if identity not in seen_skips:
+            seen_skips.add(identity)
+            result.skipped.append(DiscoverySkip(str(path.resolve()), reason))
+
+    def add_error(path: str, reason: str) -> None:
+        result.errors.append((path, reason))
+        result._legacy_items.append((path, reason))
+
+    def rules_for(path: Path, scope: Path) -> list[IgnoreFile]:
+        rules: list[IgnoreFile] = []
+        for ignore_path in ignore_files_for(path, scope):
+            resolved = ignore_path.resolve()
+            ignore_paths.add(resolved)
+            if resolved not in ignore_cache:
+                try:
+                    ignore_cache[resolved] = read_ignore_file(resolved)
+                except (OSError, UnicodeError, ValueError):
+                    ignore_cache[resolved] = None
+                    add_error(str(resolved), "could not read ignore file")
+            rule_file = ignore_cache[resolved]
+            if rule_file is not None:
+                rules.append(rule_file)
+        return rules
+
+    def handle_file(file_path: Path, filter_root: Path, scope: Path, explicitly_selected: bool) -> None:
+        try:
+            canonical = file_path.resolve()
+        except OSError:
+            add_error(str(file_path), "could not resolve path")
+            return
+
+        rules = rules_for(canonical, scope)
+        if not include_gitignored and is_ignored(canonical, rules):
+            return
+        if _is_ignored_file(canonical.name):
+            add_skip(canonical, "safety filter")
+            return
+        if canonical in seen_targets:
+            return
+
+        allowed, reason = _passes_cli_filters(canonical, filter_root, include_patterns, exclude_patterns)
+        if not allowed:
+            add_skip(canonical, reason or "cli filter")
+            return
+
+        category: str | None = None
+        if tree_mode:
+            category = _tree_category(canonical, all_formats)
+            if category is None:
+                add_skip(canonical, "unsupported format")
+                return
+        elif canonical.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            add_skip(canonical, "unsupported format")
+            if explicitly_selected:
+                result._legacy_items.append((str(canonical), "unsupported format"))
+            return
+
+        seen_targets.add(canonical)
+        target = DiscoveredTarget(str(canonical), category)
+        result.targets.append(target)
+        result._legacy_items.append((target.path, None))
 
     for raw in paths:
         try:
             candidate = Path(normalize_path(raw)).resolve()
         except Exception:
-            targets.append((str(raw), "invalid path"))
+            add_error(str(raw), "invalid path")
             continue
-
         if not candidate.exists():
-            targets.append((str(raw), "file or directory not found"))
+            add_error(str(raw), "file or directory not found")
             continue
 
-        if candidate.is_dir():
-            for root, dirnames, filenames in os.walk(candidate):
-                pruned: list[str] = []
-                for name in dirnames:
-                    if _is_ignored_directory(name):
-                        continue
-                    if excluded_dir is not None and (Path(root) / name).resolve().is_relative_to(excluded_dir):
-                        continue
-                    pruned.append(name)
-                dirnames[:] = pruned
-                for name in sorted(filenames):
-                    if _is_ignored_file(name):
-                        continue
-                    try:
-                        file_path = (Path(root) / name).resolve()
-                        if (
-                            file_path.suffix.lower() in SUPPORTED_EXTENSIONS
-                            and file_path not in seen_paths
-                            and matches(file_path, candidate)
-                        ):
-                            seen_paths.add(file_path)
-                            targets.append((str(file_path), None))
-                    except OSError:
-                        continue
-        elif candidate.is_file():
-            if candidate.suffix.lower() not in SUPPORTED_EXTENSIONS:
-                targets.append((str(candidate), "unsupported format"))
-            elif candidate not in seen_paths and matches(candidate, None):
-                seen_paths.add(candidate)
-                targets.append((str(candidate), None))
+        filter_root = candidate if candidate.is_dir() else candidate.parent
+        scope = ignore_scope_for(filter_root)
+        if candidate.is_file():
+            handle_file(candidate, filter_root, scope, explicitly_selected=True)
+            continue
 
-    return targets
+        for root, dirnames, filenames in os.walk(candidate):
+            root_path = Path(root).resolve()
+            rules_for(root_path / "__hammerdown_discovery_placeholder__", scope)
+            kept_directories: list[str] = []
+            for name in sorted(dirnames):
+                directory = (root_path / name).resolve()
+                directory_rules = rules_for(directory, scope)
+                if not include_gitignored and is_ignored(directory, directory_rules, is_directory=True):
+                    continue
+                if _is_ignored_directory(name):
+                    add_skip(directory, "safety filter")
+                    continue
+                if excluded_dir is not None and directory.is_relative_to(excluded_dir):
+                    add_skip(directory, "safety filter")
+                    continue
+                kept_directories.append(name)
+            dirnames[:] = kept_directories
+
+            for name in sorted(filenames):
+                file_path = root_path / name
+                handle_file(file_path, candidate, scope, explicitly_selected=False)
+
+    result.ignore_files = [str(path) for path in sorted(ignore_paths)]
+    return result
+
+
+def expand_paths(
+    paths: Sequence[str],
+    excluded_dir: Path | None = None,
+    include_patterns: FilterPatternInput = (),
+    exclude_patterns: FilterPatternInput = (),
+    include_gitignored: bool = False,
+) -> list[tuple[str, str | None]]:
+    """Compatibility adapter returning ordered ``(path, error)`` pairs."""
+    result = discover_paths(
+        paths,
+        excluded_dir=excluded_dir,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        include_gitignored=include_gitignored,
+    )
+    return result._legacy_items
 
 
 def output_paths(
@@ -135,10 +343,7 @@ def output_paths(
     for path, _ in targets:
         source = Path(path).resolve()
         matching_roots = [root for root in roots if source.is_relative_to(root)]
-        if matching_roots:
-            relative = source.relative_to(max(matching_roots, key=lambda root: len(root.parts)))
-        else:
-            relative = Path(source.name)
+        relative = source.relative_to(max(matching_roots, key=lambda root: len(root.parts))) if matching_roots else Path(source.name)
         ext_clean = source.suffix.lower().lstrip(".")
         output_name = f"hm_{source.stem}_{ext_clean}.md" if ext_clean else f"hm_{source.stem}.md"
         paths.append(output_root / relative.parent / output_name)
@@ -149,10 +354,7 @@ def output_paths(
             collisions.setdefault(output, []).append(Path(source))
     duplicates = {output: sources for output, sources in collisions.items() if len(sources) > 1}
     if duplicates:
-        details = "; ".join(
-            f"{output}: {', '.join(str(source) for source in sources)}"
-            for output, sources in duplicates.items()
-        )
+        details = "; ".join(f"{output}: {', '.join(str(source) for source in sources)}" for output, sources in duplicates.items())
         raise ValueError(f"output filename collision: {details}")
     return paths
 
@@ -161,91 +363,18 @@ def discover_all_files_for_tree(
     paths: Sequence[str],
     include_binary: bool = False,
     excluded_dir: Path | None = None,
-    include_patterns: Sequence[re.Pattern[str]] = (),
-    exclude_patterns: Sequence[re.Pattern[str]] = (),
+    include_patterns: FilterPatternInput = (),
+    exclude_patterns: FilterPatternInput = (),
+    include_gitignored: bool = False,
 ) -> Generator[tuple[str, str], None, None]:
-    """Discover all files for tree mode with category classification.
-
-    Yields (file_path, category) tuples where category is one of:
-    - "text_convertible": supported formats for conversion
-    - "source_code": all text files (source code)
-    - "binary_document": binary documents (pdf, docx, etc.)
-    - "binary_unsupported": binary files not supported by hammerdown (when include_binary=True)
-    - "skip": binary non-convertible files (only when include_binary=False)
-    """
-    seen_paths: set[Path] = set()
-    excluded_dir = excluded_dir.resolve() if excluded_dir is not None else None
-
-    def matches(path: Path, root: Path | None) -> bool:
-        if root is not None:
-            try:
-                relative = path.relative_to(root).as_posix()
-            except ValueError:
-                relative = path.name
-        else:
-            relative = path.name
-        if include_patterns and not any(pattern.search(relative) for pattern in include_patterns):
-            return False
-        return not any(pattern.search(relative) for pattern in exclude_patterns)
-
-    for raw in paths:
-        try:
-            candidate = Path(normalize_path(raw)).resolve()
-        except Exception:
-            continue
-
-        if not candidate.exists():
-            continue
-
-        if candidate.is_dir():
-            for root, dirnames, filenames in os.walk(candidate):
-                pruned: list[str] = []
-                for name in dirnames:
-                    if _is_ignored_directory(name):
-                        continue
-                    if excluded_dir is not None and (Path(root) / name).resolve().is_relative_to(excluded_dir):
-                        continue
-                    pruned.append(name)
-                dirnames[:] = pruned
-                for name in sorted(filenames):
-                    if _is_ignored_file(name):
-                        continue
-                    try:
-                        file_path = (Path(root) / name).resolve()
-                        if file_path in seen_paths or not matches(file_path, candidate):
-                            continue
-                        seen_paths.add(file_path)
-
-                        ext = file_path.suffix.lower()
-
-                        if ext in SUPPORTED_EXTENSIONS:
-                            yield (str(file_path), "text_convertible")
-                        elif ext in TEXT_FILE_EXTENSIONS:
-                            yield (str(file_path), "source_code")
-                        elif ext in BINARY_DOCUMENT_EXTENSIONS:
-                            if include_binary:
-                                yield (str(file_path), "binary_document")
-                            else:
-                                yield (str(file_path), "skip")
-                        elif include_binary:
-                            # Unsupported binary files when include_binary is True
-                            yield (str(file_path), "binary_unsupported")
-                    except OSError:
-                        continue
-        elif candidate.is_file():
-            if candidate not in seen_paths and matches(candidate, None):
-                seen_paths.add(candidate)
-                ext = candidate.suffix.lower()
-
-                if ext in SUPPORTED_EXTENSIONS:
-                    yield (str(candidate), "text_convertible")
-                elif ext in TEXT_FILE_EXTENSIONS:
-                    yield (str(candidate), "source_code")
-                elif ext in BINARY_DOCUMENT_EXTENSIONS:
-                    if include_binary:
-                        yield (str(candidate), "binary_document")
-                    else:
-                        yield (str(candidate), "skip")
-                elif include_binary:
-                    # Unsupported binary files when include_binary is True
-                    yield (str(candidate), "binary_unsupported")
+    """Compatibility adapter yielding tree targets as ``(path, category)``."""
+    result = discover_tree(
+        paths,
+        all_formats=include_binary,
+        excluded_dir=excluded_dir,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        include_gitignored=include_gitignored,
+    )
+    for target in result.targets:
+        yield target.path, target.category or "text_convertible"
