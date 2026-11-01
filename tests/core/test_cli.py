@@ -243,6 +243,24 @@ def test_mixed_existing_and_missing_files_continue(tmp_path: Path, capsys):
     assert "file or directory not found" in output
 
 
+@pytest.mark.parametrize(
+    ("argv", "suggestion"),
+    [
+        (["-version"], "--version"),
+        (["-help"], "--help"),
+        (["-tree", "notes.txt"], "--tree"),
+        (["-install"], "--install"),
+    ],
+)
+def test_single_dash_long_options_are_rejected_with_suggestion(argv, suggestion, capsys):
+    with pytest.raises(SystemExit) as exc:
+        hammerdown.cli.main(argv)
+
+    assert exc.value.code == 2
+    error = capsys.readouterr().err
+    assert f"did you mean '{suggestion}'" in error
+
+
 def test_version_option(capsys):
     try:
         hammerdown.cli.main(["--version"])

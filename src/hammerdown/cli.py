@@ -63,6 +63,23 @@ def validate_filter_patterns(parser: argparse.ArgumentParser, values: Sequence[s
     return list(values)
 
 
+def reject_single_dash_long_options(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
+    long_options = {
+        option[2:]
+        for action in parser._actions
+        for option in action.option_strings
+        if option.startswith("--")
+    }
+    for token in argv:
+        if token == "--":
+            break
+        if not token.startswith("-") or token.startswith("--") or token == "-":
+            continue
+        name = token[1:].split("=", 1)[0]
+        if name in long_options:
+            parser.error(f"unrecognized option {token!r}; did you mean '--{name}'?")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         return _main(argv)
@@ -153,6 +170,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--context-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--right-click", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("files", nargs="*", help="Files to convert")
+    reject_single_dash_long_options(parser, actual_argv)
     args = parser.parse_intermixed_args(actual_argv)
 
     conversion_options_present = any(
