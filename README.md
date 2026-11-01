@@ -44,6 +44,8 @@ The PDF pipeline is built on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyM
   - [Logging and Progress Tracking](#logging-and-progress-tracking)
 - [Advanced Usage](#advanced-usage)
   - [Command Line Interface](#command-line-interface)
+    - [Tree Mode](#tree-mode)
+    - [Resource filters and ignore files](#resource-filters-and-ignore-files)
     - [Merging Documents into a Single File](#merging-documents-into-a-single-file)
     - [Streaming to stdout](#streaming-to-stdout)
   - [Python Library Quickstart](#python-library-quickstart)
@@ -135,15 +137,18 @@ hammerdown --install
 
 What this does:
 
-- on Windows: adds a **Hammer down file** action with an icon to the File Explorer context menu for all supported document formats, adds folder context menu options for recursive directory conversions, creates a **Send to** shortcut (`Send to -> Hammer down`) for first-level access in Windows 11, and activates an IPC coordinator to process multi-file selections in a single terminal window
-- on Linux: installs the launcher into `~/.local/bin`, installs a FreeDesktop application entry in `~/.local/share/applications/hammerdown.desktop` with MIME associations, registers KDE Dolphin ServiceMenus in `~/.local/share/kio/servicemenus` and `~/.local/share/kservices5/ServiceMenus`, and adds scripts for Nautilus, Nemo, and Caja (`Scripts -> Hammer down file`)
-- on macOS: installs the launcher into `~/.local/bin`, creates an Automator Quick Action in `~/Library/Services/Hammer down.workflow` for the Finder right-click context menu, and generates a drag-and-drop Droplet in `~/Applications/Hammer down.app` with `CFBundleDocumentTypes` for Finder "Open With"
+- on Windows: adds four actions to the File Explorer context menu for files and folders, creates matching **Send to** commands for first-level access in Windows 11, and activates an IPC coordinator to process multi-file selections in a single terminal window
+- on Linux: installs the launcher into `~/.local/bin`, installs a FreeDesktop application entry in `~/.local/share/applications/hammerdown.desktop` with MIME associations, registers KDE Dolphin ServiceMenus in `~/.local/share/kio/servicemenus` and `~/.local/share/kservices5/ServiceMenus`, and adds scripts for Nautilus, Nemo, and Caja
+- on macOS: installs the launcher into `~/.local/bin`, creates four Automator Quick Actions in `~/Library/Services`, and generates a drag-and-drop Droplet in `~/Applications/Hammerdown.app` with `CFBundleDocumentTypes` for Finder "Open With"
 
-To convert a file or folder, right-click any supported document or folder and select **Hammer down file** (or use **Send to -> Hammer down**). The Markdown output and extracted images are saved directly next to each original document.
+After installation, the file-manager actions are named:
+
+- **Hammerdown** converts each selected file or recursively selected folder to its own `hm_*.md` file and asset folder
+- **Hammerdown and merge** combines the selected resources into `hammerdowned.md` next to the first resolved source document
+- **Hammerdown tree** selects Gitingest-like text and code files and combines them into one tree document
+- **Hammerdown tree with all formats** does the same as **Hammerdown tree**, and also includes supported Hammerdown document formats such as PDF, Word, Excel, PowerPoint, OpenDocument, e-book, and ZIP inputs
 
 On Windows, multi-file selections are collected by a hidden background coordinator and opened in a single Windows Terminal window titled `Hammerdown`, so selecting several documents never produces several console windows. When Windows Terminal is not installed, the same run falls back to one regular console window instead.
-
-On Windows, a second menu item **Hammer down and merge** can combine a selection of files into one Markdown file (equivalent to `hammerdown --merge output.md file1 file2 ...`). The merged file is saved next to the first selected document as `hammerdowned.md`. This static menu item may also appear when only one file is selected; in that case it creates a merged Markdown output with one document. The verb uses a distinct dark red icon (`#48161b`) to distinguish it from the regular **Hammer down file** action.
 
 To remove file manager integration and clean up shortcuts:
 
@@ -152,7 +157,7 @@ hammerdown --uninstall
 ```
 
 > [!note]
-> `hammerdown --install` updates both context menu items (**Hammer down file** and **Hammer down and merge**) and SendTo shortcuts. Run it after upgrading to refresh launcher scripts.
+> `hammerdown --install` updates all four file-manager actions and their Send to commands. Run it after upgrading to refresh launcher scripts.
 
 #### Supported platforms for file-manager integration
 
@@ -231,13 +236,17 @@ hammerdown.convert_file("report.pdf", progress_callback=on_progress)
 
 ### Command Line Interface
 
-Run without arguments to see a short description, supported formats, and usage hint:
+Run with no arguments to print the tool description, supported formats, and the hint for `hammerdown --help`. A conversion invocation needs at least one input resource. A command made only from conversion flags exits with an error before discovery starts:
 
 ```sh
 hammerdown
+hammerdown --tree
+hammerdown -m anything.ext
 ```
 
-Convert one or multiple files:
+The first command prints the description. The last two have no input resource and fail immediately with `no input resources were provided`. The error is the same when the only arguments are filters, output options, or other conversion flags.
+
+A normal conversion writes one Markdown file and its assets for each discovered file. Merge mode combines converted documents into one target Markdown file. Tree mode uses its own discovery rules and also writes one combined Markdown document; `--all-formats` extends tree discovery with supported document formats. Convert one or multiple files:
 
 ```sh
 hammerdown report.pdf
@@ -257,46 +266,67 @@ The HTML export is downloaded to a temporary staging folder, converted, and then
 
 Options:
 
-> [!tip]
-> Running `hammerdown` without arguments prints a short description, the list of supported formats, and a hint to run `hammerdown --help` for full usage.
->
-> Example output:
->
-> ```text
-> hammerdown 3.1.0-pre1 is a cross-platform tool and Python library for converting PDF, Word, Excel, PowerPoint, OpenDocument, CSV, and plain-text documents into clean Markdown. Word charts are rendered as SVG, OpenDocument and Markdown images are extracted, and mathematical formulas are converted to LaTeX.
->
-> Supported formats: pdf, epub, mobi, fb2, xps, docx, doc, odt, xlsx, xls, pptx, ppt, csv, txt, md, log, html, htm, gdoc, gsheets, gslides, gfile, zip
->
-> Run 'hammerdown --help' for usage.
-> ```
-
-- `-i`, `--include REGEX` -- only process files whose normalized relative path matches REGEX; may be repeated
-- `-e`, `--exclude REGEX` -- skip files whose normalized relative path matches REGEX; may be repeated; exclusions always take priority
+- `-i`, `--include PATTERN` -- include paths matching a GitWildMatch/pathspec pattern; may be repeated
+- `-e`, `--exclude PATTERN` -- exclude paths matching a GitWildMatch/pathspec pattern; may be repeated
+- `-t`, `--tree` -- gather a project tree into one Markdown output, using Gitingest-like text and code collection
+- `--all-formats` -- in tree mode, also include supported Hammerdown document formats
+- `--include-gitignored` -- do not apply repository `.gitignore` and `.gitingestignore` rules
 - `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`) in-place instead of creating a copy
 - `-s`, `--skip-existing` -- skip conversion when the target Markdown file already exists; without it, existing `hm_*.md` outputs are overwritten
 - `-o`, `--output-dir DIR` -- save Markdown output and extracted images under DIR, preserving the relative layout of the input tree
-- `-m`, `--merge OUTPUT_MD` -- merge every converted Markdown document into a single target Markdown file
+- `-m [OUTPUT_MD]`, `--merge [OUTPUT_MD]` -- merge converted documents into the target Markdown file; the next argument is the output, and an omitted target defaults to `hammerdowned.md`
 - `--stdout` -- write the merged Markdown document to stdout; errors go to stderr
 - `--confirm` -- with `--stdout`, print a preflight estimate and ask for confirmation before writing anything
 - `-v`, `--version` -- display version information
 
 > [!note]
-> The `-f` / `--force`, `--in-place`, and `--quiet` flags are not supported. Long option names use hyphens, so `--skip_existing` is rejected; use `--skip-existing` instead.
+> The `-f` / `--force`, `--in-place`, and `--quiet` flags are not supported. Long option names use two dashes and hyphenated words, so `--skip_existing` is rejected in favor of `--skip-existing`. Single-dash long forms such as `-version` and `-tree` are rejected with a two-dash suggestion; use `-v` / `--version` and `-t` / `--tree`.
 
-Include and exclude filters are applied to the path relative to the directory that was passed on the command line. Include narrows the recursive scan first, then exclude removes matches from that set:
+#### Tree Mode
+
+A tree run without `--all-formats` gathers Gitingest-like text and code-like files. It does not add Hammerdown's binary document formats to the tree. With `--all-formats`, supported Hammerdown documents are included too; unknown binary files are skipped. Tree mode always produces one combined Markdown document: `hammerdowned.md` by default, or the file passed with `-m`. It is not a per-file conversion mode.
 
 ```sh
-hammerdown -i 'reports/.*' -e '/draft/' folder/
-hammerdown -s report.pdf
+hammerdown -t project/
+hammerdown project/ --tree --all-formats
 ```
+
+`-t` / `--tree` and `--all-formats` may appear before, between, or after resource arguments. These forms are equivalent:
+
+```sh
+hammerdown -t --all-formats project/
+hammerdown -t project/ --all-formats
+hammerdown project/ -t --all-formats
+```
+
+`--all-formats` without `-t` / `--tree` is rejected. `.log` files are not excluded automatically in any conversion mode; a log is processed unless an ignore rule or filter excludes it.
+
+#### Resource filters and ignore files
+
+Repeated `-i` patterns form an include group, and repeated `-e` patterns form an independent exclude group. The order of the options does not matter: matching any include pattern selects a path, then any matching exclude pattern removes it. Exclusions take priority; a later include does not restore an excluded path. Pattern values can contain comma- or whitespace-separated patterns. Patterns use Gitingest-compatible GitWildMatch/pathspec syntax and are matched against paths relative to their resource context.
+
+Quote pattern arguments with single or double quotes so the shell does not expand glob characters or split the argument. Single and double quotes can behave differently depending on the shell; for example, double quotes may still allow variable expansion. Hammerdown strips the matching quotes and then splits pattern values on commas or whitespace. Apostrophes or quote characters that are part of a file name are not supported by its quote parser. Backticks are not quoting syntax.
+
+```sh
+hammerdown -i 'src/**/*.py, docs/**/*.md' -i 'tests/**' -e '**/generated/**' project/
+```
+
+For each selected resource, Hammerdown looks for `.gitignore` and `.gitingestignore` from the selected root up to the nearest Git root, and also discovers nested ignore files below that root. Nested rules apply to their paths and support negation. Ignore files above the Git root and global ignore configuration are not applied. `--include-gitignored` disables only these repository ignore files; command-line filters, safety exclusions, and format rules still apply.
+
+Before processing, the `Ignore files used` panel lists every discovered ignore file. Files dropped by repository ignore rules are not added to the `Skipped files` panel; that panel is reserved for visible skips such as command-line filters and safety exclusions. When `--include-gitignored` is used, the discovered ignore files are still listed even though their rules are bypassed.
+
+Repeated files, a file plus its containing directory, and overlapping parent/child roots are resolved to canonical paths and processed once. Duplicate input paths do not create duplicate output.
 
 #### Merging Documents into a Single File
 
-`-m` / `--merge` converts many documents and concatenates the results into one Markdown file. This is convenient when you want to feed a whole project folder into an LLM as a single context block:
+`-m` / `--merge` treats the next argument as the output Markdown file and then expects one or more source resources. If the target is omitted, it defaults to `hammerdowned.md`. It converts the resources and concatenates the results into one Markdown file. This is convenient when you want to feed a whole project folder into an LLM as a single context block:
 
 ```sh
 hammerdown -m summary.md project/report.pdf project/notes.docx project/drafts/
+hammerdown project/report.pdf project/notes.docx project/drafts/ -m
 ```
+
+The first command writes `summary.md`; the second writes the default `hammerdowned.md`. An argument immediately after `-m` is never an input resource. For example, `hammerdown -m report.pdf` treats `report.pdf` as the output target and then fails because no input remains, while `hammerdown -m output.md report.pdf` is valid.
 
 The target file is built incrementally and has two parts.
 
@@ -396,7 +426,7 @@ hammerdown.convert_file("report.pdf", skip_existing=True)
 text, image_count = hammerdown.to_markdown("report.docx")
 
 # Convert a batch with CLI-equivalent options
-hammerdown.convert_files(["project/"], merge="summary.md", include=[r"reports/.*"])
+hammerdown.convert_files(["project/"], merge="summary.md", include=["reports/**"])
 ```
 
 For specialized format converters and low-level helpers, see [docs/PYTHON.md](docs/PYTHON.md).

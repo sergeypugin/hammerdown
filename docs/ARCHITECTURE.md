@@ -47,8 +47,8 @@ The conversion pipeline consists of three corresponding stages:
 ### 1. Input Handling
 
 - **Input sources**: paths from the command line, a Python call, a file-manager launch, or public Google Docs and Drive links
-- **CLI and Python API**: parses flags (`-i/--include`, `-e/--exclude`, `-w/--overwrite`, `-s/--skip-existing`, `-o/--output-dir`, `-m/--merge`, `--stdout`, `--confirm`, `-v/--version`) and hands the run to `run_batch`; running with no paths prints a short description instead of opening a dialog
-- **Path normalization**: resolves Windows and WSL paths, strips quotes, and verifies that each path exists
+- **CLI and Python API**: parses flags (`-i/--include`, `-e/--exclude`, `-t/--tree`, `--all-formats`, `--include-gitignored`, `-w/--overwrite`, `-s/--skip-existing`, `-o/--output-dir`, `-m/--merge`, `--stdout`, `--confirm`, `-v/--version`) and hands the run to `run_batch`; an empty CLI invocation prints the tool description, while a conversion invocation without resources is an error
+- **Path normalization**: resolves Windows and WSL paths, handles arguments grouped with single or double quotes, and verifies that each path exists; quote characters inside a file name are not supported by this parser
 
 ### 2. Content Parsing & Extraction
 
@@ -68,11 +68,11 @@ The conversion pipeline consists of three corresponding stages:
 
 ## Output Pipelines
 
-Normal per-file output writes one Markdown document plus its asset folder next to the source: `report.docx` becomes `hm_report_docx.md` and `hm_images_report_docx/`. Two alternative pipelines reuse the same converters but assemble the results differently.
+Normal per-file output writes one Markdown document plus its asset folder next to the source: `report.docx` becomes `hm_report_docx.md` and `hm_images_report_docx/`. Merge, tree, and stdout modes reuse the same converters but assemble the results differently.
 
 ### Merged Output (`-m / --merge`)
 
-`--merge summary.md` concatenates every successful conversion into one Markdown file:
+`--merge summary.md` concatenates every successful conversion into one Markdown file. The argument after `-m` is the output target, not an input resource; when no target argument is supplied, the default is `hammerdowned.md`.
 
 - sources are resolved and deduplicated first, then a common root is computed across all inputs
 - the target opens with a `Directory structure:` tree listing every source relative to that root
@@ -80,6 +80,12 @@ Normal per-file output writes one Markdown document plus its asset folder next t
 - assets are redirected into a folder named after the merge target: `summary.md` uses `hm_merged_into_summary_images/`, mirroring each document's relative path, and image links are rewritten to match
 - the file is written incrementally as the batch runs, so an interrupted run still leaves a usable partial document
 - `--merge` rejects `--overwrite` and `--output-dir`, the target cannot also be a source, and `-s/--skip-existing` skips the whole merge when the target already exists
+
+### Tree Output (`-t / --tree`)
+
+Tree mode replaces ordinary per-file discovery with a Gitingest-like tree selection and always writes one combined Markdown target. Without `--all-formats`, it selects text and source-like files without adding Hammerdown's binary document formats. `--all-formats` adds supported Hammerdown documents; unknown binary files remain skipped. The target defaults to `hammerdowned.md`, can be set with `-m`, and uses the same directory header, per-file sections, and asset redirection as merged output.
+
+`-t/--tree` and `--all-formats` are parsed intermixed with resources, so they may appear before, between, or after positional paths. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
 
 ### Streaming to stdout (`--stdout`)
 
@@ -93,12 +99,13 @@ Normal per-file output writes one Markdown document plus its asset folder next t
 
 ## Recursive Traversal and Filtering
 
-Passing a directory expands it recursively, pruning directories that never hold user documents:
+Passing a directory expands it recursively, pruning directories and files excluded by safety rules. `.log` is not default-excluded and is processed unless an ignore rule or filter excludes it. Discovery deduplicates resolved paths, so repeated files, a file plus its containing directory, and overlapping parent/child roots produce one target.
 
-- directories whose name starts with `.` are skipped
-- `__pycache__`, `node_modules`, `venv`, `env`, `$Recycle.Bin`, and `System Volume Information` are skipped by name
-- ignored files are `~$*` office lock files, dotfiles, and previously generated `hm_*.md` outputs
-- `-i/--include` narrows the scan to paths whose normalized relative path matches the regex, then `-e/--exclude` removes matches, so exclusions always win
+Repository `.gitignore` and `.gitingestignore` files are discovered in the resource tree, including nested directories. For each selected root, applicable ancestor locations are checked up to the nearest Git root; when no Git root exists, the selected root is the boundary. Nested rules and negation apply within their paths. Ignore files above the repository and global ignore configuration are not used. `--include-gitignored` disables only repository ignore files; CLI filters, safety exclusions, and format rules remain active.
+
+Discovered ignore-file paths are sent to the `Ignore files used` panel before processing. Repository-ignored files are omitted from the skipped-file list entirely; command-line and safety skips remain visible there.
+
+Repeated `-i/--include` patterns and repeated `-e/--exclude` patterns form independent groups, regardless of option order. Include patterns select matching paths and exclude patterns remove matches afterward, so exclusions take priority and cannot be undone by a later include. Values accept comma- or whitespace-separated, Gitingest-compatible GitWildMatch/pathspec patterns matched relative to the resource context. Single or double quotes group shell arguments; apostrophes or quote characters inside a file name are not supported by the CLI quote parser. Backticks are not quoting syntax.
 
 ## Interactive Progress UI
 

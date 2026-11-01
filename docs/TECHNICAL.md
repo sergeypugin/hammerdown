@@ -111,17 +111,19 @@ On Windows, selecting multiple files in Explorer normally starts a separate proc
 - incoming paths are assembled over a 2.0-second window (`assembly_timeout=2.0`) by the coordinator before handing off to Windows Terminal (`wt.exe -w new new-tab --title Hammerdown`) or, if unavailable, allocating a fallback console
 
 ### Recursive Directory Traversal
-When a directory is passed to `hammerdown`, it recursively scans for all files matching `SUPPORTED_EXTENSIONS`, pruning directories that never hold user documents:
+When a directory is passed to `hammerdown`, it recursively discovers resources while pruning directories and files excluded by safety rules. Discovery deduplicates canonical paths, so repeated files, a file plus its containing directory, and overlapping parent/child roots are processed once.
 
-- directories whose name starts with `.` are skipped
-- `__pycache__`, `node_modules`, `venv`, `env`, `$Recycle.Bin`, and `System Volume Information` are skipped by name
-- ignored files are temporary office lock files (`~$*`), hidden dotfiles, and previously generated `hm_*.md` outputs
+Tree mode (`-t` / `--tree`) always writes one combined Markdown target. It collects Gitingest-like text and source-like files without adding Hammerdown's binary document formats by default. `--all-formats` adds supported Hammerdown documents, while unknown binary files remain skipped. The tree target defaults to `hammerdowned.md` and can be changed with `-m`. `-t/--tree` and `--all-formats` may appear before, between, or after positional resources. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
+
+`.log` is not default-excluded and is processed unless an ignore rule or filter excludes it.
+
+Repository `.gitignore` and `.gitingestignore` files are discovered in the resource tree, including nested directories. For each selected root, Hammerdown checks ancestor locations up to the nearest Git root; without a Git root, the selected root is the boundary. Their nested rules and negation apply to paths in their scope. Files above the repository and global ignore configuration are not used. `--include-gitignored` disables only repository ignore files, not command-line filters, safety exclusions, or format rules. Paths to discovered ignore files are shown in the `Ignore files used` panel before processing; files ignored by those rules do not appear in the skipped-file list.
 
 ### Include and Exclude Filters
-`-i` / `--include` and `-e` / `--exclude` accept regular expressions matched against each candidate's normalized relative path (relative to the directory passed on the command line). Both flags may be repeated. Include narrows the recursive scan first, then exclude removes matches from that set, so exclusions always take priority. Patterns are validated at startup, and an invalid regex aborts the run before any conversion starts.
+`-i` / `--include` and `-e` / `--exclude` accept Gitingest-compatible GitWildMatch/pathspec patterns matched against paths relative to the resource context. Each option may be repeated; repeated includes form an independent include group and repeated excludes form an independent exclude group, regardless of option order. Matching include patterns select paths, then any matching exclude pattern removes them. Exclusions take priority and a later include does not restore an excluded path. Pattern values accept comma- or whitespace-separated patterns. Use single or double quotes to group an argument. Apostrophes or quote characters inside a file name are not supported by the CLI quote parser; backticks are not quoting syntax.
 
 ### Merged Output (`-m / --merge`)
-`-m summary.md` bundles every successful conversion into one Markdown file. The target is written incrementally as the batch runs, so a partial document remains usable if the run is interrupted. Its contents are:
+The merge option treats the next argument as the output Markdown target and then expects one or more source resources. If no target argument is supplied, the default is `hammerdowned.md`. Because the next positional after `-m` is always the target, `hammerdown -m anything.ext` has no source and is invalid; `hammerdown -m output.md source.pdf` supplies both the target and a resource. The target is written incrementally as the batch runs, so a partial document remains usable if the run is interrupted. Its contents are:
 
 - a `Directory structure:` tree listing every source relative to their common root
 - one block per document, introduced by a separator line of 48 `=` characters, a line such as `FILE: notes/draft.md`, and the separator again, followed by the converted Markdown
