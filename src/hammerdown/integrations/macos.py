@@ -169,6 +169,7 @@ def _install_macos(command: str, home_dir: Path | None = None) -> None:
     services_dir = home / "Library" / "Services"
     services_dir.mkdir(parents=True, exist_ok=True)
     _create_macos_workflow(services_dir / "Hammerdown.workflow", launcher, name="Hammerdown")
+    _create_macos_workflow(services_dir / "Hammerdown and merge.workflow", launcher, name="Hammerdown and merge", extra_flags="--merge-auto")
     _create_macos_workflow(services_dir / "Hammerdown tree.workflow", launcher, name="Hammerdown tree", extra_flags="--tree")
     _create_macos_workflow(services_dir / "Hammerdown tree with all formats.workflow", launcher, name="Hammerdown tree with all formats", extra_flags="--tree --all-formats")
 
@@ -188,6 +189,7 @@ def _uninstall_macos(home_dir: Path | None = None) -> None:
     home = home_dir or Path.home()
     (home / ".local" / "bin" / "hammerdown").unlink(missing_ok=True)
     _remove_silently(home / "Library" / "Services" / "Hammerdown.workflow")
+    _remove_silently(home / "Library" / "Services" / "Hammerdown and merge.workflow")
     _remove_silently(home / "Library" / "Services" / "Hammerdown tree.workflow")
     _remove_silently(home / "Library" / "Services" / "Hammerdown tree with all formats.workflow")
     _remove_silently(home / "Library" / "Services" / "Hammer down.workflow")

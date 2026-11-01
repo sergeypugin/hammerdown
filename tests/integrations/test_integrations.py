@@ -154,7 +154,7 @@ def test_install_and_uninstall_linux(tmp_path: Path):
     kde6_text = kde6_file.read_text(encoding="utf-8")
     assert "Type=Service" in kde6_text
     assert "ServiceTypes=KonqPopupMenu/Plugin" in kde6_text
-    assert "Actions=HammerDown;HammerDownTree;HammerDownTreeAll;" in kde6_text
+    assert "Actions=HammerDown;HammerDownMerge;HammerDownTree;HammerDownTreeAll;" in kde6_text
     assert "X-KDE-Priority=TopLevel" in kde6_text
     assert "[Desktop Action HammerDown]" in kde6_text
     assert "Name=Hammerdown" in kde6_text

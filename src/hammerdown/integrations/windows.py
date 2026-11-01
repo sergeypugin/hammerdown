@@ -18,6 +18,7 @@ def _install_windows(command: str) -> None:
 
     # Locate package icons
     icon_path = ""
+    merge_icon_path = ""
     tree_icon_path = ""
     tree_all_icon_path = ""
 
@@ -41,7 +42,7 @@ def _install_windows(command: str) -> None:
     if assets_dir:
         import shutil
 
-        for filename in ("icon.ico", "icon_tree_blue.ico", "icon_tree_all_maroon.ico"):
+        for filename in ("icon.ico", "icon_merge_darkred.ico", "icon_tree_blue.ico", "icon_tree_all_maroon.ico"):
             src = assets_dir / filename
             if src.is_file():
                 try:
@@ -51,6 +52,8 @@ def _install_windows(command: str) -> None:
 
     if (app_dir / "icon.ico").is_file():
         icon_path = str(app_dir / "icon.ico")
+    if (app_dir / "icon_merge_darkred.ico").is_file():
+        merge_icon_path = str(app_dir / "icon_merge_darkred.ico")
     if (app_dir / "icon_tree_blue.ico").is_file():
         tree_icon_path = str(app_dir / "icon_tree_blue.ico")
     if (app_dir / "icon_tree_all_maroon.ico").is_file():
@@ -59,6 +62,8 @@ def _install_windows(command: str) -> None:
     if getattr(sys, "frozen", False):
         if not icon_path:
             icon_path = sys.executable
+        if not merge_icon_path:
+            merge_icon_path = icon_path
         if not tree_icon_path:
             tree_icon_path = icon_path
         if not tree_all_icon_path:
@@ -87,7 +92,18 @@ def _install_windows(command: str) -> None:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click "%1"')
 
-    # 2. "Hammerdown tree" (Blue icon)
+    # 2. "Hammerdown and merge" (Dark red icon)
+    merge_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_merge"
+    for key_path in (merge_path, r"Software\Classes\Directory\shell\hammerdown_merge"):
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammerdown and merge")
+            winreg.SetValueEx(key, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
+            if merge_icon_path:
+                winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, merge_icon_path)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --merge-auto "%1"')
+
+    # 3. "Hammerdown tree" (Blue icon)
     tree_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree"
     for key_path in (tree_path, r"Software\Classes\Directory\shell\hammerdown_tree"):
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
@@ -98,7 +114,7 @@ def _install_windows(command: str) -> None:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path + r"\command") as key:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --tree "%1"')
 
-    # 3. "Hammerdown tree with all formats" (Maroon icon)
+    # 4. "Hammerdown tree with all formats" (Maroon icon)
     tree_all_path = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree_all"
     for key_path in (tree_all_path, r"Software\Classes\Directory\shell\hammerdown_tree_all"):
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
@@ -116,6 +132,15 @@ def _install_windows(command: str) -> None:
             winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon_path)
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_key_path + r"\command") as key:
         winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click "%V"')
+
+    # Merge verb for Directory Background
+    bg_merge_key_path = r"Software\Classes\Directory\Background\shell\hammerdown_merge"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_merge_key_path) as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Hammerdown and merge")
+        if merge_icon_path:
+            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, merge_icon_path)
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, bg_merge_key_path + r"\command") as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'{command} --coordinator --right-click --merge-auto "%V"')
 
     # Tree verb for Directory Background
     bg_tree_key_path = r"Software\Classes\Directory\Background\shell\hammerdown_tree"
@@ -139,6 +164,9 @@ def _install_windows(command: str) -> None:
     if sendto_dir.is_dir():
         cmd_file = sendto_dir / "Hammerdown.cmd"
         cmd_file.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click %*\n', encoding="utf-8")
+
+        merge_cmd_file = sendto_dir / "Hammerdown and merge.cmd"
+        merge_cmd_file.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click --merge-auto %*\n', encoding="utf-8")
 
         tree_cmd_file = sendto_dir / "Hammerdown tree.cmd"
         tree_cmd_file.write_text(f'@echo off\nchcp 65001 >nul\n{command} --coordinator --right-click --tree %*\n', encoding="utf-8")
@@ -187,6 +215,7 @@ def _uninstall_windows() -> None:
             _remove_registry_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\.{ext}\shell\{verb}")
     sendto_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming")) / "Microsoft" / "Windows" / "SendTo"
     (sendto_dir / "Hammerdown.cmd").unlink(missing_ok=True)
+    (sendto_dir / "Hammerdown and merge.cmd").unlink(missing_ok=True)
     (sendto_dir / "Hammerdown tree.cmd").unlink(missing_ok=True)
     (sendto_dir / "Hammerdown tree with all formats.cmd").unlink(missing_ok=True)
     (sendto_dir / "Hammer down.cmd").unlink(missing_ok=True)

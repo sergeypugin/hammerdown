@@ -49,7 +49,12 @@ def _desktop_file_content(exec_cmd: str) -> str:
         "Categories=Utility;Office;\n"
         "StartupNotify=false\n"
         "NoDisplay=false\n"
-        "Actions=Tree;TreeAll;\n"
+        "Actions=Merge;Tree;TreeAll;\n"
+        "\n"
+        "[Desktop Action Merge]\n"
+        "Name=Hammerdown and merge\n"
+        "Icon=hammerdown_merge\n"
+        "Exec=" + exec_cmd + " --coordinator --right-click --merge-auto %F\n"
         "\n"
         "[Desktop Action Tree]\n"
         "Name=Hammerdown tree\n"
@@ -70,7 +75,7 @@ def _kde_servicemenu_content(exec_cmd: str) -> str:
         "Type=Service\n"
         "ServiceTypes=KonqPopupMenu/Plugin\n"
         f"MimeType={mimes}\n"
-        "Actions=HammerDown;HammerDownTree;HammerDownTreeAll;\n"
+        "Actions=HammerDown;HammerDownMerge;HammerDownTree;HammerDownTreeAll;\n"
         "X-KDE-Priority=TopLevel\n"
         "X-KDE-Submenu=\n"
         "\n"
@@ -78,6 +83,11 @@ def _kde_servicemenu_content(exec_cmd: str) -> str:
         "Name=Hammerdown\n"
         "Icon=hammerdown\n"
         f"Exec={exec_cmd} %F\n"
+        "\n"
+        "[Desktop Action HammerDownMerge]\n"
+        "Name=Hammerdown and merge\n"
+        "Icon=hammerdown_merge\n"
+        f"Exec={exec_cmd} --coordinator --right-click --merge-auto %F\n"
         "\n"
         "[Desktop Action HammerDownTree]\n"
         "Name=Hammerdown tree\n"
@@ -97,6 +107,7 @@ def _find_icon_pngs() -> dict[str, Path]:
 
     mapping = {
         "hammerdown.png": ["icon.png"],
+        "hammerdown_merge.png": ["icon_merge_darkred.png", "icon_merge_orange.png", "icon.png"],
         "hammerdown_tree.png": ["icon_tree_blue.png", "icon.png"],
         "hammerdown_tree_all.png": ["icon_tree_all_maroon.png", "icon.png"],
     }
@@ -143,6 +154,14 @@ def _install_linux(command: str, home_dir: Path | None = None) -> None:
         script_file.write_text(f'exec "{launcher}" "$@"\n', encoding="utf-8")
         try:
             script_file.chmod(script_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except OSError:
+            pass
+
+        # Merge mode
+        merge_script = script_parent / "Hammerdown and merge"
+        merge_script.write_text(f'exec "{launcher}" --coordinator --right-click --merge-auto "$@"\n', encoding="utf-8")
+        try:
+            merge_script.chmod(merge_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         except OSError:
             pass
 
@@ -193,19 +212,23 @@ def _uninstall_linux(home_dir: Path | None = None) -> None:
     (home / ".local" / "share" / "kio" / "servicemenus" / "hammerdown.desktop").unlink(missing_ok=True)
     (home / ".local" / "share" / "kservices5" / "ServiceMenus" / "hammerdown.desktop").unlink(missing_ok=True)
     (home / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown and merge").unlink(missing_ok=True)
     (home / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown tree").unlink(missing_ok=True)
     (home / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown tree with all formats").unlink(missing_ok=True)
     (home / ".local" / "share" / "nautilus" / "scripts" / "Hammer down file").unlink(missing_ok=True)
     (home / ".local" / "share" / "nautilus" / "scripts" / "Convert to Markdown").unlink(missing_ok=True)
     (home / ".local" / "share" / "nemo" / "scripts" / "Hammerdown").unlink(missing_ok=True)
+    (home / ".local" / "share" / "nemo" / "scripts" / "Hammerdown and merge").unlink(missing_ok=True)
     (home / ".local" / "share" / "nemo" / "scripts" / "Hammerdown tree").unlink(missing_ok=True)
     (home / ".local" / "share" / "nemo" / "scripts" / "Hammerdown tree with all formats").unlink(missing_ok=True)
     (home / ".local" / "share" / "nemo" / "scripts" / "Hammer down file").unlink(missing_ok=True)
     (home / ".config" / "caja" / "scripts" / "Hammerdown").unlink(missing_ok=True)
+    (home / ".config" / "caja" / "scripts" / "Hammerdown and merge").unlink(missing_ok=True)
     (home / ".config" / "caja" / "scripts" / "Hammerdown tree").unlink(missing_ok=True)
     (home / ".config" / "caja" / "scripts" / "Hammerdown tree with all formats").unlink(missing_ok=True)
     (home / ".config" / "caja" / "scripts" / "Hammer down file").unlink(missing_ok=True)
     (home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "hammerdown.png").unlink(missing_ok=True)
+    (home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "hammerdown_merge.png").unlink(missing_ok=True)
 
     _remove_install_dir(home / ".local" / "share" / "hammerdown")
 
