@@ -25,7 +25,7 @@ def _prepare_console_window() -> None:
 
 _prepare_console_window()
 
-from . import APP_NAME, SUPPORTED_EXTENSIONS, __version__
+from . import APP_NAME, __version__
 from .batch import run_batch
 from .core.file_selection import _select_files
 from .integrations import install as install_integration
@@ -139,7 +139,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
         action="append",
         default=[],
         metavar="REGEX",
-        help="Only process files whose normalized relative path matches REGEX; may be repeated",
+        help="Include files whose normalized relative path matches this regex/glob pathspec; may be repeated",
     )
     parser.add_argument(
         "-e",
@@ -147,7 +147,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
         action="append",
         default=[],
         metavar="REGEX",
-        help="Skip files whose normalized relative path matches REGEX; may be repeated",
+        help="Exclude files whose normalized relative path matches this regex/glob pathspec; may be repeated",
     )
     parser.add_argument(
         "-w",
@@ -162,9 +162,30 @@ def _main(argv: Sequence[str] | None = None) -> int:
         help="Skip conversion if the target Markdown file already exists",
     )
     parser.add_argument("-o", "--output-dir", action="append", metavar="DIR", help="Save Markdown and extracted images under DIR")
-    parser.add_argument("-t", "--tree", action="store_true", help="Gather all files into a single merged markdown (like gitingest)")
-    parser.add_argument("--all-formats", action="store_true", help="Include binary documents (.pdf, .docx, etc.) in tree mode")
-    parser.add_argument("-m", "--merge", nargs="?", const="hammerdowned.md", metavar="OUTPUT_MD", help="Merge all converted Markdown documents into a single target Markdown file (defaults to hammerdowned.md)")
+    parser.add_argument(
+        "--include-gitignored",
+        action="store_true",
+        help="Include files ignored by Git when traversing directories",
+    )
+    parser.add_argument(
+        "-t",
+        "--tree",
+        action="store_true",
+        help="Gather selected files into one Markdown tree document; may appear before, between, or after resources",
+    )
+    parser.add_argument(
+        "--all-formats",
+        action="store_true",
+        help="In --tree mode, include supported binary documents such as PDF and DOCX",
+    )
+    parser.add_argument(
+        "-m",
+        "--merge",
+        nargs="?",
+        const="hammerdowned.md",
+        metavar="OUTPUT_MD",
+        help="Merge converted Markdown into OUTPUT_MD (default: hammerdowned.md); the argument after -m is always OUTPUT_MD, never an input resource",
+    )
     parser.add_argument("--merge-auto", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stdout", action="store_true", help="Write the merged Markdown document to stdout")
     parser.add_argument(
@@ -176,15 +197,28 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--context-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--right-click", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("files", nargs="*", help="Files to convert")
-    args = parser.parse_args(actual_argv)
+    args = parser.parse_intermixed_args(actual_argv)
 
-    if args.merge:
-        merge_lower = args.merge.lower()
-        is_dir = os.path.isdir(args.merge)
-        is_supported_file = any(merge_lower.endswith(ext) for ext in SUPPORTED_EXTENSIONS) and os.path.exists(args.merge)
-        if is_dir or is_supported_file:
-            args.files.insert(0, args.merge)
-            args.merge = "hammerdowned.md"
+    conversion_options_present = any(
+        (
+            args.include,
+            args.exclude,
+            args.overwrite,
+            args.skip_existing,
+            args.output_dir,
+            args.tree,
+            args.all_formats,
+            args.merge,
+            args.merge_auto,
+            args.stdout,
+            args.confirm,
+            args.include_gitignored,
+        )
+    )
+    if not args.files and actual_argv and (
+        conversion_options_present or not (args.install or args.uninstall or args.update)
+    ):
+        parser.error("no input resources were provided")
 
     args.include = validate_filter_patterns(parser, args.include, "--include")
     args.exclude = validate_filter_patterns(parser, args.exclude, "--exclude")
@@ -254,7 +288,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
     if args.update:
         return 0 if update() else 1
 
-    if not args.files:
+    if not actual_argv:
         # APP_DESCRIPTION contains description + supported formats + help hint (no 'hammerdown' prefix)
         # Print 'hammerdown version' in yellow, then description
         from .ui.ui_constants import COLOR_BOLD, COLOR_RESET

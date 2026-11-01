@@ -36,6 +36,92 @@ def test_no_args_output_reads_as_a_complete_sentence(capsys):
     assert f"hammerdown {__version__} is a cross-platform tool" in clean
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--stdout"],
+        ["--all-formats"],
+        ["-t"],
+        ["-i", "*.txt"],
+        ["-e", "*.log"],
+        ["-i", "["],
+        ["--stdout", "--merge"],
+        ["--install", "--stdout"],
+        ["--include-gitignored"],
+        ["-m"],
+        ["-m", "anything.ext"],
+    ],
+)
+def test_conversion_flags_without_sources_are_rejected(argv: list[str], capsys):
+    with pytest.raises(SystemExit) as exc:
+        hammerdown.cli.main(argv)
+
+    assert exc.value.code == 2
+    assert "no input resources were provided" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--all-formats", "-t", "first.txt", "second.txt"],
+        ["-t", "first.txt", "--all-formats", "second.txt"],
+        ["first.txt", "-t", "--all-formats", "second.txt"],
+        ["first.txt", "second.txt", "-t", "--all-formats"],
+    ],
+)
+def test_tree_flags_are_accepted_before_between_and_after_resources(argv, monkeypatch):
+    captured = {}
+
+    def capture_batch(args):
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(hammerdown.cli, "run_batch", capture_batch)
+
+    assert hammerdown.cli.main(argv) == 0
+    assert captured["args"].files == ["first.txt", "second.txt"]
+    assert captured["args"].tree is True
+    assert captured["args"].all_formats is True
+
+
+def test_include_gitignored_is_passed_to_batch_namespace(monkeypatch):
+    captured = {}
+
+    def capture_batch(args):
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(hammerdown.cli, "run_batch", capture_batch)
+
+    assert hammerdown.cli.main(["--include-gitignored", "resource.txt"]) == 0
+    assert captured["args"].include_gitignored is True
+
+
+def test_include_gitignored_defaults_to_false(monkeypatch):
+    captured = {}
+
+    def capture_batch(args):
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(hammerdown.cli, "run_batch", capture_batch)
+
+    assert hammerdown.cli.main(["resource.txt"]) == 0
+    assert captured["args"].include_gitignored is False
+
+
+def test_help_describes_filter_and_conversion_options(capsys):
+    with pytest.raises(SystemExit) as exc:
+        hammerdown.cli.main(["--help"])
+
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    assert "regex/glob pathspec" in output
+    assert "--include-gitignored" in output
+    assert "--all-formats" in output
+    assert "never an input resource" in output
+
+
 def test_normalize_wsl_windows_path():
     normalized = hammerdown.utils.normalize_path(r"C:\Users\someone\document.pdf")
     if os.name == "nt":
@@ -277,6 +363,32 @@ def test_directory_and_explicit_child_file_are_deduplicated(tmp_path: Path, caps
     assert output.count("converted files") == 1
 
 
+def test_duplicate_file_arguments_are_deduplicated(tmp_path: Path, capsys):
+    source = tmp_path / "same.txt"
+    source.write_text("convert once\n", encoding="utf-8")
+
+    assert hammerdown.cli.main([str(source), str(source)]) == 0
+
+    output = capsys.readouterr().out
+    assert output.count("converted files") == 1
+    assert (tmp_path / "hm_same_txt.md").is_file()
+
+
+def test_parent_and_nested_directory_arguments_are_deduplicated(tmp_path: Path, capsys):
+    parent = tmp_path / "parent"
+    nested = parent / "nested"
+    nested.mkdir(parents=True)
+    (parent / "root.txt").write_text("root\n", encoding="utf-8")
+    (nested / "child.txt").write_text("child\n", encoding="utf-8")
+
+    assert hammerdown.cli.main([str(parent), str(nested)]) == 0
+
+    output = capsys.readouterr().out
+    assert output.count("converted files") == 1
+    assert (parent / "hm_root_txt.md").is_file()
+    assert (nested / "hm_child_txt.md").is_file()
+
+
 
 
 def test_include_and_exclude_filter_order_and_repeated_patterns(tmp_path: Path, capsys):
@@ -342,18 +454,24 @@ def test_directory_with_trailing_slash_converts_files(tmp_path: Path, monkeypatc
     assert (web_dir / "hm_sample_txt.md").is_file()
 
 
-def test_merge_with_directory_without_explicit_output_filename(tmp_path: Path, monkeypatch):
+def test_merge_next_positional_is_output_even_when_it_exists(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    web_dir = tmp_path / "3_Web"
-    web_dir.mkdir()
-    doc = web_dir / "sample.txt"
-    doc.write_text("Hello Web from merge", encoding="utf-8")
+    output = tmp_path / "existing_output.txt"
+    output.write_text("pre-existing output", encoding="utf-8")
+    source = tmp_path / "source.txt"
+    source.write_text("source contents", encoding="utf-8")
 
-    trailing_path = f".{os.sep}3_Web{os.sep}"
-    assert hammerdown.cli.main(["-m", trailing_path]) == 0
-    merged = tmp_path / "hammerdowned.md"
-    assert merged.is_file()
-    assert "Hello Web from merge" in merged.read_text(encoding="utf-8")
+    captured = {}
+
+    def capture_batch(args):
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(hammerdown.cli, "run_batch", capture_batch)
+
+    assert hammerdown.cli.main(["-m", str(output), str(source)]) == 0
+    assert captured["args"].merge == str(output)
+    assert captured["args"].files == [str(source)]
 
 
 def test_include_with_tab_completed_path_and_glob_patterns(tmp_path: Path, monkeypatch):
@@ -623,7 +741,7 @@ def test_merge_without_explicit_filename(tmp_path: Path):
     original_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)
-        assert hammerdown.cli.main(["--merge", str(file1), str(file2)]) == 0
+        assert hammerdown.cli.main([str(file1), str(file2), "--merge"]) == 0
     finally:
         os.chdir(original_cwd)
 
