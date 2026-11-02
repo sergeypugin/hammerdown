@@ -309,7 +309,7 @@ class BatchUI:
         self.details[index] = "-"
         self._file_durations[index] = "-"
         self._file_images[index] = 0
-        self._file_tokens[index] = 0
+        self.skipped_count += 1
         self.skipped_files.append((self.files[index].name, reason))
         if self.can_redraw:
             self.render()

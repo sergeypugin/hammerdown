@@ -4,6 +4,15 @@ import argparse
 from io import StringIO
 from pathlib import Path
 from typing import Any
+
+
+def test_skip_file_counts_as_skipped_only():
+    ui = BatchUI(["existing.txt"], estimates=[None])
+    ui.skip_file(0, "existing output: existing.md")
+
+    assert ui.skipped_count == 1
+    assert ui.converted_count == 0
+    assert ui.skipped_files == [("existing.txt", "existing output: existing.md")]
 import time
 
 import pytest
