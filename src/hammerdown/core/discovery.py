@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import os
 import re
 from dataclasses import dataclass, field
@@ -125,9 +126,22 @@ def _is_text_file(path: Path) -> bool:
     try:
         with path.open("rb") as stream:
             sample = stream.read(8192)
-        if b"\x00" in sample:
-            return False
-        sample.decode("utf-8")
+            if b"\x00" in sample:
+                return False
+
+            decoder = codecs.getincrementaldecoder("utf-8")()
+            decoder.decode(sample, final=False)
+            pending, _ = decoder.getstate()
+            while pending:
+                continuation = stream.read(1)
+                if not continuation:
+                    decoder.decode(b"", final=True)
+                    break
+                if b"\x00" in continuation:
+                    return False
+                decoder.decode(continuation, final=False)
+                pending, _ = decoder.getstate()
+            decoder.decode(b"", final=True)
         return True
     except (OSError, UnicodeError):
         return False
@@ -200,6 +214,34 @@ def _discover(
     ignore_paths: set[Path] = set()
     excluded_dir = excluded_dir.resolve() if excluded_dir is not None else None
 
+    resolved_inputs: list[tuple[str, Path | None, str | None]] = []
+    for raw in paths:
+        raw_path = str(raw)
+        try:
+            candidate = Path(normalize_path(raw)).resolve()
+        except Exception:
+            resolved_inputs.append((raw_path, None, "invalid path"))
+            continue
+        if not candidate.exists():
+            resolved_inputs.append((raw_path, None, "file or directory not found"))
+            continue
+        resolved_inputs.append((raw_path, candidate, None))
+
+    filter_roots = sorted(
+        {
+            candidate if candidate.is_dir() else candidate.parent
+            for _, candidate, error in resolved_inputs
+            if candidate is not None and error is None
+        },
+        key=lambda root: (len(root.parts), root.as_posix()),
+    )
+
+    def filter_context_for(path: Path, fallback: Path) -> Path:
+        for root in filter_roots:
+            if path.is_relative_to(root):
+                return root
+        return fallback
+
     def add_skip(path: Path, reason: str) -> None:
         identity = (path.resolve(), reason)
         if identity not in seen_skips:
@@ -209,6 +251,10 @@ def _discover(
     def add_error(path: str, reason: str) -> None:
         result.errors.append((path, reason))
         result._legacy_items.append((path, reason))
+
+    def clear_skips(path: Path) -> None:
+        result.skipped[:] = [skip for skip in result.skipped if Path(skip.path) != path]
+        seen_skips.difference_update({identity for identity in seen_skips if identity[0] == path})
 
     def rules_for(path: Path, scope: Path) -> list[IgnoreFile]:
         rules: list[IgnoreFile] = []
@@ -242,7 +288,8 @@ def _discover(
         if canonical in seen_targets:
             return
 
-        allowed, reason = _passes_cli_filters(canonical, filter_root, include_patterns, exclude_patterns)
+        filter_context = filter_context_for(file_path, filter_root)
+        allowed, reason = _passes_cli_filters(canonical, filter_context, include_patterns, exclude_patterns)
         if not allowed:
             add_skip(canonical, reason or "cli filter")
             return
@@ -260,18 +307,14 @@ def _discover(
             return
 
         seen_targets.add(canonical)
+        clear_skips(canonical)
         target = DiscoveredTarget(str(canonical), category)
         result.targets.append(target)
         result._legacy_items.append((target.path, None))
 
-    for raw in paths:
-        try:
-            candidate = Path(normalize_path(raw)).resolve()
-        except Exception:
-            add_error(str(raw), "invalid path")
-            continue
-        if not candidate.exists():
-            add_error(str(raw), "file or directory not found")
+    for raw, candidate, error in resolved_inputs:
+        if candidate is None:
+            add_error(raw, error or "invalid path")
             continue
 
         filter_root = candidate if candidate.is_dir() else candidate.parent
