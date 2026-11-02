@@ -5,6 +5,7 @@ import argparse
 import pytest
 
 import hammerdown.batch as batch
+from hammerdown.core.filters import OrderedFilterValues
 from hammerdown.integrations.windows_terminal import (
     WINDOWS_TERMINAL_TITLE,
     build_windows_terminal_command,
@@ -59,6 +60,67 @@ def test_handoff_forwards_conversion_modes(monkeypatch, mode, merge, merge_auto,
         "skip_existing": True,
         "output_dir": "out",
     }, mode
+
+
+def test_handoff_forwards_ordered_filter_queue(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_launch(files, **kwargs):
+        captured["files"] = files
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(batch, "is_windows", lambda: True)
+    monkeypatch.setattr("hammerdown.integrations.windows_terminal.launch_context_worker", fake_launch)
+
+    args = argparse.Namespace(
+        coordinator=True,
+        context_worker=False,
+        include_gitignored=False,
+        merge=None,
+        tree=False,
+        all_formats=False,
+        include=OrderedFilterValues(["keep.log"]),
+        exclude=OrderedFilterValues(["*.log"]),
+        overwrite=False,
+        skip_existing=False,
+        output_dir=None,
+    )
+    args.include.filter_queue = [("exclude", "*.log"), ("include", "keep.log")]
+    assert batch.hand_off_to_windows_terminal(["one.txt"], args, False) is True
+    assert captured["filter_queue"] == [("exclude", "*.log"), ("include", "keep.log")]
+
+
+def test_windows_terminal_argv_preserves_ordered_filter_queue(monkeypatch):
+    monkeypatch.setattr("hammerdown.integrations.windows_terminal._console_interpreter", lambda: "python.exe")
+
+    command = build_windows_terminal_command(
+        ["one.txt"],
+        terminal="wt.exe",
+        include=["keep.log"],
+        exclude=["*.log"],
+        filter_queue=[("exclude", "*.log"), ("include", "keep.log")],
+    )
+
+    assert command == [
+        "wt.exe",
+        "-w",
+        "new",
+        "new-tab",
+        "--title",
+        WINDOWS_TERMINAL_TITLE,
+        "--",
+        "python.exe",
+        "-m",
+        "hammerdown",
+        "--context-worker",
+        "--right-click",
+        "--exclude",
+        "*.log",
+        "--include",
+        "keep.log",
+        "one.txt",
+    ]
 
 
 @pytest.mark.parametrize(

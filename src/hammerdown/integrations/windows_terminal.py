@@ -34,6 +34,7 @@ def build_context_worker_command(
     all_formats: bool = False,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
+    filter_queue: Sequence[tuple[str, str]] | None = None,
     overwrite: bool = False,
     skip_existing: bool = False,
     output_dir: str | None = None,
@@ -51,10 +52,14 @@ def build_context_worker_command(
         command.append("--all-formats")
     if merge_auto:
         command.append("--merge-auto")
-    for pattern in include:
-        command.extend(("--include", pattern))
-    for pattern in exclude:
-        command.extend(("--exclude", pattern))
+    if filter_queue is None:
+        for pattern in include:
+            command.extend(("--include", pattern))
+        for pattern in exclude:
+            command.extend(("--exclude", pattern))
+    else:
+        for kind, pattern in filter_queue:
+            command.extend((f"--{kind}", pattern))
     if overwrite:
         command.append("--overwrite")
     if skip_existing:
@@ -77,6 +82,7 @@ def build_windows_terminal_command(
     all_formats: bool = False,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
+    filter_queue: Sequence[tuple[str, str]] | None = None,
     overwrite: bool = False,
     skip_existing: bool = False,
     output_dir: str | None = None,
@@ -91,6 +97,7 @@ def build_windows_terminal_command(
         all_formats=all_formats,
         include=include,
         exclude=exclude,
+        filter_queue=filter_queue,
         overwrite=overwrite,
         skip_existing=skip_existing,
         output_dir=output_dir,
@@ -110,6 +117,7 @@ def launch_context_worker(
     all_formats: bool = False,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
+    filter_queue: Sequence[tuple[str, str]] | None = None,
     overwrite: bool = False,
     skip_existing: bool = False,
     output_dir: str | None = None,
@@ -129,6 +137,7 @@ def launch_context_worker(
         all_formats=all_formats,
         include=include,
         exclude=exclude,
+        filter_queue=filter_queue,
         overwrite=overwrite,
         skip_existing=skip_existing,
         output_dir=output_dir,

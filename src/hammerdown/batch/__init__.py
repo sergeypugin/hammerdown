@@ -86,18 +86,23 @@ def hand_off_to_windows_terminal(
         return False
 
     tree = getattr(args, "tree", False)
-    return launch_context_worker(
-        files,
-        merge=getattr(args, "merge", None),
-        merge_auto=merge_auto,
-        tree=tree,
-        all_formats=getattr(args, "all_formats", False),
-        include=getattr(args, "include", []),
-        exclude=getattr(args, "exclude", []),
-        overwrite=getattr(args, "overwrite", False),
-        skip_existing=getattr(args, "skip_existing", False),
-        output_dir=getattr(args, "output_dir", None),
-    )
+    filter_queue = getattr(getattr(args, "include", None), "filter_queue", None)
+    if filter_queue is None:
+        filter_queue = getattr(getattr(args, "exclude", None), "filter_queue", None)
+    handoff_options = {
+        "merge": getattr(args, "merge", None),
+        "merge_auto": merge_auto,
+        "tree": tree,
+        "all_formats": getattr(args, "all_formats", False),
+        "include": getattr(args, "include", []),
+        "exclude": getattr(args, "exclude", []),
+        "overwrite": getattr(args, "overwrite", False),
+        "skip_existing": getattr(args, "skip_existing", False),
+        "output_dir": getattr(args, "output_dir", None),
+    }
+    if filter_queue is not None:
+        handoff_options["filter_queue"] = list(filter_queue)
+    return launch_context_worker(files, **handoff_options)
 
 
 def run_batch(args: argparse.Namespace) -> int:
@@ -467,6 +472,14 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                     target_paths.append(get_output_path(p))
     except ValueError as exc:
         logger.error("%s", exc)
+        if coordinator:
+            coordinator.stop()
+        return 1
+
+    directory_collisions = list(dict.fromkeys(path for path in target_paths if path.is_dir()))
+    if directory_collisions:
+        for collision in directory_collisions:
+            logger.error("output target is a directory: %s", collision)
         if coordinator:
             coordinator.stop()
         return 1
