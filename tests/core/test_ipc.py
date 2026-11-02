@@ -1,8 +1,12 @@
 import os
 import uuid
 from pathlib import Path
+
+import pytest
+
 import hammerdown.cli
 from hammerdown import IPCCoordinator, try_delegate_to_coordinator
+from hammerdown.core import ipc
 
 
 def _unique_test_pipe() -> str | tuple[str, int]:
@@ -12,6 +16,112 @@ def _unique_test_pipe() -> str | tuple[str, int]:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return ("127.0.0.1", s.getsockname()[1])
+
+
+def test_delegated_options_round_trip_with_all_behavior_flags():
+    pipe_address = _unique_test_pipe()
+    coordinator = IPCCoordinator(pipe_name=pipe_address)
+    assert coordinator.start()
+
+    options = {
+        "tree": True,
+        "all_formats": True,
+        "merge": "combined.md",
+        "merge_auto": False,
+        "include": ["docs/**"],
+        "exclude": ["docs/tmp/**"],
+        "overwrite": True,
+        "skip_existing": False,
+        "output": None,
+        "stdout": False,
+        "confirm": False,
+        "include_gitignored": True,
+    }
+    try:
+        assert try_delegate_to_coordinator(["doc.pdf"], options, pipe_name=pipe_address)
+        assert coordinator.collect_files([], assembly_timeout=0.2) == ["doc.pdf"]
+        assert coordinator.delegated_options == options
+    finally:
+        coordinator.stop()
+
+
+
+
+def test_delegated_options_round_trip_preserves_filter_queue():
+    options = {
+        "include": ["keep*"],
+        "exclude": ["*.log"],
+        "filter_queue": [("exclude", "*.log"), ("include", "keep*")],
+    }
+
+    serialized = ipc._serialize_options(options)
+
+    assert serialized.get("filter_queue") == options["filter_queue"]
+    assert serialized["include"] == options["include"]
+    assert serialized["exclude"] == options["exclude"]
+
+
+def test_delegated_options_rejects_malformed_filter_queue():
+    with pytest.raises(TypeError, match="filter_queue"):
+        ipc._serialize_options({"filter_queue": [("include", 1)]})
+    with pytest.raises(TypeError, match="filter_queue"):
+        ipc._serialize_options({"filter_queue": [("other", "*.txt")]})
+
+
+def test_delegated_options_conflict_is_rejected_without_queueing():
+    pipe_address = _unique_test_pipe()
+    coordinator = IPCCoordinator(pipe_name=pipe_address)
+    assert coordinator.start()
+    try:
+        first = {"tree": True}
+        second = {"tree": False}
+        assert try_delegate_to_coordinator(["first.txt"], first, pipe_name=pipe_address)
+        assert not try_delegate_to_coordinator(["second.txt"], second, pipe_name=pipe_address)
+        assert coordinator.collect_files([], assembly_timeout=0.2) == ["first.txt"]
+    finally:
+        coordinator.stop()
+
+    serialized = ipc._serialize_options({"output_dir": "out"})
+    assert serialized["output"] == "out"
+    assert "output_dir" not in serialized
+
+
+def test_delegated_options_reject_unknown_or_malformed_values():
+    with pytest.raises(ValueError, match="unknown delegated option"):
+        ipc._serialize_options({"unexpected": True})
+    with pytest.raises(TypeError, match="include"):
+        ipc._serialize_options({"include": ["ok", 1]})
+    with pytest.raises(TypeError, match="tree"):
+        ipc._serialize_options({"tree": "yes"})
+
+
+def test_coordinator_accepts_legacy_file_only_request():
+    pipe_address = _unique_test_pipe()
+    coordinator = IPCCoordinator(pipe_name=pipe_address)
+    assert coordinator.start()
+
+    connection = ipc.Client(pipe_address, authkey=ipc.IPC_AUTH_KEY)
+    try:
+        connection.send({"files": ["legacy.pdf"]})
+        assert connection.recv() == {"status": "ok"}
+        assert coordinator.collect_files([], assembly_timeout=0.2) == ["legacy.pdf"]
+        assert coordinator.delegated_options == {
+            "tree": False,
+            "all_formats": False,
+            "merge": None,
+            "merge_auto": False,
+            "include": [],
+            "exclude": [],
+            "overwrite": False,
+            "skip_existing": False,
+            "output": None,
+            "stdout": False,
+            "confirm": False,
+            "include_gitignored": False,
+        }
+    finally:
+        connection.close()
+        coordinator.stop()
 
 
 def test_ipc_coordinator_collects_delegated_files():

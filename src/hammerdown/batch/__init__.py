@@ -15,11 +15,12 @@ from ..core import (
     get_conversion_estimate_seconds,
     get_output_path,
 )
-from ..core.discovery import DiscoveryResult, discover_paths, discover_tree, output_paths as compute_output_paths
+from ..core.discovery import DiscoveredTarget, DiscoveryResult, discover_paths, discover_tree, output_paths as compute_output_paths
 from ..core.google_drive import download_google_url, extract_file_id, is_google_drive_url
 from ..core.ipc import IPCCoordinator, try_delegate_to_coordinator
 from ..core.merge import (
     append_merged_document,
+    convert_source_text,
     initialize_merge_file,
     merge_asset_paths,
     merge_root_for_inputs,
@@ -30,6 +31,7 @@ from ..core.merge import (
 from ..ui.batch_ui import BatchUI
 from ..core.stdout_mode import confirm_stdout, run_stdout_conversion
 from ..core.formatting import format_duration
+from ..core.filters import OrderedFilterValues
 from ..core.path_utils import normalize_path
 from ..core.platform_utils import is_windows
 
@@ -114,7 +116,6 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
     all_formats = getattr(args, "all_formats", False)
 
     if tree_mode:
-        merge_requested = merge_requested or "hammerdowned.md"
         merge_auto = False
     if merge_requested and getattr(args, "overwrite", False):
         logger.error("--merge cannot be combined with --overwrite")
@@ -197,19 +198,19 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 continue
         return selected
 
-    def targets_from_discovery(result: DiscoveryResult, paths: Sequence[str]) -> list[tuple[str, str | None]]:
-        discovered_targets: list[tuple[str, str | None]] = [
-            (target.path, None) for target in result.targets
+    def targets_from_discovery(result: DiscoveryResult, paths: Sequence[str]) -> list[tuple[str, str | None, str | None]]:
+        discovered_targets: list[tuple[str, str | None, str | None]] = [
+            (target.path, None, target.category) for target in result.targets
         ]
-        discovered_targets.extend(result.errors)
+        discovered_targets.extend((path, error, None) for path, error in result.errors)
         selected = explicitly_selected_files(paths)
         if not tree_mode:
             for skip in result.skipped:
                 if skip.reason == "unsupported format" and Path(skip.path).resolve() in selected:
-                    discovered_targets.append((skip.path, skip.reason))
+                    discovered_targets.append((skip.path, skip.reason, None))
         for generated in result.generated_outputs:
             if Path(generated).resolve() in selected:
-                discovered_targets.append((generated, "generated output is not an input resource"))
+                discovered_targets.append((generated, "generated output is not an input resource", None))
         return discovered_targets
 
     def skips_from_discovery(result: DiscoveryResult, paths: Sequence[str]):
@@ -225,7 +226,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
     targets = targets_from_discovery(discovery, raw_files)
     if not targets and discovery.generated_outputs:
         generated = Path(discovery.generated_outputs[0]).name
-        targets.append((generated, "all input resources are generated outputs; no input resources to convert"))
+        targets.append((generated, "all input resources are generated outputs; no input resources to convert", None))
     discovery_skips = skips_from_discovery(discovery, raw_files)
     ignore_files = list(discovery.ignore_files)
     # Surface Google links that could not be downloaded as explicit errors
@@ -235,24 +236,24 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         file_id = extract_file_id(url)
         if file_id:
             label = f"Google Doc ({file_id[:8]}...)"
-        targets.append((label, reason))
+        targets.append((label, reason, None))
     targets.sort(key=lambda item: item[0].lower())
-    files = [path for path, error in targets if error is None]
-    ui_files = [path for path, _ in targets]
+    files = [path for path, error, _ in targets if error is None]
+    ui_files = [path for path, _, _ in targets]
     estimates = [
         get_conversion_estimate_seconds(Path(path)) if error is None else None
-        for path, error in targets
+        for path, error, _ in targets
     ]
 
     if getattr(args, "stdout", False):
-        initial_errors = [(path, error) for path, error in targets if error is not None]
+        initial_errors = [(path, error) for path, error, _ in targets if error is not None]
         for path, error in initial_errors:
             print(f"[!] {Path(path).name}: {error}", file=sys.stderr)
         reporting_ui = BatchUI(ui_files, estimates=estimates)
         reporting_ui.skipped_files.extend((Path(skip.path).name, skip.reason) for skip in discovery_skips)
         reporting_ui.print_ignore_files(ignore_files, file=sys.stderr)
         reporting_ui.print_skipped_list(file=sys.stderr)
-        file_estimates = [estimate for (_, error), estimate in zip(targets, estimates) if error is None]
+        file_estimates = [estimate for (_, error, _), estimate in zip(targets, estimates) if error is None]
         if getattr(args, "confirm", False) and files and not confirm_stdout(files, file_estimates):
             return 1
         if not files:
@@ -266,12 +267,30 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         and not context_worker
     )
     options = {
+        "tree": tree_mode,
+        "all_formats": all_formats,
+        "merge": merge_requested,
+        "merge_auto": merge_auto,
+        "include": list(getattr(args, "include", [])),
+        "exclude": list(getattr(args, "exclude", [])),
         "overwrite": getattr(args, "overwrite", False),
         "skip_existing": getattr(args, "skip_existing", False),
+        "output": getattr(args, "output_dir", None),
+        "stdout": getattr(args, "stdout", False),
+        "confirm": getattr(args, "confirm", False),
+        "include_gitignored": getattr(args, "include_gitignored", False),
     }
+
+    filter_queue = getattr(getattr(args, "include", None), "filter_queue", None)
+    if filter_queue is None:
+        filter_queue = getattr(getattr(args, "exclude", None), "filter_queue", None)
+    if filter_queue is not None:
+        options["filter_queue"] = list(filter_queue)
 
     coordinator = IPCCoordinator() if use_ipc else None
     coordinator_started = coordinator.start() if coordinator else False
+    if coordinator is not None and coordinator_started and hasattr(coordinator, "set_initial_options"):
+        coordinator.set_initial_options(options)
     if use_ipc and not coordinator_started:
         if getattr(args, "include_gitignored", False) or google_downloaded:
             coordinator = None
@@ -280,13 +299,13 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             if (
                 not google_downloaded
                 and files
-                and not any(error for _, error in targets)
+                and not any(error for _, error, _ in targets)
                 and try_delegate_to_coordinator(files, options)
             ):
                 logger.info("Delegated %d files to active hammerdown coordinator", len(files))
                 return 0
             reporting_ui = BatchUI(ui_files, estimates=estimates)
-            reporting_ui.errors.extend((path, error) for path, error in targets if error is not None)
+            reporting_ui.errors.extend((path, error) for path, error, _ in targets if error is not None)
             reporting_ui.skipped_files.extend((Path(skip.path).name, skip.reason) for skip in discovery_skips)
             reporting_ui.print_error_list()
             reporting_ui.print_ignore_files(ignore_files)
@@ -296,12 +315,33 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
     if coordinator is not None and coordinator_started:
         initial_errors = [target for target in targets if target[1] is not None]
         collected_files = coordinator.collect_files(files, assembly_timeout=2.0)
+        delegated = getattr(coordinator, "delegated_options", None)
+        if delegated is not None:
+            tree_mode = delegated["tree"]
+            all_formats = delegated["all_formats"]
+            merge_requested = delegated["merge"]
+            merge_auto = delegated["merge_auto"]
+            args.include = list(delegated["include"])
+            args.exclude = list(delegated["exclude"])
+            if "filter_queue" in delegated:
+                args.include = OrderedFilterValues(args.include)
+                args.exclude = OrderedFilterValues(args.exclude)
+                args.include.filter_queue = list(delegated["filter_queue"])
+                args.exclude.filter_queue = list(delegated["filter_queue"])
+            args.overwrite = delegated["overwrite"]
+            args.skip_existing = delegated["skip_existing"]
+            args.output_dir = delegated["output"]
+            args.stdout = delegated["stdout"]
+            args.confirm = delegated["confirm"]
+            args.include_gitignored = delegated["include_gitignored"]
+            include_spec, exclude_spec = compile_cli_filters(args.include, args.exclude)
+            discovery_merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
         rescan_paths = [*raw_files, *collected_files]
         rescanned = discover(rescan_paths)
         targets = targets_from_discovery(rescanned, rescan_paths)
         if not targets and rescanned.generated_outputs:
             generated = Path(rescanned.generated_outputs[0]).name
-            targets.append((generated, "all input resources are generated outputs; no input resources to convert"))
+            targets.append((generated, "all input resources are generated outputs; no input resources to convert", None))
         def normalized_path(path: str) -> Path | None:
             try:
                 value = normalize_path(path)
@@ -330,7 +370,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             if resolved is not None:
                 rescan_input_paths.add(resolved)
         for target in initial_errors:
-            path, _ = target
+            path, _, _ = target
             resolved = normalized_path(path)
             if resolved is not None:
                 if resolved in rescanned_target_paths or resolved in rescanned_skip_paths:
@@ -346,11 +386,11 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         )
         ignore_files = sorted(set(ignore_files).union(rescanned.ignore_files))
         targets.sort(key=lambda item: item[0].lower())
-        files = [path for path, error in targets if error is None]
-        ui_files = [path for path, _ in targets]
+        files = [path for path, error, _ in targets if error is None]
+        ui_files = [path for path, _, _ in targets]
         estimates = [
             get_conversion_estimate_seconds(Path(path)) if error is None else None
-            for path, error in targets
+            for path, error, _ in targets
         ]
         output_path_inputs = [*raw_files, *collected_files]
 
@@ -378,8 +418,20 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 break
         merge_requested = str(merge_parent / "hammerdowned.md")
 
+    merge_sources = [path for path, error, _ in targets if error is None]
+    if tree_mode and merge_requested is None:
+        coordinator_tree = (
+            getattr(args, "right_click", False)
+            or getattr(args, "coordinator", False)
+            or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
+        )
+        merge_parent = (
+            merge_root_for_inputs(output_path_inputs, [Path(path) for path in merge_sources])
+            if coordinator_tree
+            else Path.cwd()
+        )
+        merge_requested = str(merge_parent / "hammerdowned.md")
     merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
-    merge_sources = [path for path, error in targets if error is None]
     if merge_target is not None and any(Path(path).resolve() == merge_target.resolve() for path in merge_sources):
         logger.error("merge target cannot be one of the source files: %s", merge_target)
         if coordinator:
@@ -397,10 +449,14 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         if merge_target is not None:
             target_paths = [merge_target] * len(targets)
         elif output_root is not None:
-            target_paths = compute_output_paths(output_path_inputs, targets, output_root)
+            target_paths = compute_output_paths(
+                output_path_inputs,
+                [(path, error) for path, error, _ in targets],
+                output_root,
+            )
         else:
             target_paths = []
-            for path, _ in targets:
+            for path, _, _ in targets:
                 p = Path(path)
                 # Google-downloaded HTML lives in a temporary staging folder; write
                 # its Markdown output next to the user (cwd) or in -o/--output-dir.
@@ -430,7 +486,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
 
     conversion_finished = False
     try:
-        for idx, (f, error) in enumerate(targets):
+        for idx, (f, error, category) in enumerate(targets):
             f_path = Path(f)
             if error:
                 batch_ui.fail_file(idx, error)
@@ -477,25 +533,30 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             logger.disabled = True
             is_google_cache = str(f_path.resolve()) in google_downloaded
             try:
-                res = convert_file(
-                    f_path,
-                    overwrite=args.overwrite and not is_google_cache,
-                    skip_existing=args.skip_existing if merge_target is None else False,
-                    progress_callback=on_progress,
-                    completion_callback=on_complete,
-                    batch_mode=True,
-                    target_dir=(
-                        output_path.parent
-                        if merge_target is None and (output_root is not None or is_google_cache)
-                        else None
-                    ),
-                    asset_dir=(
-                        merge_asset_paths(f_path, merge_root, merge_target)[0]
-                        if merge_target is not None and merge_root is not None
-                        else None
-                    ),
-                    write_markdown=merge_target is None,
-                )
+                if category == "source_code":
+                    res = convert_source_text(f_path)
+                    if res.success:
+                        on_complete(True, 0.0, 0, len(res.markdown or ""))
+                else:
+                    res = convert_file(
+                        f_path,
+                        overwrite=args.overwrite and not is_google_cache,
+                        skip_existing=args.skip_existing if merge_target is None else False,
+                        progress_callback=on_progress,
+                        completion_callback=on_complete,
+                        batch_mode=True,
+                        target_dir=(
+                            output_path.parent
+                            if merge_target is None and (output_root is not None or is_google_cache)
+                            else None
+                        ),
+                        asset_dir=(
+                            merge_asset_paths(f_path, merge_root, merge_target)[0]
+                            if merge_target is not None and merge_root is not None
+                            else None
+                        ),
+                        write_markdown=merge_target is None,
+                    )
             finally:
                 logger.disabled = logger_was_disabled
             succeeded = bool(res)

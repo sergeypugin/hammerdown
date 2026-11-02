@@ -5,8 +5,34 @@ from zipfile import ZipFile
 
 import hammerdown.cli
 
-
 SECTION_SEPARATOR = "=" * 48
+
+def test_tree_cli_renders_source_code_targets_with_and_without_all_formats(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    contents = {
+        "source.py": "print('python')\n",
+        "data.json": '{"ok": true}\n',
+        "main.rs": "fn main() {}\n",
+    }
+    for name, content in contents.items():
+        (project / name).write_text(content, encoding="utf-8")
+
+    for all_formats in (False, True):
+        output = tmp_path / f"tree-{all_formats}.md"
+        args = ["--tree", "--merge", str(output)]
+        if all_formats:
+            args.insert(1, "--all-formats")
+        assert hammerdown.cli.main([*args, str(project)]) == 0
+        rendered = output.read_text(encoding="utf-8")
+        for name, content in contents.items():
+            assert f"FILE: {name}" in rendered
+            assert content.strip() in rendered
+
 
 
 def test_tree_writes_default_output_path_and_exact_content(tmp_path: Path, monkeypatch) -> None:

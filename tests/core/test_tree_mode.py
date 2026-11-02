@@ -4,6 +4,62 @@ import sys
 
 import hammerdown.cli
 
+from hammerdown.core.discovery import discover_tree
+from hammerdown.core.merge import convert_source_text, render_merged_document
+
+
+
+
+def test_tree_source_code_helper_reads_source_extensions_and_renders_sections(tmp_path: Path) -> None:
+    sources = {
+        "source.py": "print('python')\n",
+        "data.json": '{"ok": true}\n',
+        "main.rs": "fn main() {}\n",
+    }
+
+    for name, content in sources.items():
+        source = tmp_path / name
+        source.write_text(content, encoding="utf-8")
+        result = convert_source_text(source)
+
+        assert result.success is True
+        assert result.markdown == content
+        section = render_merged_document(source, result.markdown or "", tmp_path)
+        assert f"FILE: {name}" in section
+        assert content.strip() in section
+        assert "[Binary file]" not in section
+
+
+def test_tree_source_code_discovery_is_same_with_all_formats(tmp_path: Path) -> None:
+    for name in ("source.py", "data.json", "main.rs"):
+        (tmp_path / name).write_text("source\n", encoding="utf-8")
+
+    for all_formats in (False, True):
+        result = discover_tree([str(tmp_path)], all_formats=all_formats)
+        assert {Path(target.path).name for target in result.targets} == {
+            "source.py", "data.json", "main.rs"
+        }
+        assert {target.category for target in result.targets} == {"source_code"}
+
+
+def test_tree_source_code_helper_rejects_binary_and_unknown_binary_is_skipped(tmp_path: Path) -> None:
+    source = tmp_path / "binary.py"
+    source.write_bytes(b"source\x00binary")
+    unknown = tmp_path / "unknown.bin"
+    unknown.write_bytes(b"PK\x03\x04")
+
+    conversion = convert_source_text(source)
+    discovery = discover_tree([str(tmp_path)], all_formats=True)
+
+    assert conversion.success is False
+    assert conversion.markdown is None
+    assert conversion.error is not None
+    assert [Path(target.path).name for target in discovery.targets] == []
+    assert {(Path(skip.path).name, skip.reason) for skip in discovery.skipped} == {
+        ("binary.py", "unsupported format"),
+        ("unknown.bin", "unsupported format"),
+    }
+
 
 def test_tree_flag_enables_tree_mode(tmp_path: Path, monkeypatch):
     """Test that --tree flag enables tree mode and creates default output"""

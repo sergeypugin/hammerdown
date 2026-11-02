@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 import hammerdown.batch as batch
+from hammerdown.core.filters import OrderedFilterValues
 
 
 def _batch_args(*files: str, coordinator: bool = False) -> argparse.Namespace:
@@ -27,7 +28,77 @@ def _batch_args(*files: str, coordinator: bool = False) -> argparse.Namespace:
     )
 
 
-def test_google_download_staging_survives_discovery_and_conversion(tmp_path: Path, monkeypatch):
+
+def test_batch_delegation_includes_ordered_filter_queue(tmp_path: Path, monkeypatch):
+    source = tmp_path / "keep.log"
+    source.write_text("content\n", encoding="utf-8")
+    include = OrderedFilterValues(["keep.log"])
+    exclude = OrderedFilterValues(["*.log"])
+    queue = [("exclude", "*.log"), ("include", "keep.log")]
+    include.filter_queue = queue
+    exclude.filter_queue = queue
+    args = _batch_args(str(source), coordinator=True)
+    args.include = include
+    args.exclude = exclude
+    captured = {}
+
+    class NoCoordinator:
+        def start(self) -> bool:
+            return False
+
+    monkeypatch.setattr(batch, "IPCCoordinator", NoCoordinator)
+    monkeypatch.setattr(batch, "try_delegate_to_coordinator", lambda files, options: captured.update(options) or True)
+
+    assert batch.run_batch(args) == 0
+    assert captured["filter_queue"] == queue
+
+
+def test_coordinator_worker_restores_ordered_filter_queue(tmp_path: Path, monkeypatch):
+    source = tmp_path / "notes.txt"
+    source.write_text("content\n", encoding="utf-8")
+    queue = [("exclude", "*.log"), ("include", "keep.log")]
+    captured = []
+
+    class WorkerCoordinator:
+        delegated_options = {
+            "tree": False,
+            "all_formats": False,
+            "merge": None,
+            "merge_auto": False,
+            "include": ["keep.log"],
+            "exclude": ["*.log"],
+            "filter_queue": queue,
+            "overwrite": False,
+            "skip_existing": False,
+            "output": None,
+            "stdout": False,
+            "confirm": False,
+            "include_gitignored": False,
+        }
+
+        def start(self) -> bool:
+            return True
+
+        def collect_files(self, initial_files, assembly_timeout: float = 2.0):
+            return list(initial_files)
+
+        def stop(self) -> None:
+            pass
+
+    from hammerdown.core import filters
+    real_compile = filters.compile_cli_filters
+
+    def capture_compile(include=(), exclude=()):
+        captured.append((include, exclude))
+        return real_compile(include, exclude)
+
+    monkeypatch.setattr(batch, "IPCCoordinator", WorkerCoordinator)
+    monkeypatch.setattr(batch, "hand_off_to_windows_terminal", lambda *args: False)
+    monkeypatch.setattr(filters, "compile_cli_filters", capture_compile)
+    monkeypatch.setattr("builtins.input", lambda: "")
+
+    assert batch.run_batch(_batch_args(str(source), coordinator=True)) == 0
+    assert any(getattr(include, "filter_queue", None) == queue for include, _ in captured)
     url = "https://docs.google.com/document/d/staged-document/edit"
     staged_paths: list[Path] = []
 
