@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from typing import Callable, Literal
+from typing import Callable, Literal, TypeVar, cast
 
 from .presentation import convert_pptx
 from .spreadsheet import convert_xlsx
@@ -18,6 +18,7 @@ from hammerdown.core.path_utils import get_images_dir_name
 logger = logging.getLogger("hammerdown")
 ProgressCallback = Callable[[int, int, str], None]
 AttemptStatus = Literal["converted", "not_found", "failed", "no_output"]
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class _ConversionAttempt:
     status: AttemptStatus
     path: str | None = None
     detail: str = ""
+    cleanup: Callable[[], None] | None = None
 
 
 def _format_process_output(stdout: str | None, stderr: str | None) -> str:
@@ -108,6 +110,10 @@ def _com_unavailable(detail: str) -> bool:
     return "class not registered" in lowered or "0x80040154" in lowered
 
 
+def _cleanup_temp_dir(temp_dir: str) -> None:
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def _convert_via_soffice_attempt(file_path: str, out_ext: str) -> _ConversionAttempt:
     soffice_bin = _find_soffice()
     if not soffice_bin:
@@ -130,20 +136,27 @@ def _convert_via_soffice_attempt(file_path: str, out_ext: str) -> _ConversionAtt
         converted_file = Path(temp_dir) / f"{Path(file_path).stem}.{out_ext}"
         output = _format_process_output(result.stdout, result.stderr)
         if converted_file.is_file():
-            return _ConversionAttempt("LibreOffice", "converted", str(converted_file), output)
+            return _ConversionAttempt("LibreOffice", "converted", str(converted_file), output, lambda: _cleanup_temp_dir(temp_dir))
         detail = "LibreOffice finished without creating the converted file"
         if output:
             detail = f"{detail}: {output}"
+        _cleanup_temp_dir(temp_dir)
         return _ConversionAttempt("LibreOffice", "no_output", detail=detail)
-    except subprocess.CalledProcessError as exc:
-        detail = _format_process_output(exc.stdout, exc.stderr) or f"process exited with code {exc.returncode}"
-        return _ConversionAttempt("LibreOffice", "failed", detail=detail)
-    except subprocess.TimeoutExpired:
-        return _ConversionAttempt("LibreOffice", "failed", detail="conversion timed out after 120 seconds")
-    except FileNotFoundError as exc:
-        return _ConversionAttempt("LibreOffice", "not_found", detail=f"could not start LibreOffice: {exc}")
-    except OSError as exc:
-        return _ConversionAttempt("LibreOffice", "failed", detail=f"could not start LibreOffice: {exc}")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        if isinstance(exc, subprocess.CalledProcessError):
+            detail = _format_process_output(exc.stdout, exc.stderr) or f"process exited with code {exc.returncode}"
+            status: AttemptStatus = "failed"
+        elif isinstance(exc, subprocess.TimeoutExpired):
+            detail = "conversion timed out after 120 seconds"
+            status = "failed"
+        elif isinstance(exc, FileNotFoundError):
+            detail = f"could not start LibreOffice: {exc}"
+            status = "not_found"
+        else:
+            detail = f"could not start LibreOffice: {exc}"
+            status = "failed"
+        _cleanup_temp_dir(temp_dir)
+        return _ConversionAttempt("LibreOffice", status, detail=detail)
 
 
 def _convert_via_ms_office_nt_attempt(file_path: str, out_ext: str) -> _ConversionAttempt:
@@ -212,21 +225,27 @@ def _convert_via_ms_office_nt_attempt(file_path: str, out_ext: str) -> _Conversi
         )
         output = _format_process_output(result.stdout, result.stderr)
         if temp_file.is_file():
-            return _ConversionAttempt("Microsoft Office", "converted", str(temp_file), output)
+            return _ConversionAttempt("Microsoft Office", "converted", str(temp_file), output, lambda: _cleanup_temp_dir(temp_dir))
         detail = "Microsoft Office finished without creating the converted file"
         if output:
             detail = f"{detail}: {output}"
+        _cleanup_temp_dir(temp_dir)
         return _ConversionAttempt("Microsoft Office", "no_output", detail=detail)
-    except subprocess.CalledProcessError as exc:
-        detail = _format_process_output(exc.stdout, exc.stderr) or f"process exited with code {exc.returncode}"
-        status: AttemptStatus = "not_found" if _com_unavailable(detail) else "failed"
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        if isinstance(exc, subprocess.CalledProcessError):
+            detail = _format_process_output(exc.stdout, exc.stderr) or f"process exited with code {exc.returncode}"
+            status: AttemptStatus = "not_found" if _com_unavailable(detail) else "failed"
+        elif isinstance(exc, subprocess.TimeoutExpired):
+            detail = "conversion timed out after 120 seconds"
+            status = "failed"
+        elif isinstance(exc, FileNotFoundError):
+            detail = f"PowerShell could not be started: {exc}"
+            status = "not_found"
+        else:
+            detail = f"PowerShell could not be started: {exc}"
+            status = "failed"
+        _cleanup_temp_dir(temp_dir)
         return _ConversionAttempt("Microsoft Office", status, detail=detail)
-    except subprocess.TimeoutExpired:
-        return _ConversionAttempt("Microsoft Office", "failed", detail="conversion timed out after 120 seconds")
-    except FileNotFoundError as exc:
-        return _ConversionAttempt("Microsoft Office", "not_found", detail=f"PowerShell could not be started: {exc}")
-    except OSError as exc:
-        return _ConversionAttempt("Microsoft Office", "failed", detail=f"PowerShell could not be started: {exc}")
 
 
 def _log_failed_attempt(attempt: _ConversionAttempt, file_name: str) -> None:
@@ -236,20 +255,40 @@ def _log_failed_attempt(attempt: _ConversionAttempt, file_name: str) -> None:
     logger.warning("%s conversion for %s: %s", attempt.converter, file_name, detail)
 
 
-def _convert_legacy_office(file_path: str, out_ext: str) -> str | None:
+def _convert_legacy_office(
+    file_path: str,
+    out_ext: str,
+    consume: Callable[[str], T] | None = None,
+) -> str | T | None:
     file_name = Path(file_path).name
     attempts: list[_ConversionAttempt] = []
     if os.name == "nt":
         microsoft = _convert_via_ms_office_nt_attempt(file_path, out_ext)
         attempts.append(microsoft)
         if microsoft.status == "converted":
-            return microsoft.path
+            if microsoft.path is None:
+                return None
+            if consume is None:
+                return microsoft.path
+            try:
+                return consume(microsoft.path)
+            finally:
+                if microsoft.cleanup:
+                    microsoft.cleanup()
         _log_failed_attempt(microsoft, file_name)
 
     libreoffice = _convert_via_soffice_attempt(file_path, out_ext)
     attempts.append(libreoffice)
     if libreoffice.status == "converted":
-        return libreoffice.path
+        if libreoffice.path is None:
+            return None
+        if consume is None:
+            return libreoffice.path
+        try:
+            return consume(libreoffice.path)
+        finally:
+            if libreoffice.cleanup:
+                libreoffice.cleanup()
     _log_failed_attempt(libreoffice, file_name)
 
     available_attempts = [attempt for attempt in attempts if attempt.status != "not_found"]
@@ -288,9 +327,13 @@ def convert_doc(
         except Exception as exc:
             logger.warning("DOCX-compatible parsing failed for %s: %s; trying legacy conversion", Path(doc_path).name, exc)
 
-    converted = _convert_legacy_office(doc_path, "docx")
-    if converted:
-        return convert_docx(converted, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback)
+    converted = _convert_legacy_office(
+        doc_path,
+        "docx",
+        lambda path: convert_docx(path, out_dir, images_dir_name=img_dir_name, progress_callback=progress_callback),
+    )
+    if converted is not None:
+        return cast(tuple[str | None, int], converted)
     return None, 0
 
 
@@ -308,9 +351,13 @@ def convert_xls(
         except Exception as exc:
             logger.warning("XLSX-compatible parsing failed for %s: %s; trying legacy conversion", Path(xls_path).name, exc)
 
-    converted = _convert_legacy_office(xls_path, "xlsx")
-    if converted:
-        return convert_xlsx(converted, out_dir, progress_callback=progress_callback)
+    converted = _convert_legacy_office(
+        xls_path,
+        "xlsx",
+        lambda path: convert_xlsx(path, out_dir, progress_callback=progress_callback),
+    )
+    if converted is not None:
+        return cast(tuple[str | None, int], converted)
     return None, 0
 
 
@@ -328,7 +375,11 @@ def convert_ppt(
         except Exception as exc:
             logger.warning("PPTX-compatible parsing failed for %s: %s; trying legacy conversion", Path(ppt_path).name, exc)
 
-    converted = _convert_legacy_office(ppt_path, "pptx")
-    if converted:
-        return convert_pptx(converted, out_dir, progress_callback=progress_callback)
+    converted = _convert_legacy_office(
+        ppt_path,
+        "pptx",
+        lambda path: convert_pptx(path, out_dir, progress_callback=progress_callback),
+    )
+    if converted is not None:
+        return cast(tuple[str | None, int], converted)
     return None, 0
