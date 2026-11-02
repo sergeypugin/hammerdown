@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Sequence
 import weakref
 
-from .output import OutputStaging, replace_staged_outputs
+from .output import OutputStaging, cleanup_staged_path, replace_staged_outputs
 from .path_utils import get_images_dir_name, normalize_path
 from ..parsers import CONVERTERS
 
@@ -15,6 +15,33 @@ TREE_LAST = "└── "
 TREE_PIPE = "│   "
 TREE_SPACE = "    "
 SECTION_SEPARATOR = "=" * 48
+
+
+@dataclass(frozen=True)
+class SourceTextConversion:
+    """Result of reading a tree-mode source file as Markdown content."""
+
+    success: bool
+    markdown: str | None = None
+    error: str | None = None
+
+    def __bool__(self) -> bool:
+        return self.success and self.markdown is not None
+
+
+def convert_source_text(file_path: str | Path) -> SourceTextConversion:
+    """Read a UTF-8 source file for tree-mode merging without parser conversion."""
+    source = Path(file_path)
+    try:
+        if not source.is_file():
+            return SourceTextConversion(False, error=f"file not found: {source}")
+        data = source.read_bytes()
+        if b"\x00" in data:
+            return SourceTextConversion(False, error=f"binary content in source file: {source.name}")
+        return SourceTextConversion(True, markdown=data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n"))
+    except (OSError, UnicodeError) as exc:
+        return SourceTextConversion(False, error=f"could not read source file {source.name}: {exc}")
+
 
 # Convertible binary formats that hammerdown supports
 CONVERTIBLE_BINARY_FORMATS = {".pdf", ".docx", ".xlsx", ".doc", ".xls", ".pptx", ".ppt", ".odt"}
@@ -465,7 +492,16 @@ def append_merged_document(
         with session.staged_target.open("a", encoding="utf-8", newline="\n") as output:
             output.write("\n" + rendered + "\n")
     except Exception:
-        _discard_merge_session(session)
+        session.had_error = True
+        cleanup_staged_path(session.staging.path / asset_prefix)
+        active_handle = session.active_handle_ref() if session.active_handle_ref is not None else None
+        if active_handle is not None:
+            active_handle.consume()
+        session.active_handle_ref = None
+        session.active_token = None
+        session.pending_source = None
+        session.appended += 1
+        _finish_merge_session(session)
         raise
 
     active_handle = session.active_handle_ref() if session.active_handle_ref is not None else None

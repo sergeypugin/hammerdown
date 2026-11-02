@@ -67,6 +67,10 @@ def replace_staged_outputs(replacements: Sequence[tuple[Path | None, Path]]) -> 
     if len(set(targets)) != len(targets):
         raise ValueError("output replacement targets must be unique")
 
+    for staged, target in replacements:
+        if staged is not None and target.suffix.lower() == ".md" and target.is_dir():
+            raise IsADirectoryError(target)
+
     backups: list[tuple[Path, Path]] = []
     installed: list[Path] = []
     try:

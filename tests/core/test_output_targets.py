@@ -58,6 +58,21 @@ def test_skip_existing_only_checks_target_and_preserves_all_outputs(
     assert {path.relative_to(assets): path.read_bytes() for path in assets.rglob("*") if path.is_file()} == before_assets
 
 
+def test_markdown_output_directory_is_rejected_without_replacing_contents(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("new content\n", encoding="utf-8")
+    target = tmp_path / "hm_source_txt.md"
+    target.mkdir()
+    marker = target / "keep.txt"
+    marker.write_text("keep me\n", encoding="utf-8")
+
+    result = core.convert_file(source)
+
+    assert not result.success
+    assert target.is_dir()
+    assert marker.read_text(encoding="utf-8") == "keep me\n"
+
+
 def test_generated_outputs_are_silent_in_directory_discovery(tmp_path: Path) -> None:
     source = tmp_path / "source.txt"
     source.write_text("source\n", encoding="utf-8")
