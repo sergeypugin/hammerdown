@@ -6,6 +6,7 @@ from pathlib import Path
 from pathspec import GitIgnoreSpec
 
 from hammerdown.core.discovery import discover_paths, discover_tree, expand_paths
+from hammerdown.core.filters import compile_cli_filters
 
 
 def _target_names(result) -> set[str]:
@@ -166,3 +167,55 @@ def test_parent_child_roots_deduplicate_by_resolved_path(tmp_path: Path) -> None
 
     assert len(result.targets) == 1
     assert len(legacy) == 1
+
+
+def test_compiled_identical_include_and_exclude_patterns_keep_exclude_state(tmp_path: Path) -> None:
+    document = tmp_path / "document.txt"
+    document.write_text("content", encoding="utf-8")
+    include, exclude = compile_cli_filters(["document.txt"], ["document.txt"])
+
+    result = discover_paths(
+        [str(tmp_path)],
+        include_patterns=include,
+        exclude_patterns=exclude,
+    )
+
+    assert result.targets == []
+    assert [(Path(skip.path).name, skip.reason) for skip in result.skipped] == [
+        ("document.txt", "cli exclude filter")
+    ]
+
+
+def test_compiled_repeated_patterns_are_ordered_and_deduplicated(tmp_path: Path) -> None:
+    document = tmp_path / "document.txt"
+    document.write_text("content", encoding="utf-8")
+    include, exclude = compile_cli_filters(
+        ["other.txt", "document.txt", "document.txt"],
+        ["document.txt", "document.txt"],
+    )
+
+    result = discover_paths(
+        [str(tmp_path)],
+        include_patterns=include,
+        exclude_patterns=exclude,
+    )
+
+    assert result.targets == []
+    assert [(Path(skip.path).name, skip.reason) for skip in result.skipped] == [
+        ("document.txt", "cli exclude filter")
+    ]
+
+
+def test_reserved_generated_outputs_are_protected_before_cli_filters(tmp_path: Path) -> None:
+    generated_names = ["hm_document.md", "HM_OTHER.MD", "hammerdowned.md"]
+    for name in generated_names:
+        (tmp_path / name).write_text("generated", encoding="utf-8")
+
+    result = discover_paths(
+        [str(tmp_path)],
+        include_patterns=[GitIgnoreSpec.from_lines(["*.md"])],
+    )
+
+    assert result.targets == []
+    assert {Path(path).name for path in result.generated_outputs} == set(generated_names)
+    assert result.skipped == []

@@ -36,6 +36,7 @@ _prepare_console_window()
 from . import APP_NAME, __version__
 from .batch import run_batch
 from .core.file_selection import _select_files
+from .core.filters import OrderedFilterValues
 from .integrations import install as install_integration
 from .integrations import uninstall as uninstall_integration
 from .core.updater import update as update_application
@@ -45,6 +46,27 @@ logger = logging.getLogger("hammerdown")
 
 
 APP_DESCRIPTION = get_app_description()
+
+
+class _FilterAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        value = str(values)
+        current = getattr(namespace, self.dest, None)
+        if not isinstance(current, OrderedFilterValues):
+            current = OrderedFilterValues(current or ())
+            setattr(namespace, self.dest, current)
+        current.append(value)
+        if current.filter_queue is None:
+            current.filter_queue = []
+        kind = "include" if self.dest == "include" else "exclude"
+        current.filter_queue.append((kind, value))
+        queue = getattr(namespace, "_filter_queue", None)
+        if queue is None:
+            queue = []
+            setattr(namespace, "_filter_queue", queue)
+        queue.append((kind, value))
+
+
 
 
 def install() -> bool:
@@ -59,7 +81,7 @@ def update() -> bool:
     return update_application(install_callback=install)
 
 
-def validate_filter_patterns(parser: argparse.ArgumentParser, values: Sequence[str], flag: str) -> list[str]:
+def validate_filter_patterns(parser: argparse.ArgumentParser, values: Sequence[str], flag: str) -> Sequence[str]:
     from .core.filters import compile_cli_filters
 
     try:
@@ -69,7 +91,7 @@ def validate_filter_patterns(parser: argparse.ArgumentParser, values: Sequence[s
             compile_cli_filters((), values)
     except (TypeError, ValueError) as exc:
         parser.error(f"{flag} invalid filter pattern: {exc}")
-    return list(values)
+    return values
 
 
 def _long_options(parser: argparse.ArgumentParser) -> set[str]:
@@ -205,16 +227,16 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "-i",
         "--include",
-        action="append",
-        default=[],
+        action=_FilterAction,
+        default=OrderedFilterValues(),
         metavar="PATTERN",
         help="Include files matching this GitWildMatch/pathspec pattern; may be repeated",
     )
     parser.add_argument(
         "-e",
         "--exclude",
-        action="append",
-        default=[],
+        action=_FilterAction,
+        default=OrderedFilterValues(),
         metavar="PATTERN",
         help="Exclude files matching this GitWildMatch/pathspec pattern; may be repeated",
     )
@@ -270,6 +292,10 @@ def _main(argv: Sequence[str] | None = None) -> int:
     reject_single_dash_long_options(parser, normalized_argv)
     reject_abbreviated_long_options(parser, normalized_argv)
     args = parser.parse_intermixed_args(normalized_argv)
+    filter_queue = getattr(args, "_filter_queue", None)
+    if filter_queue:
+        args.include.filter_queue = filter_queue
+        args.exclude.filter_queue = filter_queue
 
     conversion_options_present = any(
         (

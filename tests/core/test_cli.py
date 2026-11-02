@@ -464,6 +464,53 @@ def test_include_and_exclude_filter_order_and_repeated_patterns(tmp_path: Path, 
     assert (root / "hm_other_txt.md").is_file()
 
 
+
+
+@pytest.mark.parametrize(
+    ("argv_filters", "restored_expected"),
+    [
+        (["-e", "*.txt", "--include", "restore.txt"], True),
+        (["--exclude", "*.txt", "-i", "restore.txt"], True),
+        (["-e", "*.txt", "-i", "*.txt", "-e", "restore.txt"], False),
+        (["--exclude", "*.txt", "--include", "*.txt", "--exclude", "restore.txt"], False),
+    ],
+)
+def test_mixed_include_exclude_queue_is_ordered_around_resources(
+    tmp_path: Path, argv_filters, restored_expected, capsys
+):
+    root = tmp_path / "documents"
+    root.mkdir()
+    restored = root / "restore.txt"
+    excluded = root / "other.txt"
+    restored.write_text("restored", encoding="utf-8")
+    excluded.write_text("excluded", encoding="utf-8")
+
+    assert hammerdown.cli.main([*argv_filters, str(root)]) == 0
+    capsys.readouterr()
+
+    assert (root / "hm_restore_txt.md").exists() is restored_expected
+    assert (root / "hm_other_txt.md").exists() is (argv_filters.count("*.txt") == 2)
+
+
+def test_filter_queue_can_be_interspersed_with_resources(tmp_path: Path, monkeypatch):
+    captured = {}
+
+    def capture_batch(args):
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(hammerdown.cli, "run_batch", capture_batch)
+    assert hammerdown.cli.main(
+        ["-e", "*.log", "first.txt", "--include", "keep.log", "second.txt"]
+    ) == 0
+
+    args = captured["args"]
+    assert args.files == ["first.txt", "second.txt"]
+    assert args.include == ["keep.log"]
+    assert args.exclude == ["*.log"]
+    assert args.include.filter_queue == [("exclude", "*.log"), ("include", "keep.log")]
+
+
 def test_include_selects_russian_filename_with_spaces_from_quoted_pattern(tmp_path: Path, capsys):
     root = tmp_path / "docs"
     root.mkdir()

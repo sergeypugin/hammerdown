@@ -1,11 +1,37 @@
 from __future__ import annotations
-
 from typing import Iterable, Sequence
 
-from pathspec import GitIgnoreSpec
+from pathspec import GitIgnoreSpec, PathSpec
 
 _QUOTE_CHARS = frozenset({"'", '"'})
 _PRESERVED_ESCAPES = frozenset({"(", ")", ",", "!", "#"})
+
+
+class OrderedFilterValues(list[str]):
+    """Argparse values carrying the original include/exclude operation queue."""
+
+    def __init__(self, values: Iterable[str] = ()) -> None:
+        super().__init__(values)
+        self.filter_queue: list[tuple[str, str]] | None = None
+
+
+class _OrderedFilterSpec(PathSpec):
+    def __init__(self, operations: Sequence[tuple[str, str]]) -> None:
+        self.operations = tuple((kind, GitIgnoreSpec.from_lines([pattern])) for kind, pattern in operations)
+        self.has_include = any(kind == "include" for kind, _ in operations)
+
+    @property
+    def patterns(self):
+        return self.operations
+
+    def match_file(self, filename: str) -> bool:
+        allowed = not self.has_include
+        for kind, spec in self.operations:
+            if spec.match_file(filename):
+                allowed = kind == "include"
+        return allowed
+
+
 
 
 def _preserves_escape(character: str) -> bool:
@@ -130,19 +156,21 @@ def normalize_filter_patterns(patterns: Iterable[str]) -> list[str]:
 def compile_cli_filters(
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
-) -> tuple[GitIgnoreSpec, GitIgnoreSpec]:
-    """Compile include and exclude groups with Gitingest-compatible semantics.
+) -> tuple[PathSpec, PathSpec]:
+    """Compile CLI filters, honoring an argparse-preserved operation queue."""
+    queued = getattr(include, "filter_queue", None) or getattr(exclude, "filter_queue", None)
+    if queued:
+        operations: list[tuple[str, str]] = []
+        for kind, raw in queued:
+            for pattern in parse_pattern_string(raw):
+                operations.append((kind, pattern))
+        if operations:
+            return _OrderedFilterSpec(operations), GitIgnoreSpec.from_lines([])
 
-    Identical patterns are removed from the exclude group. During discovery,
-    exclude matches still take priority over include matches.
-    """
     include_patterns = normalize_filter_patterns(include)
     exclude_patterns = normalize_filter_patterns(exclude)
 
-    include_set = set(include_patterns)
-    final_exclude = [pattern for pattern in exclude_patterns if pattern not in include_set]
-
     return (
         GitIgnoreSpec.from_lines(include_patterns),
-        GitIgnoreSpec.from_lines(final_exclude),
+        GitIgnoreSpec.from_lines(exclude_patterns),
     )
