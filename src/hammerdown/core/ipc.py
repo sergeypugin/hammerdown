@@ -236,6 +236,7 @@ class IPCCoordinator:
         self._delivery_condition = threading.Condition()
         self._inflight_connections = 0
         self._delivery_generation = 0
+        self._lifecycle_generation = 0
         self._active_connections: set[Any] = set()
         self._delegated_options: DelegatedOptions | None = None
         self._running = False
@@ -246,6 +247,7 @@ class IPCCoordinator:
         with self._delivery_condition:
             if self._running and self.listener is not None and self._thread is not None and self._thread.is_alive():
                 return False
+            self._reset_delivery_state_locked()
 
         # Acquire file lock to prevent race condition when multiple processes
         # try to become the coordinator simultaneously
@@ -288,9 +290,15 @@ class IPCCoordinator:
         elif self._delegated_options != normalized:
             raise ValueError("coordinator options conflict with the active request")
 
+    def _reset_delivery_state_locked(self) -> None:
+        self._incoming_queue = queue.Queue()
+        self._lifecycle_generation += 1
+        self._delegated_options = None
+
     def _fail_from_server_thread(self) -> None:
         with self._delivery_condition:
             self._running = False
+            self._reset_delivery_state_locked()
             listener = self.listener
             self.listener = None
             active_connections = list(self._active_connections)
@@ -329,6 +337,19 @@ class IPCCoordinator:
             try:
                 request_deadline = time.monotonic() + IPC_REQUEST_READ_TIMEOUT
                 data: Any = None
+                read_result: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+                def read_request() -> None:
+                    try:
+                        read_result.put((True, conn.recv()))
+                    except Exception as error:
+                        read_result.put((False, error))
+
+                # Connection.recv() can block after poll() reports a partial
+                # multiprocessing frame. Keep that operation off the server
+                # thread so the deadline remains enforceable on every transport.
+                reader = threading.Thread(target=read_request, daemon=True)
+                reader.start()
                 while True:
                     with self._delivery_condition:
                         if not self._running:
@@ -336,10 +357,15 @@ class IPCCoordinator:
                     remaining = request_deadline - time.monotonic()
                     if remaining <= 0:
                         break
-                    if conn.poll(min(0.05, remaining)):
-                        data = conn.recv()
-                        break
+                    try:
+                        received, value = read_result.get(timeout=min(0.05, remaining))
+                    except queue.Empty:
+                        continue
+                    if received:
+                        data = value
+                    break
                 if data is None:
+                    _close_quietly(conn)
                     continue
                 request = _deserialize_request(data)
                 if request is None:
@@ -386,13 +412,19 @@ class IPCCoordinator:
         deadline = time.monotonic() + assembly_timeout
         with self._delivery_condition:
             delivery_generation = self._delivery_generation
+            lifecycle_generation = self._lifecycle_generation
 
         while True:
+            with self._delivery_condition:
+                if self._lifecycle_generation != lifecycle_generation:
+                    return collected
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 with self._delivery_condition:
                     while self._inflight_connections:
                         self._delivery_condition.wait()
+                    if self._lifecycle_generation != lifecycle_generation:
+                        return collected
                     if self._delivery_generation != delivery_generation:
                         delivery_generation = self._delivery_generation
                         deadline = time.monotonic() + assembly_timeout
@@ -400,17 +432,21 @@ class IPCCoordinator:
                 break
             try:
                 batch = self._incoming_queue.get(timeout=remaining)
-                for item in batch:
-                    if item not in seen:
-                        seen.add(item)
-                        collected.append(item)
                 with self._delivery_condition:
+                    if self._lifecycle_generation != lifecycle_generation:
+                        return collected
+                    for item in batch:
+                        if item not in seen:
+                            seen.add(item)
+                            collected.append(item)
                     delivery_generation = self._delivery_generation
                 deadline = time.monotonic() + assembly_timeout
             except queue.Empty:
                 with self._delivery_condition:
                     while self._inflight_connections:
                         self._delivery_condition.wait()
+                    if self._lifecycle_generation != lifecycle_generation:
+                        return collected
                     if self._delivery_generation != delivery_generation:
                         delivery_generation = self._delivery_generation
                         deadline = time.monotonic() + assembly_timeout
@@ -439,6 +475,7 @@ class IPCCoordinator:
     def stop(self) -> None:
         with self._delivery_condition:
             self._running = False
+            self._reset_delivery_state_locked()
             active_connections = list(self._active_connections)
             for conn in active_connections:
                 _close_quietly(conn)
