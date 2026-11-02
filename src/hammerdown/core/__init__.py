@@ -50,7 +50,7 @@ APP_NAME: str = "hammerdown"
 
 
 SUPPORTED_EXTENSIONS: tuple[str, ...] = tuple(CONVERTERS)
-TEXT_EXTENSIONS: tuple[str, ...] = (".txt", ".md")
+TEXT_EXTENSIONS: tuple[str, ...] = (".txt", ".md", ".log", ".csv")
 
 DEFAULT_OVERWRITE: bool = True
 DEFAULT_SKIP_EXISTING: bool = False
