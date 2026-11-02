@@ -16,6 +16,11 @@ _GOOGLE_DRIVE_FOLDER_RE = re.compile(r"drive\.google\.com/drive/(?:u/\d+/)?folde
 
 _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 
+# Google Docs, Sheets, Slides, and Drive exports are supported documents rather
+# than arbitrary large-file transfers; keep downloads bounded accordingly.
+MAX_GOOGLE_DOWNLOAD_BYTES = 100 * 1024 * 1024
+_GOOGLE_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+
 # Drive folders and generic "View" pages are not files: we do not support them.
 _DRIVE_VIEW_MARKERS = ("/drive/folders/", "/drive/u/")
 
@@ -132,16 +137,11 @@ def download_google_url(value: str, target_dir: str | os.PathLike[str]) -> Path 
     if not export_url:
         return None
 
+    target_path: Path | None = None
+    temporary_path: Path | None = None
     try:
         sys.stderr.write(f"[ ] Downloading Google {info.doc_type}...\r")
         sys.stderr.flush()
-
-        request = urllib.request.Request(export_url, headers={"User-Agent": _USER_AGENT})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            payload = response.read()
-
-        target_path = Path(target_dir)
-        target_path.mkdir(parents=True, exist_ok=True)
 
         title = fetch_google_title(value)
         if title:
@@ -150,12 +150,50 @@ def download_google_url(value: str, target_dir: str | os.PathLike[str]) -> Path 
         else:
             filename = f"google_{info.file_id}.{info.doc_type}"
 
-        out_path = target_path / filename
-        out_path.write_bytes(payload)
-        return out_path
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
-        # Re-raise to let batch.py handle it with better messages
+        target_dir_path = Path(target_dir)
+        target_dir_path.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir_path / filename
+
+        request = urllib.request.Request(export_url, headers={"User-Agent": _USER_AGENT})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            content_length = response.headers.get("Content-Length")
+            if content_length is not None:
+                try:
+                    content_length_value = int(content_length)
+                except ValueError as exc:
+                    raise ValueError("Google download response has invalid Content-Length") from exc
+                if content_length_value > MAX_GOOGLE_DOWNLOAD_BYTES:
+                    raise ValueError(
+                        f"Google download exceeds the {MAX_GOOGLE_DOWNLOAD_BYTES} byte limit"
+                    )
+
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=target_dir_path, prefix=f".{filename}.", delete=False
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                downloaded_bytes = 0
+                while True:
+                    chunk = response.read(_GOOGLE_DOWNLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    downloaded_bytes += len(chunk)
+                    if downloaded_bytes > MAX_GOOGLE_DOWNLOAD_BYTES:
+                        raise ValueError(
+                            f"Google download exceeds the {MAX_GOOGLE_DOWNLOAD_BYTES} byte limit"
+                        )
+                    temporary_file.write(chunk)
+
+        os.replace(temporary_path, target_path)
+        temporary_path = None
+        return target_path
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as e:
+        # Re-raise to let batch.py handle it with better messages.
         raise e
     finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
         sys.stderr.write(" " * 40 + "\r")
         sys.stderr.flush()

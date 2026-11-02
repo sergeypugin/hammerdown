@@ -150,9 +150,9 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 reason = f"access denied (HTTP {e.code})" if e.code in (401, 403) else f"not found (HTTP {e.code})"
                 google_failed.append((raw, reason))
                 logger.error("Could not download Google Drive URL: %s (%s)", raw, reason)
-            except (urllib.error.URLError, OSError) as e:
-                google_failed.append((raw, f"network error: {e}"))
-                logger.error("Could not download Google Drive URL: %s (network error)", raw)
+            except (urllib.error.URLError, OSError, ValueError) as e:
+                google_failed.append((raw, f"download error: {e}"))
+                logger.error("Could not download Google Drive URL: %s (%s)", raw, e)
         else:
             resolved_files.append(raw)
     raw_files = resolved_files
