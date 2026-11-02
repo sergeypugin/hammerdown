@@ -80,7 +80,7 @@ def test_collect_files_includes_delivery_accepted_before_quiet_period_ends():
 def test_stop_closes_accepted_idle_connection_before_joining():
     coordinator = IPCCoordinator(pipe_name=_unique_test_pipe())
     assert coordinator.start()
-    connection = ipc.Client(coordinator.address, authkey=ipc.IPC_AUTH_KEY)
+    connection = ipc.Client(coordinator.address, authkey=ipc._read_session_secret())
     deadline = time.monotonic() + 1
     try:
         while time.monotonic() < deadline:

@@ -4,9 +4,11 @@ import contextlib
 import logging
 import os
 import queue
+import secrets
 import tempfile
 import threading
 import time
+from multiprocessing import AuthenticationError
 from multiprocessing.connection import Client, Listener
 from pathlib import Path
 from typing import Any, Mapping, Sequence, TypedDict, cast
@@ -16,9 +18,10 @@ logger = logging.getLogger("hammerdown")
 
 IPC_PIPE_NAME = r"\\.\pipe\hammerdown_coordinator"
 IPC_PORT = 58432
-IPC_AUTH_KEY = b"hammerdown-ipc-secret"
 IPC_LOCK_FILE = Path(tempfile.gettempdir()) / "hammerdown_coordinator.lock"
+IPC_SESSION_FILE = Path.home() / ".hammerdown" / "coordinator.session"
 IPC_REQUEST_READ_TIMEOUT = 1.0
+_SESSION_SECRET_SIZE = 32
 
 
 class DelegatedOptions(TypedDict):
@@ -132,6 +135,55 @@ def _get_address(pipe_name: str | tuple[str, int] | None = None) -> str | tuple[
     return ("127.0.0.1", IPC_PORT)
 
 
+def _read_session_secret() -> bytes | None:
+    try:
+        secret = IPC_SESSION_FILE.read_bytes()
+    except OSError:
+        return None
+    if len(secret) != _SESSION_SECRET_SIZE:
+        return None
+    return secret
+
+
+def _write_session_secret(secret: bytes) -> None:
+    directory = IPC_SESSION_FILE.parent
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{IPC_SESSION_FILE.name}.", dir=directory)
+    try:
+        with os.fdopen(fd, "wb") as session:
+            session.write(secret)
+            session.flush()
+            os.fsync(session.fileno())
+        try:
+            os.chmod(temporary_name, 0o600)
+        except OSError:
+            pass
+        os.replace(temporary_name, IPC_SESSION_FILE)
+    except Exception:
+        try:
+            os.unlink(temporary_name)
+        except OSError:
+            pass
+        raise
+
+
+def _remove_session_secret(secret: bytes | None) -> None:
+    if secret is None or _read_session_secret() != secret:
+        return
+    try:
+        IPC_SESSION_FILE.unlink()
+    except OSError:
+        pass
+
+
+def _get_auth_key() -> bytes | None:
+    return _read_session_secret()
+
+
 def _close_quietly(conn: Any) -> None:
     if conn is None:
         return
@@ -155,11 +207,15 @@ def try_delegate_to_coordinator(
     """
     request: DelegatedRequest = {"files": list(files), "options": _serialize_options(options)}
     address = _get_address(pipe_name)
-    
+
     for _ in range(retries):
         conn = None
         try:
-            conn = Client(address, authkey=IPC_AUTH_KEY)
+            authkey = _get_auth_key()
+            if authkey is None:
+                time.sleep(retry_delay)
+                continue
+            conn = Client(address, authkey=authkey)
             conn.send(request)
             response = conn.recv()
             if isinstance(response, dict) and response.get("status") == "ok":
@@ -184,6 +240,7 @@ class IPCCoordinator:
         self._delegated_options: DelegatedOptions | None = None
         self._running = False
         self._thread: threading.Thread | None = None
+        self._authkey: bytes | None = None
 
     def start(self) -> bool:
         # Acquire file lock to prevent race condition when multiple processes
@@ -201,12 +258,22 @@ class IPCCoordinator:
             return False
         
         try:
-            self.listener = Listener(self.address, authkey=IPC_AUTH_KEY)
+            self._authkey = secrets.token_bytes(_SESSION_SECRET_SIZE)
+            _write_session_secret(self._authkey)
+            self.listener = Listener(self.address, authkey=self._authkey)
             self._running = True
             self._thread = threading.Thread(target=self._server_loop, daemon=True)
             self._thread.start()
             return True
         except Exception:
+            if self.listener is not None:
+                try:
+                    self.listener.close()
+                except Exception:
+                    pass
+                self.listener = None
+            _remove_session_secret(self._authkey)
+            self._authkey = None
             self._release_lock()
             return False
 
@@ -221,8 +288,16 @@ class IPCCoordinator:
         while self._running and self.listener:
             try:
                 conn = self.listener.accept()
-            except Exception:
+            except AuthenticationError:
+                if self._running:
+                    logger.debug("Rejected unauthenticated coordinator connection", exc_info=True)
+                    continue
                 break
+            except Exception:
+                if not self._running:
+                    break
+                logger.debug("Failed to accept coordinator connection", exc_info=True)
+                continue
             with self._delivery_condition:
                 if not self._running:
                     _close_quietly(conn)
@@ -355,7 +430,9 @@ class IPCCoordinator:
             if not has_active_connections:
                 conn = None
                 try:
-                    conn = Client(self.address, authkey=IPC_AUTH_KEY)
+                    authkey = self._authkey
+                    if authkey is not None:
+                        conn = Client(self.address, authkey=authkey)
                 except Exception:
                     pass
                 finally:
@@ -370,4 +447,6 @@ class IPCCoordinator:
             except Exception:
                 pass
             self.listener = None
+        _remove_session_secret(self._authkey)
+        self._authkey = None
         self._release_lock()

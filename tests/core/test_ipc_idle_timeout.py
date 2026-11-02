@@ -31,7 +31,7 @@ def test_collect_files_returns_after_accepted_idle_client_times_out(monkeypatch:
     monkeypatch.setattr(ipc, "IPC_REQUEST_READ_TIMEOUT", 0.05)
     coordinator = IPCCoordinator(pipe_name=_unique_test_pipe())
     assert coordinator.start()
-    connection = ipc.Client(coordinator.address, authkey=ipc.IPC_AUTH_KEY)
+    connection = ipc.Client(coordinator.address, authkey=ipc._read_session_secret())
     try:
         _wait_for_inflight(coordinator)
         started = time.monotonic()
@@ -49,7 +49,7 @@ def test_request_received_before_read_timeout_is_delivered(monkeypatch: pytest.M
     monkeypatch.setattr(ipc, "IPC_REQUEST_READ_TIMEOUT", 0.2)
     coordinator = IPCCoordinator(pipe_name=_unique_test_pipe())
     assert coordinator.start()
-    connection = ipc.Client(coordinator.address, authkey=ipc.IPC_AUTH_KEY)
+    connection = ipc.Client(coordinator.address, authkey=ipc._read_session_secret())
     try:
         _wait_for_inflight(coordinator)
         connection.send({"files": ["before-timeout.pdf"], "options": {}})

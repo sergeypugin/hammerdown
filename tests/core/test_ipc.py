@@ -114,7 +114,7 @@ def test_coordinator_accepts_legacy_file_only_request():
     coordinator = IPCCoordinator(pipe_name=pipe_address)
     assert coordinator.start()
 
-    connection = ipc.Client(pipe_address, authkey=ipc.IPC_AUTH_KEY)
+    connection = ipc.Client(pipe_address, authkey=ipc._read_session_secret())
     try:
         connection.send({"files": ["legacy.pdf"]})
         assert connection.recv() == {"status": "ok"}
