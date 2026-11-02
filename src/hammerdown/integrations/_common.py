@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 import shutil
 import stat
 from pathlib import Path
@@ -13,7 +14,8 @@ def _install_launcher(command: str, home_dir: Path | None = None) -> Path:
     bin_dir = home / ".local" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     launcher = bin_dir / "hammerdown"
-    launcher.write_text(f'#!/bin/sh\nexec {command} "$@"\n', encoding="utf-8")
+    launcher_command = shlex.quote(command) if Path(command).is_absolute() else command
+    launcher.write_text(f'#!/bin/sh\nexec {launcher_command} "$@"\n', encoding="utf-8")
     try:
         launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     except OSError:

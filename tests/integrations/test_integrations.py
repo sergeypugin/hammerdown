@@ -1,6 +1,22 @@
 from pathlib import Path
 
 
+def test_install_launcher_quotes_frozen_executable_path(tmp_path: Path):
+    import os
+    import shlex
+    import stat
+
+    from hammerdown.integrations._common import _install_launcher
+
+    home = tmp_path / "Home Folder; $unsafe"
+    executable = home / "Program Files" / "hammerdown;$(touch hacked)"
+
+    launcher = _install_launcher(str(executable), home_dir=home)
+
+    assert launcher.read_text(encoding="utf-8") == f'#!/bin/sh\nexec {shlex.quote(str(executable))} "$@"\n'
+    assert os.name == "nt" or launcher.stat().st_mode & stat.S_IXUSR
+
+
 def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     sendto_dir = tmp_path / "Microsoft" / "Windows" / "SendTo"
     sendto_dir.mkdir(parents=True)
