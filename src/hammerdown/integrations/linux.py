@@ -7,6 +7,13 @@ from pathlib import Path
 
 from ._common import _install_launcher, _quote_if_needed, _remove_install_dir
 
+_HICOLOR_ICON_NAMES: tuple[str, ...] = (
+    "hammerdown.png",
+    "hammerdown_merge.png",
+    "hammerdown_tree.png",
+    "hammerdown_tree_all.png",
+)
+
 LINUX_MIME_TYPES: tuple[str, ...] = (
     "application/pdf",
     "application/epub+zip",
@@ -227,8 +234,9 @@ def _uninstall_linux(home_dir: Path | None = None) -> None:
     (home / ".config" / "caja" / "scripts" / "Hammerdown tree").unlink(missing_ok=True)
     (home / ".config" / "caja" / "scripts" / "Hammerdown tree with all formats").unlink(missing_ok=True)
     (home / ".config" / "caja" / "scripts" / "Hammer down file").unlink(missing_ok=True)
-    (home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "hammerdown.png").unlink(missing_ok=True)
-    (home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "hammerdown_merge.png").unlink(missing_ok=True)
+    icon_dir = home / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps"
+    for icon_name in _HICOLOR_ICON_NAMES:
+        (icon_dir / icon_name).unlink(missing_ok=True)
 
     _remove_install_dir(home / ".local" / "share" / "hammerdown")
 
