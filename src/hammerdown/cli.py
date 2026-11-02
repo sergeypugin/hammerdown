@@ -12,7 +12,16 @@ attach_parent_console()
 
 
 def _prepare_console_window() -> None:
-    if os.name != "nt" or "--coordinator" not in sys.argv[1:]:
+    if os.name != "nt":
+        return
+    coordinator_present = False
+    for token in sys.argv[1:]:
+        if token == "--":
+            break
+        if token.casefold() == "--coordinator":
+            coordinator_present = True
+            break
+    if not coordinator_present:
         return
 
     import ctypes
@@ -72,29 +81,92 @@ def _long_options(parser: argparse.ArgumentParser) -> set[str]:
     }
 
 
+def _normalize_option_tokens(parser: argparse.ArgumentParser, argv: Sequence[str]) -> list[str]:
+    option_aliases = {
+        option.casefold(): option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+    option_actions = {
+        option.casefold(): action
+        for action in parser._actions
+        for option in action.option_strings
+    }
+    normalized_argv: list[str] = []
+    options_ended = False
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if options_ended:
+            normalized_argv.append(token)
+            index += 1
+            continue
+        if token == "--":
+            options_ended = True
+            normalized_argv.append(token)
+            index += 1
+            continue
+
+        option, separator, value = token.partition("=")
+        option_key = option.casefold()
+        canonical = option_aliases.get(option_key)
+        compact = False
+        if canonical is None and token.startswith("-") and not token.startswith("--") and len(token) > 2:
+            short_option_key = token[:2].casefold()
+            short_action = option_actions.get(short_option_key)
+            if short_action is not None and short_action.nargs != 0:
+                canonical = option_aliases[short_option_key] + token[2:]
+                option_key = short_option_key
+                compact = True
+        if canonical is None:
+            normalized_argv.append(token)
+            index += 1
+            continue
+
+        if compact:
+            normalized_argv.append(canonical)
+        else:
+            normalized_argv.append(f"{canonical}={value}" if separator else canonical)
+        action = option_actions[option_key]
+        if not separator and action.nargs != 0 and index + 1 < len(argv):
+            next_token = argv[index + 1]
+            if parser._parse_optional(next_token) is None:
+                normalized_argv.append(next_token)
+                index += 2
+                continue
+        index += 1
+    return normalized_argv
+
+
 def reject_single_dash_long_options(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
-    long_names = {option[2:] for option in _long_options(parser)}
+    long_names = {
+        option[2:].casefold(): option[2:]
+        for option in _long_options(parser)
+    }
     for token in argv:
         if token == "--":
             break
         if not token.startswith("-") or token.startswith("--") or token == "-":
             continue
         name = token[1:].split("=", 1)[0]
-        if name in long_names:
-            parser.error(f"unrecognized option {token!r}; did you mean '--{name}'?")
+        canonical_name = long_names.get(name.casefold())
+        if canonical_name is not None:
+            parser.error(f"unrecognized option {token!r}; did you mean '--{canonical_name}'?")
 
 
 def reject_abbreviated_long_options(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
     long_options = _long_options(parser)
+    long_options_by_casefold = {option.casefold(): option for option in long_options}
     for token in argv:
         if token == "--":
             break
         if not token.startswith("--") or token == "--":
             continue
         option = token.split("=", 1)[0]
-        if option in long_options:
+        option_key = option.casefold()
+        if option_key in long_options_by_casefold:
             continue
-        matches = sorted(candidate for candidate in long_options if candidate.startswith(option))
+        matches = sorted(candidate for candidate in long_options if candidate.casefold().startswith(option_key))
         if not matches:
             continue
         if len(matches) == 1:
@@ -194,9 +266,10 @@ def _main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--context-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--right-click", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("files", nargs="*", help="Files to convert")
-    reject_single_dash_long_options(parser, actual_argv)
-    reject_abbreviated_long_options(parser, actual_argv)
-    args = parser.parse_intermixed_args(actual_argv)
+    normalized_argv = _normalize_option_tokens(parser, actual_argv)
+    reject_single_dash_long_options(parser, normalized_argv)
+    reject_abbreviated_long_options(parser, normalized_argv)
+    args = parser.parse_intermixed_args(normalized_argv)
 
     conversion_options_present = any(
         (
@@ -222,10 +295,11 @@ def _main(argv: Sequence[str] | None = None) -> int:
     args.include = validate_filter_patterns(parser, args.include, "--include")
     args.exclude = validate_filter_patterns(parser, args.exclude, "--exclude")
 
-    output_dirs = {os.path.normcase(os.path.abspath(path)) for path in args.output_dir or []}
+    output_dir_values = args.output_dir or []
+    output_dirs = {os.path.normcase(os.path.abspath(path)) for path in output_dir_values}
     if len(output_dirs) > 1:
         parser.error("-o/--output-dir may be repeated only with the same directory")
-    args.output_dir = next(iter(output_dirs), None)
+    args.output_dir = output_dir_values[0] if output_dir_values else None
 
     coordinator_mode = (
         (args.coordinator or os.environ.get("HAMMERDOWN_COORDINATOR") == "1")
