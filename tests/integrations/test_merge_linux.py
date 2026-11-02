@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 import pytest
@@ -178,7 +179,7 @@ def test_install_writes_merge_script_for_each_file_manager(installed_home: Path,
 
     merge_script = scripts_dir / "Hammerdown and merge"
     assert merge_script.read_text(encoding="utf-8") == (
-        f'exec "{launcher}" --coordinator --right-click --merge-auto "$@"\n'
+        f'exec {shlex.quote(str(launcher))} --coordinator --right-click --merge-auto "$@"\n'
     )
 
 

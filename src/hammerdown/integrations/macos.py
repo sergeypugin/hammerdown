@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..core.platform_utils import is_macos
 
-from ._common import _install_launcher, _quote_if_needed, _remove_install_dir
+from ._common import _install_launcher, _quote_if_needed, _quote_applescript_string, _remove_install_dir
 
 
 def _remove_silently(path: Path) -> None:
@@ -121,7 +121,7 @@ def _create_macos_droplet(app_dest: Path, launcher: Path | str) -> bool:
         'end run\n'
         '\n'
         'on open droppedItems\n'
-        f'    set cmd to {repr(exec_target)}\n'
+        f'    set cmd to {_quote_applescript_string(exec_target)}\n'
         '    repeat with anItem in droppedItems\n'
         '        set cmd to cmd & " " & quoted form of (POSIX path of anItem)\n'
         '    end repeat\n'

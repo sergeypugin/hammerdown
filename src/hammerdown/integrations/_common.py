@@ -24,8 +24,21 @@ def _install_launcher(command: str, home_dir: Path | None = None) -> Path:
 
 
 def _quote_if_needed(value: str | Path) -> str:
-    text = str(value)
-    return f'"{text}"' if " " in text else text
+    return shlex.quote(str(value))
+
+
+def _quote_desktop_exec(value: str | Path) -> str:
+    text = str(value).replace("%", "%%")
+    if not any(char.isspace() or char in '"\\\\`$><~|&;*?#()' for char in text):
+        return text
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    for char in "`$":
+        escaped = escaped.replace(char, "\\" + char)
+    return f'"{escaped}"'
+
+
+def _quote_applescript_string(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _remove_install_dir(path: Path) -> None:

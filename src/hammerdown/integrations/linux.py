@@ -5,7 +5,7 @@ import stat
 import subprocess
 from pathlib import Path
 
-from ._common import _install_launcher, _quote_if_needed, _remove_install_dir
+from ._common import _install_launcher, _quote_desktop_exec, _quote_if_needed, _remove_install_dir
 
 _HICOLOR_ICON_NAMES: tuple[str, ...] = (
     "hammerdown.png",
@@ -135,7 +135,7 @@ def _find_icon_pngs() -> dict[str, Path]:
 def _install_linux(command: str, home_dir: Path | None = None) -> None:
     home = home_dir or Path.home()
     launcher = _install_launcher(command, home)
-    exec_cmd = _quote_if_needed(launcher)
+    exec_cmd = _quote_desktop_exec(launcher)
 
     apps_dir = home / ".local" / "share" / "applications"
     apps_dir.mkdir(parents=True, exist_ok=True)
@@ -158,7 +158,7 @@ def _install_linux(command: str, home_dir: Path | None = None) -> None:
         
         # Standard conversion
         script_file = script_parent / "Hammerdown"
-        script_file.write_text(f'exec "{launcher}" "$@"\n', encoding="utf-8")
+        script_file.write_text(f'exec {_quote_if_needed(launcher)} "$@"\n', encoding="utf-8")
         try:
             script_file.chmod(script_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         except OSError:
@@ -166,7 +166,7 @@ def _install_linux(command: str, home_dir: Path | None = None) -> None:
 
         # Merge mode
         merge_script = script_parent / "Hammerdown and merge"
-        merge_script.write_text(f'exec "{launcher}" --coordinator --right-click --merge-auto "$@"\n', encoding="utf-8")
+        merge_script.write_text(f'exec {_quote_if_needed(launcher)} --coordinator --right-click --merge-auto "$@"\n', encoding="utf-8")
         try:
             merge_script.chmod(merge_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         except OSError:
@@ -174,7 +174,7 @@ def _install_linux(command: str, home_dir: Path | None = None) -> None:
 
         # Tree mode
         tree_script = script_parent / "Hammerdown tree"
-        tree_script.write_text(f'exec "{launcher}" --tree "$@"\n', encoding="utf-8")
+        tree_script.write_text(f'exec {_quote_if_needed(launcher)} --tree "$@"\n', encoding="utf-8")
         try:
             tree_script.chmod(tree_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         except OSError:
@@ -182,7 +182,7 @@ def _install_linux(command: str, home_dir: Path | None = None) -> None:
 
         # Tree with all formats
         tree_all_script = script_parent / "Hammerdown tree with all formats"
-        tree_all_script.write_text(f'exec "{launcher}" --tree --all-formats "$@"\n', encoding="utf-8")
+        tree_all_script.write_text(f'exec {_quote_if_needed(launcher)} --tree --all-formats "$@"\n', encoding="utf-8")
         try:
             tree_all_script.chmod(tree_all_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         except OSError:

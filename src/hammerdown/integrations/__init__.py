@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from ..core.platform_utils import is_linux, is_macos, is_windows
+from ._common import _quote_if_needed
 
 logger = logging.getLogger("hammerdown")
 
@@ -58,7 +59,9 @@ def _installed_command(home_dir: Path | None = None) -> tuple[Path, str]:
         windowed = Path(interpreter).with_name("pythonw.exe")
         if windowed.is_file():
             interpreter = str(windowed)
-    return app_dir, f'"{interpreter}" "{target}"'
+    if is_windows():
+        return app_dir, f'"{interpreter}" "{target}"'
+    return app_dir, f"{_quote_if_needed(interpreter)} {_quote_if_needed(target)}"
 
 
 def _install_unix(command: str) -> None:

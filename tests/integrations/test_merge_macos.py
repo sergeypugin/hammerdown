@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import plistlib
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +45,7 @@ def _workflow_command(workflow_dir: Path) -> str:
 
 
 def _expected_command(launcher: Path, flags: tuple[str, ...]) -> str:
-    target = f'"{launcher}"' if " " in str(launcher) else str(launcher)
+    target = shlex.quote(str(launcher))
     suffix = f" {' '.join(flags)}" if flags else ""
     return f'exec {target}{suffix} "$@"'
 
@@ -128,7 +129,7 @@ def test_merge_workflow_quotes_launcher_with_spaces(tmp_path: Path) -> None:
 
     launcher = home / ".local" / "bin" / "hammerdown"
     command = _workflow_command(home / SERVICES_RELATIVE / "Hammerdown and merge.workflow")
-    assert command == f'exec "{launcher}" --merge-auto "$@"'
+    assert command == f'exec {shlex.quote(str(launcher))} --merge-auto "$@"'
 
 
 def test_uninstall_removes_all_workflows_including_merge(macos_home: Path) -> None:

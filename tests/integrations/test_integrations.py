@@ -182,7 +182,9 @@ def test_install_and_uninstall_linux(tmp_path: Path):
 
     nautilus_script = tmp_path / ".local" / "share" / "nautilus" / "scripts" / "Hammerdown"
     assert nautilus_script.is_file()
-    assert f'exec "{launcher}" "$@"' in nautilus_script.read_text(encoding="utf-8")
+    import shlex
+
+    assert f'exec {shlex.quote(str(launcher))} "$@"' in nautilus_script.read_text(encoding="utf-8")
 
     nemo_script = tmp_path / ".local" / "share" / "nemo" / "scripts" / "Hammerdown"
     assert nemo_script.is_file()
