@@ -243,6 +243,10 @@ class IPCCoordinator:
         self._authkey: bytes | None = None
 
     def start(self) -> bool:
+        with self._delivery_condition:
+            if self._running and self.listener is not None and self._thread is not None and self._thread.is_alive():
+                return False
+
         # Acquire file lock to prevent race condition when multiple processes
         # try to become the coordinator simultaneously
         self._lock_file = open(IPC_LOCK_FILE, "w")
@@ -284,6 +288,23 @@ class IPCCoordinator:
         elif self._delegated_options != normalized:
             raise ValueError("coordinator options conflict with the active request")
 
+    def _fail_from_server_thread(self) -> None:
+        with self._delivery_condition:
+            self._running = False
+            listener = self.listener
+            self.listener = None
+            active_connections = list(self._active_connections)
+            self._active_connections.clear()
+            self._inflight_connections = 0
+            self._delivery_condition.notify_all()
+
+        _close_quietly(listener)
+        for conn in active_connections:
+            _close_quietly(conn)
+        _remove_session_secret(self._authkey)
+        self._authkey = None
+        self._release_lock()
+
     def _server_loop(self) -> None:
         while self._running and self.listener:
             try:
@@ -297,7 +318,8 @@ class IPCCoordinator:
                 if not self._running:
                     break
                 logger.debug("Failed to accept coordinator connection", exc_info=True)
-                continue
+                self._fail_from_server_thread()
+                break
             with self._delivery_condition:
                 if not self._running:
                     _close_quietly(conn)
