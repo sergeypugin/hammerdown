@@ -82,9 +82,13 @@ def hand_off_to_windows_terminal(
     if getattr(args, "include_gitignored", False):
         return False
 
+    tree = getattr(args, "tree", False)
     return launch_context_worker(
         files,
+        merge=getattr(args, "merge", None),
         merge_auto=merge_auto,
+        tree=tree,
+        all_formats=getattr(args, "all_formats", False),
         include=getattr(args, "include", []),
         exclude=getattr(args, "exclude", []),
         overwrite=getattr(args, "overwrite", False),
@@ -94,6 +98,14 @@ def hand_off_to_windows_terminal(
 
 
 def run_batch(args: argparse.Namespace) -> int:
+    google_staging = tempfile.TemporaryDirectory(prefix="hammerdown-remote-")
+    try:
+        return _run_batch(args, Path(google_staging.name))
+    finally:
+        google_staging.cleanup()
+
+
+def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
     raw_files = args.files
     merge_requested = getattr(args, "merge", None)
     merge_auto = getattr(args, "merge_auto", False)
@@ -117,37 +129,32 @@ def run_batch(args: argparse.Namespace) -> int:
     google_downloaded: set[str] = set()
     google_failed: list[tuple[str, str]] = []
     resolved_files: list[str] = []
-    google_staging = tempfile.TemporaryDirectory(prefix="hammerdown-remote-")
-    try:
-        google_staging_dir = Path(google_staging.name)
-        for raw in raw_files:
-            if is_google_drive_url(raw):
-                try:
-                    cached = download_google_url(raw, google_staging_dir)
-                    if cached is None:
-                        google_failed.append((raw, "unsupported Google Drive link"))
-                        continue
-                    google_downloaded.add(str(cached.resolve()))
-                    resolved_files.append(str(cached))
-                    logger.info("Downloaded %s to %s", raw, cached.name)
-                except urllib.error.HTTPError as e:
-                    reason = f"access denied (HTTP {e.code})" if e.code in (401, 403) else f"not found (HTTP {e.code})"
-                    google_failed.append((raw, reason))
-                    logger.error("Could not download Google Drive URL: %s (%s)", raw, reason)
-                except (urllib.error.URLError, OSError) as e:
-                    google_failed.append((raw, f"network error: {e}"))
-                    logger.error("Could not download Google Drive URL: %s (network error)", raw)
-            else:
-                resolved_files.append(raw)
-        raw_files = resolved_files
+    for raw in raw_files:
+        if is_google_drive_url(raw):
+            try:
+                cached = download_google_url(raw, google_staging_dir)
+                if cached is None:
+                    google_failed.append((raw, "unsupported Google Drive link"))
+                    continue
+                google_downloaded.add(str(cached.resolve()))
+                resolved_files.append(str(cached))
+                logger.info("Downloaded %s to %s", raw, cached.name)
+            except urllib.error.HTTPError as e:
+                reason = f"access denied (HTTP {e.code})" if e.code in (401, 403) else f"not found (HTTP {e.code})"
+                google_failed.append((raw, reason))
+                logger.error("Could not download Google Drive URL: %s (%s)", raw, reason)
+            except (urllib.error.URLError, OSError) as e:
+                google_failed.append((raw, f"network error: {e}"))
+                logger.error("Could not download Google Drive URL: %s (network error)", raw)
+        else:
+            resolved_files.append(raw)
+    raw_files = resolved_files
 
-        output_dir = getattr(args, "output_dir", None)
-        output_root = Path(output_dir).resolve() if output_dir else None
-        if output_root is not None and output_root.exists() and not output_root.is_dir():
-            logger.error("output directory path is not a directory: %s", output_root)
-            return 1
-    finally:
-        google_staging.cleanup()
+    output_dir = getattr(args, "output_dir", None)
+    output_root = Path(output_dir).resolve() if output_dir else None
+    if output_root is not None and output_root.exists() and not output_root.is_dir():
+        logger.error("output directory path is not a directory: %s", output_root)
+        return 1
 
     from ..core.filters import compile_cli_filters
 
@@ -255,11 +262,16 @@ def run_batch(args: argparse.Namespace) -> int:
     coordinator = IPCCoordinator() if use_ipc else None
     coordinator_started = coordinator.start() if coordinator else False
     if use_ipc and not coordinator_started:
-        if getattr(args, "include_gitignored", False):
+        if getattr(args, "include_gitignored", False) or google_downloaded:
             coordinator = None
             use_ipc = False
         else:
-            if files and not any(error for _, error in targets) and try_delegate_to_coordinator(files, options):
+            if (
+                not google_downloaded
+                and files
+                and not any(error for _, error in targets)
+                and try_delegate_to_coordinator(files, options)
+            ):
                 logger.info("Delegated %d files to active hammerdown coordinator", len(files))
                 return 0
             reporting_ui = BatchUI(ui_files, estimates=estimates)
@@ -276,7 +288,45 @@ def run_batch(args: argparse.Namespace) -> int:
         rescan_paths = [*raw_files, *collected_files]
         rescanned = discover(rescan_paths)
         targets = targets_from_discovery(rescanned, rescan_paths)
-        targets.extend(target for target in initial_errors if target not in targets)
+        def normalized_path(path: str) -> Path | None:
+            try:
+                value = normalize_path(path)
+                return Path(value).resolve() if value else None
+            except (OSError, ValueError):
+                return None
+
+        rescanned_target_paths: set[Path] = set()
+        for target in rescanned.targets:
+            resolved = normalized_path(target.path)
+            if resolved is not None:
+                rescanned_target_paths.add(resolved)
+        rescanned_skip_paths: set[Path] = set()
+        for skip in rescanned.skipped:
+            resolved = normalized_path(skip.path)
+            if resolved is not None:
+                rescanned_skip_paths.add(resolved)
+        rescanned_error_paths: set[Path] = set()
+        for path, _ in rescanned.errors:
+            resolved = normalized_path(path)
+            if resolved is not None:
+                rescanned_error_paths.add(resolved)
+        rescan_input_paths: set[Path] = set()
+        for path in rescan_paths:
+            resolved = normalized_path(path)
+            if resolved is not None:
+                rescan_input_paths.add(resolved)
+        for target in initial_errors:
+            path, _ = target
+            resolved = normalized_path(path)
+            if resolved is not None:
+                if resolved in rescanned_target_paths or resolved in rescanned_skip_paths:
+                    continue
+                if resolved in rescanned_error_paths:
+                    continue
+                if resolved in rescan_input_paths and resolved.exists():
+                    continue
+            if target not in targets:
+                targets.append(target)
         discovery_skips.extend(
             skip for skip in skips_from_discovery(rescanned, rescan_paths) if skip not in discovery_skips
         )
@@ -290,7 +340,10 @@ def run_batch(args: argparse.Namespace) -> int:
         ]
         output_path_inputs = [*raw_files, *collected_files]
 
-        if hand_off_to_windows_terminal(list(dict.fromkeys(output_path_inputs)), args, merge_auto):
+        # The worker is asynchronous, while Google sources live only in this run's staging directory.
+        if not google_downloaded and hand_off_to_windows_terminal(
+            list(dict.fromkeys(output_path_inputs)), args, merge_auto
+        ):
             coordinator.stop()
             return 0
         _ensure_console_window()
@@ -303,7 +356,13 @@ def run_batch(args: argparse.Namespace) -> int:
     # selection is known, so the target does not depend on which process won
     # the coordinator race.
     if merge_auto and merge_requested is None and files:
-        merge_requested = str(Path(files[0]).parent / "hammerdowned.md")
+        merge_parent = Path.cwd()
+        for path in files:
+            source = Path(path)
+            if str(source.resolve()) not in google_downloaded:
+                merge_parent = source.parent
+                break
+        merge_requested = str(merge_parent / "hammerdowned.md")
 
     merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
     merge_sources = [path for path, error in targets if error is None]

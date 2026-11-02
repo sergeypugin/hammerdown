@@ -30,6 +30,8 @@ def build_context_worker_command(
     *,
     merge: str | None = None,
     merge_auto: bool = False,
+    tree: bool = False,
+    all_formats: bool = False,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     overwrite: bool = False,
@@ -43,6 +45,10 @@ def build_context_worker_command(
         command = [_console_interpreter(), "-m", "hammerdown"]
 
     command.extend(("--context-worker", "--right-click"))
+    if tree:
+        command.append("--tree")
+    if all_formats:
+        command.append("--all-formats")
     if merge_auto:
         command.append("--merge-auto")
     for pattern in include:
@@ -67,6 +73,8 @@ def build_windows_terminal_command(
     terminal: str,
     merge: str | None = None,
     merge_auto: bool = False,
+    tree: bool = False,
+    all_formats: bool = False,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     overwrite: bool = False,
@@ -79,6 +87,8 @@ def build_windows_terminal_command(
         files,
         merge=merge,
         merge_auto=merge_auto,
+        tree=tree,
+        all_formats=all_formats,
         include=include,
         exclude=exclude,
         overwrite=overwrite,
@@ -96,6 +106,8 @@ def launch_context_worker(
     *,
     merge: str | None = None,
     merge_auto: bool = False,
+    tree: bool = False,
+    all_formats: bool = False,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     overwrite: bool = False,
@@ -113,6 +125,8 @@ def launch_context_worker(
         terminal=terminal,
         merge=merge,
         merge_auto=merge_auto,
+        tree=tree,
+        all_formats=all_formats,
         include=include,
         exclude=exclude,
         overwrite=overwrite,
