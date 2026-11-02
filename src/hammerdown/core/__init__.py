@@ -177,7 +177,14 @@ def convert_file(
     # Handle explicit source overwrite for text-like files
 
     is_text = extension in TEXT_EXTENSIONS
-    if skip_existing and out_md.exists():
+    if skip_existing and out_md.is_dir():
+        reason = f"output path is a directory: {out_md}"
+        logger.error("%s", reason)
+        if completion_callback:
+            completion_callback(False, 0.0, 0, 0)
+        return ConversionResult(False, error=reason, output_path=out_md, _merge_handle=merge_handle)
+
+    if skip_existing and out_md.is_file():
         logger.info("Skipping %s (output already exists: %s)", source.name, out_md.name)
         if completion_callback:
             completion_callback(True, 0.0, 0, 0)

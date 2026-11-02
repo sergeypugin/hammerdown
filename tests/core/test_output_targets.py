@@ -73,6 +73,23 @@ def test_markdown_output_directory_is_rejected_without_replacing_contents(tmp_pa
     assert marker.read_text(encoding="utf-8") == "keep me\n"
 
 
+def test_skip_existing_rejects_directory_target_without_modifying_contents(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("new content\n", encoding="utf-8")
+    target = tmp_path / "hm_source_txt.md"
+    target.mkdir()
+    marker = target / "stale.txt"
+    marker.write_text("stale contents\n", encoding="utf-8")
+
+    result = core.convert_file(source, skip_existing=True)
+
+    assert not result.success
+    assert result.output_path == target
+    assert "is a directory" in (result.error or "")
+    assert target.is_dir()
+    assert marker.read_text(encoding="utf-8") == "stale contents\n"
+
+
 def test_generated_outputs_are_silent_in_directory_discovery(tmp_path: Path) -> None:
     source = tmp_path / "source.txt"
     source.write_text("source\n", encoding="utf-8")

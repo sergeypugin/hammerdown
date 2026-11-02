@@ -107,9 +107,7 @@ def run_stdout_conversion(files: Sequence[str], raw_inputs: Sequence[str]) -> in
     if converted:
         # If there's only a single file, output just its raw markdown for clean piping
         if len(converted) == 1:
-            if converted[0][2]:
-                sys.stdout.write(f"[!] File conversion failed: {converted[0][2]}\n")
-            else:
+            if not converted[0][2]:
                 sys.stdout.write(converted[0][1])
         else:
             root = merge_root_for_inputs(raw_inputs, [Path(path) for path, _, _ in converted])
