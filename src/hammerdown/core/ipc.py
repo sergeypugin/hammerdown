@@ -18,6 +18,7 @@ IPC_PIPE_NAME = r"\\.\pipe\hammerdown_coordinator"
 IPC_PORT = 58432
 IPC_AUTH_KEY = b"hammerdown-ipc-secret"
 IPC_LOCK_FILE = Path(tempfile.gettempdir()) / "hammerdown_coordinator.lock"
+IPC_REQUEST_READ_TIMEOUT = 1.0
 
 
 class DelegatedOptions(TypedDict):
@@ -176,6 +177,10 @@ class IPCCoordinator:
         self.address = _get_address(pipe_name)
         self.listener: Listener | None = None
         self._incoming_queue: queue.Queue[list[str]] = queue.Queue()
+        self._delivery_condition = threading.Condition()
+        self._inflight_connections = 0
+        self._delivery_generation = 0
+        self._active_connections: set[Any] = set()
         self._delegated_options: DelegatedOptions | None = None
         self._running = False
         self._thread: threading.Thread | None = None
@@ -218,8 +223,27 @@ class IPCCoordinator:
                 conn = self.listener.accept()
             except Exception:
                 break
+            with self._delivery_condition:
+                if not self._running:
+                    _close_quietly(conn)
+                    break
+                self._active_connections.add(conn)
+                self._inflight_connections += 1
             try:
-                data = conn.recv()
+                request_deadline = time.monotonic() + IPC_REQUEST_READ_TIMEOUT
+                data: Any = None
+                while True:
+                    with self._delivery_condition:
+                        if not self._running:
+                            return
+                    remaining = request_deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    if conn.poll(min(0.05, remaining)):
+                        data = conn.recv()
+                        break
+                if data is None:
+                    continue
                 request = _deserialize_request(data)
                 if request is None:
                     continue
@@ -229,11 +253,18 @@ class IPCCoordinator:
                         conn.send({"status": "error", "reason": "coordinator options conflict with the active request"})
                         continue
                     self._delegated_options = request["options"]
-                    self._incoming_queue.put(new_files)
+                    with self._delivery_condition:
+                        self._incoming_queue.put(new_files)
+                        self._delivery_generation += 1
+                        self._delivery_condition.notify_all()
                 conn.send({"status": "ok"})
             except Exception:
                 logger.debug("Failed to handle coordinator connection", exc_info=True)
             finally:
+                with self._delivery_condition:
+                    self._active_connections.discard(conn)
+                    self._inflight_connections -= 1
+                    self._delivery_condition.notify_all()
                 _close_quietly(conn)
 
     @property
@@ -251,13 +282,24 @@ class IPCCoordinator:
         return cast(DelegatedOptionsWithQueue, result)
 
     def collect_files(self, initial_files: Sequence[str], assembly_timeout: float = 2.0) -> list[str]:
+        if assembly_timeout <= 0:
+            raise ValueError("assembly_timeout must be positive")
         collected: list[str] = list(initial_files)
         seen = set(collected)
         deadline = time.monotonic() + assembly_timeout
+        with self._delivery_condition:
+            delivery_generation = self._delivery_generation
 
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                with self._delivery_condition:
+                    while self._inflight_connections:
+                        self._delivery_condition.wait()
+                    if self._delivery_generation != delivery_generation:
+                        delivery_generation = self._delivery_generation
+                        deadline = time.monotonic() + assembly_timeout
+                        continue
                 break
             try:
                 batch = self._incoming_queue.get(timeout=remaining)
@@ -265,8 +307,17 @@ class IPCCoordinator:
                     if item not in seen:
                         seen.add(item)
                         collected.append(item)
+                with self._delivery_condition:
+                    delivery_generation = self._delivery_generation
                 deadline = time.monotonic() + assembly_timeout
             except queue.Empty:
+                with self._delivery_condition:
+                    while self._inflight_connections:
+                        self._delivery_condition.wait()
+                    if self._delivery_generation != delivery_generation:
+                        delivery_generation = self._delivery_generation
+                        deadline = time.monotonic() + assembly_timeout
+                        continue
                 break
 
         return collected
@@ -289,10 +340,33 @@ class IPCCoordinator:
             self._lock_file = None
 
     def stop(self) -> None:
-        self._running = False
-        if self.listener:
+        with self._delivery_condition:
+            self._running = False
+            active_connections = list(self._active_connections)
+            for conn in active_connections:
+                _close_quietly(conn)
+        listener = self.listener
+        thread = self._thread
+
+        # A local connection wakes accept() consistently on sockets and named pipes.
+        if listener is not None and thread is not threading.current_thread() and thread is not None:
+            with self._delivery_condition:
+                has_active_connections = bool(self._active_connections)
+            if not has_active_connections:
+                conn = None
+                try:
+                    conn = Client(self.address, authkey=IPC_AUTH_KEY)
+                except Exception:
+                    pass
+                finally:
+                    _close_quietly(conn)
+
+        if thread is not None and thread is not threading.current_thread():
+            thread.join()
+
+        if listener is not None:
             try:
-                self.listener.close()
+                listener.close()
             except Exception:
                 pass
             self.listener = None

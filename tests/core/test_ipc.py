@@ -18,6 +18,22 @@ def _unique_test_pipe() -> str | tuple[str, int]:
         return ("127.0.0.1", s.getsockname()[1])
 
 
+def test_stop_waits_for_server_thread_and_allows_immediate_restart():
+    pipe_address = _unique_test_pipe()
+    coordinator = IPCCoordinator(pipe_name=pipe_address)
+    assert coordinator.start()
+    server_thread = coordinator._thread
+    assert server_thread is not None
+
+    coordinator.stop()
+    assert not server_thread.is_alive()
+    coordinator.stop()
+
+    restarted = IPCCoordinator(pipe_name=pipe_address)
+    assert restarted.start()
+    restarted.stop()
+
+
 def test_delegated_options_round_trip_with_all_behavior_flags():
     pipe_address = _unique_test_pipe()
     coordinator = IPCCoordinator(pipe_name=pipe_address)
@@ -43,8 +59,6 @@ def test_delegated_options_round_trip_with_all_behavior_flags():
         assert coordinator.delegated_options == options
     finally:
         coordinator.stop()
-
-
 
 
 def test_delegated_options_round_trip_preserves_filter_queue():
