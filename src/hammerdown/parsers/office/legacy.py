@@ -30,6 +30,30 @@ class _ConversionAttempt:
     cleanup: Callable[[], None] | None = None
 
 
+class _OwnedConvertedPath(str):
+    """String-compatible converted path whose temporary directory the caller owns."""
+
+    def __new__(cls, path: str, cleanup: Callable[[], None]):
+        result = super().__new__(cls, path)
+        result._cleanup = cleanup
+        result._closed = False
+        return result
+
+    _cleanup: Callable[[], None]
+    _closed: bool
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._cleanup()
+
+    def __enter__(self) -> _OwnedConvertedPath:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
+
 def _format_process_output(stdout: str | None, stderr: str | None) -> str:
     details = " ".join(part.strip() for part in (stdout or "", stderr or "") if part and part.strip())
     if len(details) > 1200:
@@ -120,17 +144,21 @@ def _convert_via_soffice_attempt(file_path: str, out_ext: str) -> _ConversionAtt
         return _ConversionAttempt("LibreOffice", "not_found", detail="LibreOffice executable was not found")
 
     temp_dir = tempfile.mkdtemp()
-    user_dir_uri = Path(temp_dir).resolve().as_uri()
-    cmd = [
-        soffice_bin,
-        f"-env:UserInstallation={user_dir_uri}",
-        "--headless",
-        "--convert-to",
-        out_ext,
-        "--outdir",
-        temp_dir,
-        file_path,
-    ]
+    try:
+        user_dir_uri = Path(temp_dir).resolve().as_uri()
+        cmd = [
+            soffice_bin,
+            f"-env:UserInstallation={user_dir_uri}",
+            "--headless",
+            "--convert-to",
+            out_ext,
+            "--outdir",
+            temp_dir,
+            file_path,
+        ]
+    except Exception:
+        _cleanup_temp_dir(temp_dir)
+        raise
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
         converted_file = Path(temp_dir) / f"{Path(file_path).stem}.{out_ext}"
@@ -193,27 +221,31 @@ def _convert_via_ms_office_nt_attempt(file_path: str, out_ext: str) -> _Conversi
         return "'" + value.replace("'", "''") + "'"
 
     temp_dir = tempfile.mkdtemp()
-    temp_file = Path(temp_dir) / f"{Path(file_path).stem}.{out_ext}"
-    source = quote_ps(str(Path(file_path).resolve()))
-    destination = quote_ps(str(temp_file.resolve()))
-    ps_cmd = f"""
-    $ErrorActionPreference = 'Stop'
-    $app = $null
-    $document = $null
-    try {{
-        $app = New-Object -ComObject {app_id}
-        if ({str(hide_app).lower()}) {{ $app.Visible = $false }}
-        if ($app.PSObject.Properties['DisplayAlerts']) {{ $app.DisplayAlerts = 0 }}
-        $source = {source}
-        $destination = {destination}
-        $document = {open_expression}
-        $document.{save_method}($destination, {file_format})
-        $document.Close()
-    }} finally {{
-        if ($null -ne $document) {{ try {{ $document.Close() }} catch {{ }} }}
-        if ($null -ne $app) {{ try {{ $app.Quit() }} catch {{ }} }}
-    }}
-    """
+    try:
+        temp_file = Path(temp_dir) / f"{Path(file_path).stem}.{out_ext}"
+        source = quote_ps(str(Path(file_path).resolve()))
+        destination = quote_ps(str(temp_file.resolve()))
+        ps_cmd = f"""
+        $ErrorActionPreference = 'Stop'
+        $app = $null
+        $document = $null
+        try {{
+            $app = New-Object -ComObject {app_id}
+            if ({str(hide_app).lower()}) {{ $app.Visible = $false }}
+            if ($app.PSObject.Properties['DisplayAlerts']) {{ $app.DisplayAlerts = 0 }}
+            $source = {source}
+            $destination = {destination}
+            $document = {open_expression}
+            $document.{save_method}($destination, {file_format})
+            $document.Close()
+        }} finally {{
+            if ($null -ne $document) {{ try {{ $document.Close() }} catch {{ }} }}
+            if ($null -ne $app) {{ try {{ $app.Quit() }} catch {{ }} }}
+        }}
+        """
+    except Exception:
+        _cleanup_temp_dir(temp_dir)
+        raise
 
     try:
         result = subprocess.run(
@@ -269,7 +301,9 @@ def _convert_legacy_office(
             if microsoft.path is None:
                 return None
             if consume is None:
-                return microsoft.path
+                if microsoft.cleanup is None:
+                    return microsoft.path
+                return _OwnedConvertedPath(microsoft.path, microsoft.cleanup)
             try:
                 return consume(microsoft.path)
             finally:
@@ -283,7 +317,9 @@ def _convert_legacy_office(
         if libreoffice.path is None:
             return None
         if consume is None:
-            return libreoffice.path
+            if libreoffice.cleanup is None:
+                return libreoffice.path
+            return _OwnedConvertedPath(libreoffice.path, libreoffice.cleanup)
         try:
             return consume(libreoffice.path)
         finally:
