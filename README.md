@@ -58,7 +58,7 @@ The PDF pipeline is built on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyM
 
 ## Output Directory Layout
 
-Output Markdown files are named after the source document, so `report.docx` becomes `hm_report_docx.md` and `notes.txt` becomes `hm_notes_txt.md`. The source extension is part of the name, which keeps `report.docx` and `report.doc` from overwriting each other.
+Output Markdown files have deterministic per-source names: `report.docx` becomes `hm_report_docx.md` and `notes.txt` becomes `hm_notes_txt.md`. The source extension is part of the name, with the extension normalized to lowercase, so `report.docx` and `report.doc` do not overwrite each other. On a normal successful rerun, Hammerdown replaces the Markdown target and the complete corresponding `hm_images_*` asset directory; stale asset files and old extensions are not retained, and an old asset directory is removed when the new conversion produces no assets. With `--skip-existing`, Hammerdown checks the target Markdown only: when it already exists, both that target and its asset directory remain untouched, even if stale, and conversion is skipped.
 
 **Before conversion:**
 
@@ -141,7 +141,7 @@ What this does:
 - on Linux: installs the launcher into `~/.local/bin`, installs a FreeDesktop application entry in `~/.local/share/applications/hammerdown.desktop` with MIME associations, registers KDE Dolphin ServiceMenus in `~/.local/share/kio/servicemenus` and `~/.local/share/kservices5/ServiceMenus`, and adds scripts for Nautilus, Nemo, and Caja
 - on macOS: installs the launcher into `~/.local/bin`, creates four Automator Quick Actions in `~/Library/Services`, and generates a drag-and-drop Droplet in `~/Applications/Hammerdown.app` with `CFBundleDocumentTypes` for Finder "Open With"
 
-After installation, the file-manager actions are named:
+After installation, the file-manager actions are exactly four:
 
 - **Hammerdown** converts each selected file or recursively selected folder to its own `hm_*.md` file and asset folder
 - **Hammerdown and merge** combines the selected resources into `hammerdowned.md` next to the first resolved source document
@@ -272,15 +272,14 @@ Options:
 - `--all-formats` -- in tree mode, also include supported Hammerdown document formats
 - `--include-gitignored` -- do not apply repository `.gitignore` and `.gitingestignore` rules
 - `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`) in-place instead of creating a copy
-- `-s`, `--skip-existing` -- skip conversion when the target Markdown file already exists; without it, existing `hm_*.md` outputs are overwritten
+- `-s`, `--skip-existing` -- skip conversion when the target Markdown file already exists; without it, existing `hm_*.md` outputs are overwritten and their complete asset directories are replaced
 - `-o`, `--output-dir DIR` -- save Markdown output and extracted images under DIR, preserving the relative layout of the input tree
 - `-m [OUTPUT_MD]`, `--merge [OUTPUT_MD]` -- merge converted documents into the target Markdown file; the next argument is the output, and an omitted target defaults to `hammerdowned.md`
 - `--stdout` -- write the merged Markdown document to stdout; errors go to stderr
 - `--confirm` -- with `--stdout`, print a preflight estimate and ask for confirmation before writing anything
 - `-v`, `--version` -- display version information
 
-> [!note]
-> The `-f` / `--force`, `--in-place`, and `--quiet` flags are not supported. Long option names use two dashes and hyphenated words, so `--skip_existing` is rejected in favor of `--skip-existing`. Single-dash long forms such as `-version` and `-tree` are rejected with a two-dash suggestion; use `-v` / `--version` and `-t` / `--tree`. Abbreviated long forms such as `--v` and `--tre` are not accepted either; Hammerdown suggests the exact option, and an ambiguous prefix lists all possible matches.
+Option names are case-insensitive, including short and long forms, but option values, paths, and include/exclude filter patterns preserve the case supplied by the caller. Long options must use their exact two-dash names: single-dash long forms and abbreviated long forms remain errors, even when the abbreviation is unambiguous; Hammerdown prints a suggestion or the possible matches.
 
 #### Tree Mode
 
@@ -315,7 +314,7 @@ For each selected resource, Hammerdown looks for `.gitignore` and `.gitingestign
 
 Before processing, the `Ignore files used` panel lists every discovered ignore file. Files dropped by repository ignore rules are not added to the `Skipped files` panel; that panel is reserved for visible skips such as command-line filters and safety exclusions. When `--include-gitignored` is used, the discovered ignore files are still listed even though their rules are bypassed.
 
-Repeated files, a file plus its containing directory, and overlapping parent/child roots are resolved to canonical paths and processed once. Duplicate input paths do not create duplicate output.
+Repeated files, a file plus its containing directory, and overlapping parent/child roots are resolved to canonical paths and processed once. During recursive discovery, files named `hm_*.md` or `hammerdowned.md` are recognized as generated outputs and excluded instead of being treated as sources. Passing one of these generated files explicitly is an error. If a recursively selected directory contains only generated outputs, the run fails because no input resources remain.
 
 #### Merging Documents into a Single File
 
@@ -365,8 +364,8 @@ Key properties:
 - output is written as the batch runs, so a partially converted file is still usable if the run is interrupted
 - extracted assets are not mixed with the originals: for the target `summary.md`, images, charts, and decoded pictures are written into `hm_merged_into_summary_images/` next to the target, in subfolders that mirror each document's relative path, and their links are rewritten accordingly
 - `--merge` is rejected together with `--overwrite` and with `--output-dir`, so plain-text sources are never modified during a merge
-- combined with `-s` / `--skip-existing`, the whole merge is skipped when the target file already exists
-- the merge target cannot also be one of the source documents
+- combined with `-s` / `--skip-existing`, the whole merge is skipped when the target file already exists; the target and its merge asset directory are left untouched, even if stale
+- when a custom merge target is inside a recursively selected directory, discovery excludes that target so a rerun does not merge the previous output into itself; explicitly passing the target as a source remains an error
 
 After the run the sources stay where they were, and the merged file sits next to its assets:
 

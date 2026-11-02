@@ -22,9 +22,11 @@ folder/
 ```
 
 Key naming rules:
-- the output Markdown file is named after the source and its extension: `report.docx` becomes `hm_report_docx.md`, while `report.doc` becomes `hm_report_doc.md`. This avoids collisions between files with identical names but different extensions. With `-w`/`--overwrite`, plain-text sources are rewritten in place instead
+- the output Markdown file has a deterministic per-source name: `report.docx` becomes `hm_report_docx.md`, while `report.doc` becomes `hm_report_doc.md`. The source extension is part of the name and is normalized to lowercase, which avoids collisions between identical stems in different supported formats. With `-w`/`--overwrite`, plain-text sources are rewritten in place instead
 - extracted assets are stored in a dedicated folder next to the Markdown file: Word charts land in `hm_images_report_docx/`, and OpenDocument or Markdown images land in a folder such as `hm_images_report_odt/` or `hm_images_LMS_md/`
 - relative image links in the Markdown point into that folder, for example `hm_images_report_docx/chart_000.svg`
+- a successful normal rerun replaces the Markdown target and the complete corresponding `hm_images_*` directory, so stale files and old asset extensions are removed; if the new conversion produces no assets, the old asset directory is removed
+- `-s`/`--skip-existing` checks only the Markdown target. When it already exists, conversion is skipped and the existing Markdown and asset directory are both left untouched, even if stale
 
 ## File Processing Details
 
@@ -92,14 +94,16 @@ This matches the convention used by Zed (`-pre`) and Electron (`-beta`), and the
 > 2. `pip install --no-cache-dir hammerdown`
 > 3. `hammerdown --install` (to refresh OS integrations)
 
-Starting from version `2.0.0`, overwriting existing target Markdown files is the default behavior. The `--force` flag remains removed in favor of `--skip-existing` (`-s`) when existing output should be preserved. Version `3.0.0` accepts only hyphenated long option names, so `--skip_existing` is rejected.
+Starting from version `2.0.0`, overwriting existing target Markdown files is the default behavior. The `--force` flag remains removed in favor of `--skip-existing` (`-s`) when existing output should be preserved. The current CLI accepts option names case-insensitively, but option values, paths, and filter patterns preserve case. Long option names must use their exact two-dash, hyphenated spelling: `--skip_existing`, single-dash long forms, and abbreviated long forms are rejected.
 
-## Architecture and File Conventions in v3.0.0
+## Current Architecture and File Conventions
 
 ### Output Naming Convention
-To prevent collisions between documents with the same name across different formats or subfolders, `hammerdown` 3.0.0 enforces:
+To prevent collisions between documents with the same name across different formats or subfolders, Hammerdown uses deterministic per-source output names:
 - Output Markdown filename: `report.docx` becomes `hm_report_docx.md`, and `notes.txt` becomes `hm_notes_txt.md`
 - Extracted images directory: `report.docx` uses `hm_images_report_docx/`
+
+A successful rerun replaces the complete Markdown-and-assets output for that source. `--skip-existing` preserves an existing target and its asset directory as a unit, even when stale.
 
 ### Single-Instance IPC Coordinator
 On Windows, selecting multiple files in Explorer normally starts a separate process for each file. `hammerdown` combines Explorer's native multi-select grouping with an IPC fallback to handle these launches:
@@ -111,13 +115,15 @@ On Windows, selecting multiple files in Explorer normally starts a separate proc
 - incoming paths are assembled over a 2.0-second window (`assembly_timeout=2.0`) by the coordinator before handing off to Windows Terminal (`wt.exe -w new new-tab --title Hammerdown`) or, if unavailable, allocating a fallback console
 
 ### Recursive Directory Traversal
-When a directory is passed to `hammerdown`, it recursively discovers resources while pruning directories and files excluded by safety rules. Discovery deduplicates canonical paths, so repeated files, a file plus its containing directory, and overlapping parent/child roots are processed once.
+When a directory is passed to `hammerdown`, it recursively discovers resources while pruning directories and files excluded by safety rules. `hm_*.md` and `hammerdowned.md` are generated outputs and are excluded from the recursive source set. Explicitly passing one of these files is an error, and a directory containing only generated outputs fails because no input resources remain. Discovery deduplicates canonical paths, so repeated files, a file plus its containing directory, and overlapping parent/child roots are processed once.
 
 Tree mode (`-t` / `--tree`) always writes one combined Markdown target. It collects Gitingest-like text and source-like files without adding Hammerdown's binary document formats by default. `--all-formats` adds supported Hammerdown documents, while unknown binary files remain skipped. The tree target defaults to `hammerdowned.md` and can be changed with `-m`. `-t/--tree` and `--all-formats` may appear before, between, or after positional resources. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
 
 `.log` is not default-excluded and is processed unless an ignore rule or filter excludes it.
 
-Repository `.gitignore` and `.gitingestignore` files are discovered in the resource tree, including nested directories. For each selected root, Hammerdown checks ancestor locations up to the nearest Git root; without a Git root, the selected root is the boundary. Their nested rules and negation apply to paths in their scope. Files above the repository and global ignore configuration are not used. `--include-gitignored` disables only repository ignore files, not command-line filters, safety exclusions, or format rules. Paths to discovered ignore files are shown in the `Ignore files used` panel before processing; files ignored by those rules do not appear in the skipped-file list.
+Repository `.gitignore` and `.gitingestignore` files are discovered in the resource tree, including nested directories. For each selected root, Hammerdown checks ancestor locations up to the nearest Git root; without a Git root, the selected root is the boundary. Their nested rules and negation apply to paths in their scope. Files above the Git root and global ignore configuration are not used. `--include-gitignored` disables only repository ignore files, not command-line filters, safety exclusions, generated-output exclusions, or format rules. Paths to discovered ignore files are shown in the `Ignore files used` panel before processing; files ignored by those rules do not appear in the skipped-file list.
+
+Option names are case-insensitive, but values, paths, and filter patterns preserve case. The CLI requires exact two-dash long option names, so single-dash long forms and abbreviated long forms remain errors.
 
 ### Include and Exclude Filters
 `-i` / `--include` and `-e` / `--exclude` accept Gitingest-compatible GitWildMatch/pathspec patterns matched against paths relative to the resource context. Each option may be repeated; repeated includes form an independent include group and repeated excludes form an independent exclude group, regardless of option order. Matching include patterns select paths, then any matching exclude pattern removes them. Exclusions take priority and a later include does not restore an excluded path. Pattern values accept comma- or whitespace-separated patterns. Use single or double quotes to group an argument. Apostrophes or quote characters inside a file name are not supported by the CLI quote parser; backticks are not quoting syntax.
@@ -130,7 +136,9 @@ The merge option treats the next argument as the output Markdown target and then
 
 Extracted assets are kept apart from the originals: images, charts, and decoded pictures are written into `hm_merged_into_summary_images/` next to the merge target, inside subfolders that mirror each document's relative path, and their links are rewritten to match.
 
-`--merge` is rejected together with `--overwrite` and with `--output-dir`, and the merge target cannot also be one of the source documents. Combined with `-s` / `--skip-existing`, the entire merge is skipped when the target file already exists.
+A successful rerun replaces the merge target and its complete merge asset directory. With `-s` / `--skip-existing`, an existing merge target skips the entire merge and leaves both the target and its assets untouched, even if stale. If a custom merge target is inside a recursively selected directory, discovery excludes it so a rerun does not merge the previous output into itself; explicitly passing that target as a source remains an error.
+
+`--merge` is rejected together with `--overwrite` and with `--output-dir`.
 
 ### Streaming to stdout (`--stdout`)
 `--stdout` emits the same merged document as `-m`, but writes it to stdout and leaves nothing on disk:

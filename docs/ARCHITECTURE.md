@@ -47,8 +47,8 @@ The conversion pipeline consists of three corresponding stages:
 ### 1. Input Handling
 
 - **Input sources**: paths from the command line, a Python call, a file-manager launch, or public Google Docs and Drive links
-- **CLI and Python API**: parses flags (`-i/--include`, `-e/--exclude`, `-t/--tree`, `--all-formats`, `--include-gitignored`, `-w/--overwrite`, `-s/--skip-existing`, `-o/--output-dir`, `-m/--merge`, `--stdout`, `--confirm`, `-v/--version`) and hands the run to `run_batch`; an empty CLI invocation prints the tool description, while a conversion invocation without resources is an error
-- **Path normalization**: resolves Windows and WSL paths, handles arguments grouped with single or double quotes, and verifies that each path exists; quote characters inside a file name are not supported by this parser
+- **CLI and Python API**: parses flags (`-i/--include`, `-e/--exclude`, `-t/--tree`, `--all-formats`, `--include-gitignored`, `-w/--overwrite`, `-s/--skip-existing`, `-o/--output-dir`, `-m/--merge`, `--stdout`, `--confirm`, `-v/--version`) and hands the run to `run_batch`; option names are case-insensitive, while option values, paths, and filter patterns retain their supplied case. An empty CLI invocation prints the tool description, supported formats, and help hint; a conversion invocation without resources is an error
+- **Path normalization and generated-output rules**: resolves Windows and WSL paths, handles arguments grouped with single or double quotes, and verifies that each path exists; quote characters inside a file name are not supported by this parser. Recursive discovery excludes `hm_*.md` and `hammerdowned.md` as generated outputs, but explicitly selecting one is an error; a directory containing only generated outputs is also an error because no input resources remain
 
 ### 2. Content Parsing & Extraction
 
@@ -62,13 +62,14 @@ The conversion pipeline consists of three corresponding stages:
 
 ### 3. Post-Processing & Output
 
-- **Asset storage**: writes SVG charts and decoded pictures to disk for the formats that expose separate assets. Converting `report.docx` creates the folder `hm_images_report_docx/` next to the source
+- **Asset storage and replacement**: writes SVG charts and decoded pictures to disk for the formats that expose separate assets. Converting `report.docx` creates the deterministic folder `hm_images_report_docx/` next to the source; a successful normal rerun replaces the Markdown target and the complete corresponding `hm_images_*` directory, removing stale files and removing the directory when the new conversion has no assets
+- **Skip-existing behavior**: `-s/--skip-existing` checks only the existing Markdown target. If that target exists, conversion is skipped and both the Markdown file and its asset directory remain untouched, even when either is stale
 - **Whitespace trimming and newline normalization**: converts line endings to `\n`, strips trailing whitespace on every line, and guarantees a final newline
-- **File output**: writes the final Markdown document next to the source file. Converting `report.docx` creates `hm_report_docx.md`; `-w`/`--overwrite` rewrites plain-text sources in place instead
+- **File output**: writes the final Markdown document next to the source file using deterministic per-source naming: `report.docx` creates `hm_report_docx.md`; `-w`/`--overwrite` rewrites plain-text sources in place instead
 
 ## Output Pipelines
 
-Normal per-file output writes one Markdown document plus its asset folder next to the source: `report.docx` becomes `hm_report_docx.md` and `hm_images_report_docx/`. Merge, tree, and stdout modes reuse the same converters but assemble the results differently.
+Normal per-file output writes one deterministic Markdown document plus its asset folder next to the source: `report.docx` becomes `hm_report_docx.md` and `hm_images_report_docx/`. A successful rerun replaces both output units together, so the asset folder is a complete snapshot for the current source. Merge, tree, and stdout modes reuse the same converters but assemble the results differently.
 
 ### Merged Output (`-m / --merge`)
 
@@ -79,7 +80,9 @@ Normal per-file output writes one Markdown document plus its asset folder next t
 - each document is appended as a block introduced by a 48-character `=` separator, a line such as `FILE: notes/draft.md`, and the separator again, followed by the converted Markdown
 - assets are redirected into a folder named after the merge target: `summary.md` uses `hm_merged_into_summary_images/`, mirroring each document's relative path, and image links are rewritten to match
 - the file is written incrementally as the batch runs, so an interrupted run still leaves a usable partial document
-- `--merge` rejects `--overwrite` and `--output-dir`, the target cannot also be a source, and `-s/--skip-existing` skips the whole merge when the target already exists
+- a successful rerun replaces the merge target and its complete merge asset directory; with `-s/--skip-existing`, an existing merge target causes the whole merge to be skipped and leaves both the target and its assets untouched, even if stale
+- when a custom merge target is inside a recursively selected directory, discovery excludes that target on reruns so it is not merged into itself; explicitly passing the target as a source remains an error
+- `--merge` rejects `--overwrite` and `--output-dir`
 
 ### Tree Output (`-t / --tree`)
 
@@ -99,11 +102,15 @@ Tree mode replaces ordinary per-file discovery with a Gitingest-like tree select
 
 ## Recursive Traversal and Filtering
 
-Passing a directory expands it recursively, pruning directories and files excluded by safety rules. `.log` is not default-excluded and is processed unless an ignore rule or filter excludes it. Discovery deduplicates resolved paths, so repeated files, a file plus its containing directory, and overlapping parent/child roots produce one target.
+Passing a directory expands it recursively, pruning directories and files excluded by safety rules. `hm_*.md` and `hammerdowned.md` are generated outputs, so recursive discovery records them as generated and leaves them out of the source set. Explicitly passing one of those files is an error. If the selected directory contains only generated outputs, the run fails because no input resources remain. Discovery deduplicates resolved paths, so repeated files, a file plus its containing directory, and overlapping parent/child roots produce one target.
 
-Repository `.gitignore` and `.gitingestignore` files are discovered in the resource tree, including nested directories. For each selected root, applicable ancestor locations are checked up to the nearest Git root; when no Git root exists, the selected root is the boundary. Nested rules and negation apply within their paths. Ignore files above the repository and global ignore configuration are not used. `--include-gitignored` disables only repository ignore files; CLI filters, safety exclusions, and format rules remain active.
+`.log` is not default-excluded and is processed unless an ignore rule or filter excludes it.
+
+Repository `.gitignore` and `.gitingestignore` files are discovered in the resource tree, including nested directories. For each selected root, applicable ancestor locations are checked up to the nearest Git root; when no Git root exists, the selected root is the boundary. Nested rules and negation apply within their paths. Ignore files above the repository and global ignore configuration are not used. `--include-gitignored` disables only repository ignore files; CLI filters, safety exclusions, generated-output exclusions, and format rules remain active.
 
 Discovered ignore-file paths are sent to the `Ignore files used` panel before processing. Repository-ignored files are omitted from the skipped-file list entirely; command-line and safety skips remain visible there.
+
+Option names are case-insensitive, but values, paths, and filter patterns preserve case. Exact two-dash long option names are required: single-dash long forms and abbreviated long forms remain errors, with a suggestion or possible matches shown by the CLI.
 
 Repeated `-i/--include` patterns and repeated `-e/--exclude` patterns form independent groups, regardless of option order. Include patterns select matching paths and exclude patterns remove matches afterward, so exclusions take priority and cannot be undone by a later include. Values accept comma- or whitespace-separated, Gitingest-compatible GitWildMatch/pathspec patterns matched relative to the resource context. Single or double quotes group shell arguments; apostrophes or quote characters inside a file name are not supported by the CLI quote parser. Backticks are not quoting syntax.
 
