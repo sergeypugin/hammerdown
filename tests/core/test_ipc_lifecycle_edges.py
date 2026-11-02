@@ -100,4 +100,3 @@ def test_terminal_accept_error_stops_and_cleans_up(monkeypatch, tmp_path: Path) 
     assert not session_file.exists()
     assert coordinator._lock_file is None
     assert lock_file.is_file()
-

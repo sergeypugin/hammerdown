@@ -92,4 +92,3 @@ def test_http_errors_are_propagated(tmp_path: Path) -> None:
 
     assert raised.value is error
     assert list(tmp_path.iterdir()) == []
-

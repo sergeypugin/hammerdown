@@ -55,4 +55,3 @@ def test_verify_download_rejects_mismatched_asset_digest() -> None:
 def test_verify_download_does_not_fall_back_to_size_only_validation() -> None:
     with pytest.raises(RuntimeError, match="valid SHA-256"):
         _verify_download(PAYLOAD, {"size": len(PAYLOAD), "digest": "sha512:" + "0" * 128})
-

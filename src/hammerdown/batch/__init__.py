@@ -147,7 +147,17 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 resolved_files.append(str(cached))
                 logger.info("Downloaded %s to %s", raw, cached.name)
             except urllib.error.HTTPError as e:
-                reason = f"access denied (HTTP {e.code})" if e.code in (401, 403) else f"not found (HTTP {e.code})"
+                if e.code in (401, 403):
+                    category = "access denied"
+                elif e.code == 404:
+                    category = "not found"
+                elif e.code == 429:
+                    category = "rate limited"
+                elif 500 <= e.code <= 599:
+                    category = "server error"
+                else:
+                    category = "HTTP error"
+                reason = f"{category} (HTTP {e.code})"
                 google_failed.append((raw, reason))
                 logger.error("Could not download Google Drive URL: %s (%s)", raw, reason)
             except (urllib.error.URLError, OSError, ValueError) as e:

@@ -123,4 +123,3 @@ def test_binary_rejects_oversized_stream_before_install() -> None:
 
     install.assert_not_called()
 
-

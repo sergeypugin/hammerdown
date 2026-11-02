@@ -28,6 +28,40 @@ MAX_RELEASE_METADATA_BYTES = 1 * 1024 * 1024
 MAX_CHECKSUM_BYTES = 1 * 1024 * 1024
 MAX_BINARY_BYTES = 256 * 1024 * 1024
 _DOWNLOAD_CHUNK_BYTES = 64 * 1024
+_WINDOWS_UPDATE_SCRIPT = """param(
+    [int]$ParentPid,
+    [string]$Target,
+    [string]$Staged,
+    [string]$Backup,
+    [string]$Marker
+)
+
+try {
+    while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+        Start-Sleep -Milliseconds 100
+    }
+
+    if (Test-Path -LiteralPath $Target) {
+        [System.IO.File]::Replace($Staged, $Target, $Backup, $true)
+    } else {
+        [System.IO.File]::Move($Staged, $Target)
+    }
+
+    Remove-Item -LiteralPath $Marker -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $Backup -Force -ErrorAction SilentlyContinue
+    exit 0
+} catch {
+    if (-not (Test-Path -LiteralPath $Target) -and (Test-Path -LiteralPath $Backup)) {
+        try {
+            [System.IO.File]::Move($Backup, $Target)
+        } catch {}
+    }
+    exit 1
+} finally {
+    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+}
+"""
+
 
 MACHO_MAGIC = (
     b"\xcf\xfa\xed\xfe",
@@ -93,6 +127,20 @@ def _is_newer(candidate: str, current: str) -> bool:
     if not candidate_parts:
         return False
     return candidate_parts > _version_tuple(current)
+
+
+def _validate_release_metadata(release: object) -> tuple[str, list[dict[str, object]]] | None:
+    if not isinstance(release, Mapping):
+        return None
+
+    tag_name = release.get("tag_name")
+    assets = release.get("assets")
+    if not isinstance(tag_name, str) or not tag_name.strip() or not _version_tuple(tag_name):
+        return None
+    if not isinstance(assets, list) or any(not isinstance(asset, dict) for asset in assets):
+        return None
+
+    return tag_name, assets
 
 
 def _asset_name() -> str:
@@ -165,28 +213,107 @@ def _refresh_integration(install_callback: Callable[[], bool]) -> None:
         logger.warning("Refreshing the file-manager integration failed: %s", exc)
 
 
+def _durably_flush(path: Path) -> None:
+    with path.open("rb+") as file:
+        file.flush()
+        os.fsync(file.fileno())
+
+
+def _recover_windows_update() -> bool:
+    if not is_windows():
+        return True
+
+    target = Path(sys.executable)
+    marker = Path(f"{target}.update")
+    if not marker.exists():
+        return True
+
+    staged = target.parent / f".{target.name}.new"
+    backup = Path(f"{target}.old")
+    if not target.exists():
+        if not backup.exists():
+            logger.error("Pending update has neither an executable nor a backup at %s", target)
+            return False
+        try:
+            os.replace(backup, target)
+        except OSError as exc:
+            logger.error("Could not recover the previous executable: %s", exc)
+            return False
+        marker.unlink(missing_ok=True)
+        staged.unlink(missing_ok=True)
+        return True
+
+    try:
+        marker.unlink()
+    except OSError as exc:
+        logger.warning("Could not remove stale update marker: %s", exc)
+    try:
+        backup.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not remove stale executable backup: %s", exc)
+    try:
+        staged.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not remove stale staged executable: %s", exc)
+    return True
+
+
+def _windows_update_command(
+    script: Path, target: Path, staged: Path, backup: Path, marker: Path
+) -> list[str]:
+    return [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
+        "-File",
+        str(script),
+        str(os.getpid()),
+        str(target),
+        str(staged),
+        str(backup),
+        str(marker),
+    ]
+
+
+def _schedule_windows_update(download_path: Path, target: Path) -> None:
+    staged = target.parent / f".{target.name}.new"
+    backup = Path(f"{target}.old")
+    marker = Path(f"{target}.update")
+    script = Path(f"{target}.update.ps1")
+
+    try:
+        shutil.copy2(download_path, staged)
+        _durably_flush(staged)
+        script.write_text(_WINDOWS_UPDATE_SCRIPT, encoding="ascii")
+        _durably_flush(script)
+        marker.write_text("pending", encoding="ascii")
+        _durably_flush(marker)
+
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+        subprocess.Popen(
+            _windows_update_command(script, target, staged, backup, marker),
+            close_fds=True,
+            creationflags=creation_flags,
+        )
+    except OSError:
+        staged.unlink(missing_ok=True)
+        script.unlink(missing_ok=True)
+        marker.unlink(missing_ok=True)
+        raise
 def _install_binary(download_path: Path) -> None:
     target = Path(sys.executable)
     if is_windows():
-        backup = Path(f"{target}.old")
-        backup.unlink(missing_ok=True)
-        target.rename(backup)
-        try:
-            shutil.copy2(download_path, target)
-        except OSError:
-            try:
-                shutil.move(str(backup), str(target))
-            except OSError:
-                logger.error("Rollback failed; the previous executable remains at %s", backup)
-            raise
+        _schedule_windows_update(download_path, target)
         return
 
-    # Replacing the running executable in place fails with ETXTBSY, so stage the
-    # new binary next to the target and swap it in with an atomic rename.
     staged = target.parent / f".{target.name}.new"
-    shutil.copy2(download_path, staged)
     staged.chmod(staged.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    os.replace(staged, target)
+    try:
+        os.replace(staged, target)
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def _update_package(install_callback: Callable[[], bool]) -> bool:
@@ -212,6 +339,9 @@ def _update_package(install_callback: Callable[[], bool]) -> bool:
 
 
 def _update_binary(install_callback: Callable[[], bool]) -> bool:
+    if not _recover_windows_update():
+        return False
+
     asset_name = _asset_name()
     request = urllib.request.Request(RELEASES_API, headers={"User-Agent": PACKAGE_NAME})
     try:
@@ -221,12 +351,17 @@ def _update_binary(install_callback: Callable[[], bool]) -> bool:
         logger.error("Failed to query the latest release: %s", exc)
         return False
 
-    latest_tag = str(release.get("tag_name", "")).lstrip("vV")
+    metadata = _validate_release_metadata(release)
+    if metadata is None:
+        logger.error("Latest release metadata is malformed")
+        return False
+    raw_tag, assets = metadata
+    latest_tag = raw_tag.lstrip("vV")
     if not _is_newer(latest_tag, __version__):
         logger.info("hammerdown is already at the latest version (%s)", __version__)
         return True
 
-    asset = next((item for item in release.get("assets", []) if item.get("name") == asset_name), None)
+    asset = next((item for item in assets if item.get("name") == asset_name), None)
     if asset is None:
         logger.error("No release asset found matching %s", asset_name)
         return False
@@ -239,7 +374,7 @@ def _update_binary(install_callback: Callable[[], bool]) -> bool:
     logger.info("New version available: %s (current: %s)", latest_tag, __version__)
     logger.info("Downloading %s...", download_url)
 
-    expected_sha256 = _fetch_checksum(release.get("assets", []), asset_name)
+    expected_sha256 = _fetch_checksum(assets, asset_name)
 
     temp_dir = Path(tempfile.mkdtemp(prefix="hammerdown-update-"))
     try:
