@@ -174,4 +174,3 @@ def test_windows_helper_launch_failure_keeps_target_and_cleans_pending_state(tmp
     assert not (tmp_path / ".hammerdown.exe.new").exists()
     assert not (tmp_path / "hammerdown.exe.update").exists()
     assert not (tmp_path / "hammerdown.exe.update.ps1").exists()
-

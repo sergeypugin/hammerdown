@@ -122,4 +122,3 @@ def test_binary_rejects_oversized_stream_before_install() -> None:
         assert _update_binary(lambda: True) is False
 
     install.assert_not_called()
-
