@@ -302,12 +302,12 @@ hammerdown project/ -t --all-formats
 
 #### Resource filters and ignore files
 
-Repeated `-i` patterns form an include group, and repeated `-e` patterns form an independent exclude group. The order of the options does not matter: matching any include pattern selects a path, then any matching exclude pattern removes it. Exclusions take priority; a later include does not restore an excluded path. Pattern values can contain comma- or whitespace-separated patterns. Patterns use Gitingest-compatible GitWildMatch/pathspec syntax and are matched against paths relative to their resource context.
+Repeated `-i` and `-e` options are evaluated as one ordered queue in the order they appear. A path starts included when no include option is present, or excluded when an include option is present; each matching `-e` excludes it and each later matching `-i` includes it again. The last matching operation decides, so a later include can restore a path excluded earlier. Pattern values can contain comma- or whitespace-separated patterns. Patterns use Gitingest-compatible GitWildMatch/pathspec syntax and are matched against paths relative to their resource context.
 
 Quote pattern arguments with single or double quotes so the shell does not expand glob characters or split the argument. Single and double quotes can behave differently depending on the shell; for example, double quotes may still allow variable expansion. Hammerdown strips the matching quotes and then splits pattern values on commas or whitespace. Apostrophes or quote characters that are part of a file name are not supported by its quote parser. Backticks are not quoting syntax.
 
 ```sh
-hammerdown -i 'src/**/*.py, docs/**/*.md' -i 'tests/**' -e '**/generated/**' project/
+hammerdown -i 'src/**/*.py, docs/**/*.md' -e '**/generated/**' -i 'src/generated/keep.py' project/
 ```
 
 For each selected resource, Hammerdown looks for `.gitignore` and `.gitingestignore` from the selected root up to the nearest Git root, and also discovers nested ignore files below that root. Nested rules apply to their paths and support negation. Ignore files above the Git root and global ignore configuration are not applied. `--include-gitignored` disables only these repository ignore files; command-line filters, safety exclusions, and format rules still apply.

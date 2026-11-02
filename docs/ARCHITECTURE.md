@@ -112,7 +112,7 @@ Discovered ignore-file paths are sent to the `Ignore files used` panel before pr
 
 Option names are case-insensitive, but values, paths, and filter patterns preserve case. Exact two-dash long option names are required: single-dash long forms and abbreviated long forms remain errors, with a suggestion or possible matches shown by the CLI.
 
-Repeated `-i/--include` patterns and repeated `-e/--exclude` patterns form independent groups, regardless of option order. Include patterns select matching paths and exclude patterns remove matches afterward, so exclusions take priority and cannot be undone by a later include. Values accept comma- or whitespace-separated, Gitingest-compatible GitWildMatch/pathspec patterns matched relative to the resource context. Single or double quotes group shell arguments; apostrophes or quote characters inside a file name are not supported by the CLI quote parser. Backticks are not quoting syntax.
+Repeated `-i/--include` and `-e/--exclude` options are evaluated as one ordered queue in the order they appear. A path starts included when no include option is present, or excluded when an include option is present; each matching `-e` excludes it and each later matching `-i` includes it again. The last matching operation decides, so a later include can restore a path excluded earlier. Values accept comma- or whitespace-separated, Gitingest-compatible GitWildMatch/pathspec patterns matched relative to the resource context. Single or double quotes group shell arguments; apostrophes or quote characters inside a file name are not supported by the CLI quote parser. Backticks are not quoting syntax.
 
 ## Interactive Progress UI
 
