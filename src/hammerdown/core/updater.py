@@ -12,8 +12,9 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Protocol
 
 from .. import __version__
 from .platform_utils import is_macos, is_windows
@@ -23,6 +24,10 @@ logger = logging.getLogger("hammerdown")
 PACKAGE_NAME = "hammerdown"
 RELEASES_API = f"https://api.github.com/repos/sergeypugin/{PACKAGE_NAME}/releases/latest"
 GIT_PACKAGE = f"git+https://github.com/sergeypugin/{PACKAGE_NAME}.git"
+MAX_RELEASE_METADATA_BYTES = 1 * 1024 * 1024
+MAX_CHECKSUM_BYTES = 1 * 1024 * 1024
+MAX_BINARY_BYTES = 256 * 1024 * 1024
+_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
 MACHO_MAGIC = (
     b"\xcf\xfa\xed\xfe",
@@ -32,6 +37,36 @@ MACHO_MAGIC = (
     b"\xca\xfe\xba\xbe",
     b"\xbe\xba\xfe\xca",
 )
+
+
+class _ReadableResponse(Protocol):
+    headers: Mapping[str, str]
+
+    def read(self, size: int) -> bytes: ...
+
+
+def _content_length(response: _ReadableResponse) -> int | None:
+    value = response.headers.get("Content-Length")
+    if value is None:
+        return None
+    return int(value)
+
+
+def _read_bounded(response: _ReadableResponse, limit: int) -> bytes:
+    content_length = _content_length(response)
+    if content_length is not None and content_length > limit:
+        raise ValueError(f"response exceeds the {limit} byte limit")
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = response.read(_DOWNLOAD_CHUNK_BYTES)
+        if not chunk:
+            return b"".join(chunks)
+        total += len(chunk)
+        if total > limit:
+            raise ValueError(f"response exceeds the {limit} byte limit")
+        chunks.append(chunk)
 
 
 def _clean_pip_temp() -> None:
@@ -73,20 +108,23 @@ def _asset_name() -> str:
 
 def _verify_download(payload: bytes, asset: dict[str, object], expected_sha256: str | None = None) -> None:
     actual = hashlib.sha256(payload).hexdigest()
-    if expected_sha256:
-        if actual != expected_sha256:
+    if isinstance(expected_sha256, str) and re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+        if actual != expected_sha256.lower():
             raise RuntimeError("downloaded asset failed checksum verification")
         return
 
     digest = asset.get("digest")
     if isinstance(digest, str) and digest.startswith("sha256:"):
-        if actual != digest.split(":", 1)[1].lower():
-            raise RuntimeError("downloaded asset failed checksum verification")
-        return
+        asset_sha256 = digest.removeprefix("sha256:")
+        if re.fullmatch(r"[0-9a-fA-F]{64}", asset_sha256) is not None:
+            if actual != asset_sha256.lower():
+                raise RuntimeError("downloaded asset failed checksum verification")
+            return
 
     size = asset.get("size")
     if isinstance(size, int) and size != len(payload):
         raise RuntimeError(f"downloaded asset has unexpected size ({len(payload)} bytes, expected {size})")
+    raise RuntimeError("downloaded asset has no valid SHA-256 checksum")
 
 
 def _fetch_checksum(assets: list[dict[str, object]], asset_name: str) -> str | None:
@@ -96,7 +134,7 @@ def _fetch_checksum(assets: list[dict[str, object]], asset_name: str) -> str | N
         return None
     try:
         with urllib.request.urlopen(url, timeout=15) as response:
-            listing = response.read().decode("utf-8", errors="replace")
+            listing = _read_bounded(response, MAX_CHECKSUM_BYTES).decode("utf-8", errors="replace")
     except Exception as exc:
         logger.warning("Could not download release checksums: %s", exc)
         return None
@@ -178,7 +216,7 @@ def _update_binary(install_callback: Callable[[], bool]) -> bool:
     request = urllib.request.Request(RELEASES_API, headers={"User-Agent": PACKAGE_NAME})
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
-            release = json.loads(response.read().decode("utf-8"))
+            release = json.loads(_read_bounded(response, MAX_RELEASE_METADATA_BYTES).decode("utf-8"))
     except Exception as exc:
         logger.error("Failed to query the latest release: %s", exc)
         return False
@@ -208,7 +246,7 @@ def _update_binary(install_callback: Callable[[], bool]) -> bool:
         download_path = temp_dir / ("hammerdown.exe" if is_windows() else "hammerdown")
         try:
             with urllib.request.urlopen(download_url, timeout=60) as response:
-                payload = response.read()
+                payload = _read_bounded(response, MAX_BINARY_BYTES)
             _verify_download(payload, asset, expected_sha256)
             _verify_executable(payload)
             download_path.write_bytes(payload)
