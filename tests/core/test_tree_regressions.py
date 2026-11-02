@@ -59,6 +59,29 @@ def test_tree_success_checks_archive_conversion_and_exact_binary_marker(
     assert "archive content" in content
 
 
+def test_tree_custom_merge_target_is_excluded_from_directory_reruns(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    source = project / "source.txt"
+    source.write_text("source content\n", encoding="utf-8")
+    target = project / "custom.md"
+
+    assert hammerdown.cli.main(["--tree", "--merge", str(target), str(project)]) == 0
+    first_content = target.read_text(encoding="utf-8")
+    assert "FILE: source.txt" in first_content
+    assert "FILE: custom.md" not in first_content
+
+    assert hammerdown.cli.main(["--tree", "--merge", str(target), str(project)]) == 0
+
+    content = target.read_text(encoding="utf-8")
+    assert "FILE: source.txt" in content
+    assert "FILE: custom.md" not in content
+
+
 def test_tree_failure_checks_result_marker_and_concrete_error(
     tmp_path: Path,
     monkeypatch,

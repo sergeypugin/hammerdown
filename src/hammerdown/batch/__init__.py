@@ -13,6 +13,7 @@ from ..core import (
     TEXT_EXTENSIONS,
     convert_file,
     get_conversion_estimate_seconds,
+    get_output_path,
 )
 from ..core.discovery import DiscoveryResult, discover_paths, discover_tree, output_paths as compute_output_paths
 from ..core.google_drive import download_google_url, extract_file_id, is_google_drive_url
@@ -156,6 +157,8 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         logger.error("output directory path is not a directory: %s", output_root)
         return 1
 
+    discovery_merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
+
     from ..core.filters import compile_cli_filters
 
     include_spec, exclude_spec = compile_cli_filters(
@@ -172,6 +175,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 include_patterns=include_spec,
                 exclude_patterns=exclude_spec,
                 include_gitignored=getattr(args, "include_gitignored", False),
+                excluded_file=discovery_merge_target,
             )
         return discover_paths(
             paths,
@@ -179,6 +183,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             include_patterns=include_spec,
             exclude_patterns=exclude_spec,
             include_gitignored=getattr(args, "include_gitignored", False),
+            excluded_file=discovery_merge_target,
         )
 
     def explicitly_selected_files(paths: Sequence[str]) -> set[Path]:
@@ -197,11 +202,14 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             (target.path, None) for target in result.targets
         ]
         discovered_targets.extend(result.errors)
+        selected = explicitly_selected_files(paths)
         if not tree_mode:
-            selected = explicitly_selected_files(paths)
             for skip in result.skipped:
                 if skip.reason == "unsupported format" and Path(skip.path).resolve() in selected:
                     discovered_targets.append((skip.path, skip.reason))
+        for generated in result.generated_outputs:
+            if Path(generated).resolve() in selected:
+                discovered_targets.append((generated, "generated output is not an input resource"))
         return discovered_targets
 
     def skips_from_discovery(result: DiscoveryResult, paths: Sequence[str]):
@@ -215,6 +223,9 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
 
     discovery = discover(raw_files)
     targets = targets_from_discovery(discovery, raw_files)
+    if not targets and discovery.generated_outputs:
+        generated = Path(discovery.generated_outputs[0]).name
+        targets.append((generated, "all input resources are generated outputs; no input resources to convert"))
     discovery_skips = skips_from_discovery(discovery, raw_files)
     ignore_files = list(discovery.ignore_files)
     # Surface Google links that could not be downloaded as explicit errors
@@ -288,6 +299,9 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         rescan_paths = [*raw_files, *collected_files]
         rescanned = discover(rescan_paths)
         targets = targets_from_discovery(rescanned, rescan_paths)
+        if not targets and rescanned.generated_outputs:
+            generated = Path(rescanned.generated_outputs[0]).name
+            targets.append((generated, "all input resources are generated outputs; no input resources to convert"))
         def normalized_path(path: str) -> Path | None:
             try:
                 value = normalize_path(path)
@@ -392,13 +406,9 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 # its Markdown output next to the user (cwd) or in -o/--output-dir.
                 if str(p.resolve()) in google_downloaded:
                     base = output_root if output_root is not None else Path.cwd()
-                    target_paths.append(
-                        base / f"hm_{p.stem}_{p.suffix.lower().lstrip('.')}.md"
-                    )
+                    target_paths.append(get_output_path(p, base))
                 else:
-                    target_paths.append(
-                        p.parent / f"hm_{p.stem}_{p.suffix.lower().lstrip('.')}.md"
-                    )
+                    target_paths.append(get_output_path(p))
     except ValueError as exc:
         logger.error("%s", exc)
         if coordinator:
@@ -436,7 +446,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             if merge_target is not None:
                 if merge_skipped:
                     status_info = f"skipped, existing merge output: {merge_target.name}"
-            elif args.skip_existing and output_path.exists() and output_path != f_path:
+            elif args.skip_existing and output_path.exists():
                 status_info = f"skipped, existing output: {output_path.name}"
             elif args.overwrite and extension in TEXT_EXTENSIONS:
                 status_info = "overwritten"
@@ -450,7 +460,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 continue
 
             # Directly skip if the output exists to avoid re-parsing
-            if args.skip_existing and output_path.exists() and output_path != f_path and merge_target is None:
+            if args.skip_existing and output_path.exists() and merge_target is None:
                 reason = f"existing output: {output_path.name}"
                 batch_ui.skip_file(idx, reason)
                 results.append(True)

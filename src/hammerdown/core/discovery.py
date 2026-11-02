@@ -9,7 +9,7 @@ from typing import Generator, Pattern, Sequence
 
 from pathspec import PathSpec
 
-from . import SUPPORTED_EXTENSIONS
+from . import SUPPORTED_EXTENSIONS, get_output_path, is_generated_output
 from .ignore import IgnoreFile, ignore_files_for, ignore_scope_for, is_ignored, read_ignore_file
 from .path_utils import normalize_path
 
@@ -65,6 +65,7 @@ class DiscoveryResult:
     skipped: list[DiscoverySkip] = field(default_factory=list)
     errors: list[tuple[str, str]] = field(default_factory=list)
     ignore_files: list[str] = field(default_factory=list)
+    generated_outputs: list[str] = field(default_factory=list)
     _legacy_items: list[tuple[str, str | None]] = field(default_factory=list, repr=False)
 
 
@@ -73,7 +74,7 @@ def _is_ignored_directory(name: str) -> bool:
 
 
 def _is_ignored_file(name: str) -> bool:
-    return name.startswith("~$") or name.startswith(".") or (name.startswith("hm_") and name.lower().endswith(".md"))
+    return name.startswith("~$") or name.startswith(".")
 
 
 def _relative_path(path: Path, root: Path) -> str:
@@ -165,6 +166,7 @@ def discover_paths(
     include_patterns: FilterPatternInput = (),
     exclude_patterns: FilterPatternInput = (),
     include_gitignored: bool = False,
+    excluded_file: Path | None = None,
 ) -> DiscoveryResult:
     """Discover Hammerdown-convertible files with structured skip and error details."""
     return _discover(
@@ -175,6 +177,7 @@ def discover_paths(
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
         include_gitignored=include_gitignored,
+        excluded_file=excluded_file,
     )
 
 
@@ -185,6 +188,7 @@ def discover_tree(
     include_patterns: FilterPatternInput = (),
     exclude_patterns: FilterPatternInput = (),
     include_gitignored: bool = False,
+    excluded_file: Path | None = None,
 ) -> DiscoveryResult:
     """Discover tree-mode files, distinguishing convertibles from source text."""
     return _discover(
@@ -195,6 +199,7 @@ def discover_tree(
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
         include_gitignored=include_gitignored,
+        excluded_file=excluded_file,
     )
 
 
@@ -206,13 +211,16 @@ def _discover(
     include_patterns: FilterPatternInput,
     exclude_patterns: FilterPatternInput,
     include_gitignored: bool,
+    excluded_file: Path | None,
 ) -> DiscoveryResult:
     result = DiscoveryResult()
     seen_targets: set[Path] = set()
+    seen_generated_outputs: set[Path] = set()
     seen_skips: set[tuple[Path, str]] = set()
     ignore_cache: dict[Path, IgnoreFile | None] = {}
     ignore_paths: set[Path] = set()
     excluded_dir = excluded_dir.resolve() if excluded_dir is not None else None
+    excluded_file = excluded_file.resolve() if excluded_file is not None else None
 
     resolved_inputs: list[tuple[str, Path | None, str | None]] = []
     for raw in paths:
@@ -277,6 +285,15 @@ def _discover(
             canonical = file_path.resolve()
         except OSError:
             add_error(str(file_path), "could not resolve path")
+            return
+
+        if is_generated_output(canonical):
+            if canonical not in seen_generated_outputs:
+                seen_generated_outputs.add(canonical)
+                result.generated_outputs.append(str(canonical))
+            return
+
+        if not explicitly_selected and excluded_file is not None and canonical == excluded_file:
             return
 
         rules = rules_for(canonical, scope)
@@ -387,9 +404,7 @@ def output_paths(
         source = Path(path).resolve()
         matching_roots = [root for root in roots if source.is_relative_to(root)]
         relative = source.relative_to(max(matching_roots, key=lambda root: len(root.parts))) if matching_roots else Path(source.name)
-        ext_clean = source.suffix.lower().lstrip(".")
-        output_name = f"hm_{source.stem}_{ext_clean}.md" if ext_clean else f"hm_{source.stem}.md"
-        paths.append(output_root / relative.parent / output_name)
+        paths.append(get_output_path(source, output_root / relative.parent))
 
     collisions: dict[Path, list[Path]] = {}
     for (source, error), output in zip(targets, paths):
