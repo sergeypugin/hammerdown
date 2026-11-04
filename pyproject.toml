@@ -39,3 +39,7 @@ version = {attr = "hammerdown.__version__"}
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "integration: exercises the application through an external interface",
+    "requires_office: requires Microsoft Office or LibreOffice to be installed",
+]

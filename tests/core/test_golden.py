@@ -1,29 +1,16 @@
-import glob
 import os
 import re
+import shutil
 import subprocess
 import sys
-from collections import Counter
 from pathlib import Path
 
-from hammerdown import SUPPORTED_EXTENSIONS
-
-
-import shutil
-
-import glob
-import os
-import re
-import subprocess
-import sys
-import shutil
-import concurrent.futures
-from collections import Counter
-from pathlib import Path
+import pytest
 
 from hammerdown import SUPPORTED_EXTENSIONS
 
 LEGACY_OFFICE_EXTENSIONS = {".doc", ".xls", ".ppt"}
+pytestmark = pytest.mark.integration
 
 
 def _has_legacy_office_converter() -> bool:
@@ -54,7 +41,7 @@ def _has_legacy_office_converter() -> bool:
     return False
 
 
-def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path, duplicate_stems: set[str]) -> None:
+def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path) -> None:
     stem = file_path.stem
     ext_clean = file_path.suffix.lower().lstrip(".")
     print(f"Testing golden output for: {file_path.name}")
@@ -79,9 +66,6 @@ def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path, d
     cmd = [sys.executable, "-m", "hammerdown.cli", str(target_input)]
     result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
     if result.returncode != 0:
-        if file_path.suffix.lower() in LEGACY_OFFICE_EXTENSIONS and not _has_legacy_office_converter():
-            print(f"Skipping {file_path.name}: legacy office converter not installed in environment")
-            return
         assert result.returncode == 0, f"Converter failed for {file_path.name}: {result.stderr}"
 
     out_md_path = run_dir / f"hm_{stem}_{ext_clean}.md" if ext_clean else run_dir / f"hm_{stem}.md"
@@ -110,36 +94,33 @@ def _run_single_golden_test(file_path: Path, tmp_path: Path, golden_dir: Path, d
     ), f"Golden test failed for {file_path.name}! Output does not match reference."
 
 
-def test_golden_conversion(tmp_path: Path):
+def _golden_inputs() -> list[Path]:
     inputs_dir = Path("tests/inputs")
-    golden_dir = Path("tests/golden")
-
-    test_files = [
+    return sorted(
         f for f in inputs_dir.glob("*.*")
         if f.suffix.lower() in SUPPORTED_EXTENSIONS
         and not f.name.startswith(("~$", "hm_"))
-    ]
-    assert len(test_files) > 0, "No test input files found"
+    )
 
-    stems = Counter(f.stem for f in test_files)
-    duplicate_stems = {stem for stem, count in stems.items() if count > 1}
 
-    max_workers = min(len(test_files), os.cpu_count() or 4)
-    errors = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_run_single_golden_test, f, tmp_path, golden_dir, duplicate_stems): f
-            for f in test_files
-        }
-        for future in concurrent.futures.as_completed(futures):
-            f = futures[future]
-            try:
-                future.result()
-            except Exception as exc:
-                errors.append(f"{f.name}: {exc}")
+@pytest.mark.parametrize(
+    "file_path",
+    [
+        pytest.param(
+            file_path,
+            marks=pytest.mark.requires_office
+            if file_path.suffix.lower() in LEGACY_OFFICE_EXTENSIONS
+            else (),
+            id=file_path.name,
+        )
+        for file_path in _golden_inputs()
+    ],
+)
+def test_golden_conversion(file_path: Path, tmp_path: Path) -> None:
+    if file_path.suffix.lower() in LEGACY_OFFICE_EXTENSIONS and not _has_legacy_office_converter():
+        pytest.skip("requires Microsoft Office or LibreOffice")
 
-    if errors:
-        raise AssertionError("Golden conversion failed for:\n" + "\n".join(errors))
+    _run_single_golden_test(file_path, tmp_path, Path("tests/golden"))
 
 
 if __name__ == "__main__":
@@ -147,7 +128,11 @@ if __name__ == "__main__":
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         try:
-            test_golden_conversion(Path(tmp_dir))
+            for file_path in _golden_inputs():
+                if file_path.suffix.lower() in LEGACY_OFFICE_EXTENSIONS and not _has_legacy_office_converter():
+                    print(f"Skipping {file_path.name}: requires Microsoft Office or LibreOffice")
+                    continue
+                _run_single_golden_test(file_path, Path(tmp_dir), Path("tests/golden"))
             print("\nSUCCESS: All golden tests passed!")
         except AssertionError as e:
             print(f"\nFAILURE: {e}")
