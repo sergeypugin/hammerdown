@@ -145,7 +145,7 @@ Each converter has the same signature and returns `tuple[str | None, int]` -- th
 - `convert_docx(docx_path, out_dir)` -- converts modern Word (.docx) files, parses tables, turns Word formulas into LaTeX, and renders embedded charts as SVG; additionally accepts `images_dir_name=None` and `progress_callback=None` as keyword arguments
 - `convert_doc(doc_path, out_dir)` -- converts legacy Word (.doc) files using LibreOffice or Microsoft Word automation
 - `convert_odt(odt_path, out_dir)` -- converts OpenDocument Text (.odt) files with native formula and image extraction
-- `convert_txt_or_md(file_path, out_dir)` -- reads plain text, log, or Markdown files with automatic encoding detection; extracts any embedded base64 image strings into files whose extension follows the MIME subtype (`embedded_img_0.png`, `embedded_img_1.jpeg`, and so on) inside the source's asset folder, for example `hm_images_LMS_md/`
+- `convert_txt_or_md(file_path, out_dir)` -- reads plain text, log, or Markdown files with automatic encoding detection; extracts any embedded base64 image strings into files whose extension follows the MIME subtype (`embedded_img_1.png`, `embedded_img_2.jpeg`, and so on) inside the source's asset folder, for example `hm_images_LMS_md/`
 
 ```python
 from hammerdown import convert_docx, convert_odt

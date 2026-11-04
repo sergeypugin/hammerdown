@@ -18,13 +18,13 @@ folder/
 ├── report.docx
 ├── hm_report_docx.md
 └── hm_images_report_docx/
-    └── chart_000.svg
+    └── chart_001.svg
 ```
 
 Key naming rules:
 - the output Markdown file has a deterministic per-source name: `report.docx` becomes `hm_report_docx.md`, while `report.doc` becomes `hm_report_doc.md`. The source extension is part of the name and is normalized to lowercase, which avoids collisions between identical stems in different supported formats. With `-w`/`--overwrite`, plain-text sources are rewritten in place instead
 - extracted assets are stored in a dedicated folder next to the Markdown file: Word charts land in `hm_images_report_docx/`, and OpenDocument or Markdown images land in a folder such as `hm_images_report_odt/` or `hm_images_LMS_md/`
-- relative image links in the Markdown point into that folder, for example `hm_images_report_docx/chart_000.svg`
+- relative image links in the Markdown point into that folder, for example `hm_images_report_docx/chart_001.svg`
 - a successful normal rerun replaces the Markdown target and the complete corresponding `hm_images_*` directory, so stale files and old asset extensions are removed; if the new conversion produces no assets, the old asset directory is removed
 - `-s`/`--skip-existing` checks only the Markdown target. When it already exists, conversion is skipped and the existing Markdown and asset directory are both left untouched, even if stale
 
@@ -56,7 +56,7 @@ Key naming rules:
 ### Plain Text and Markdown (.txt, .md, .log)
 
 - text is decoded with automatic fallback across UTF-8, CP1251, CP1252, and Latin-1 encodings
-- if a Markdown file contains embedded base64 image strings (like `data:image/png;base64,...`), `hammerdown` decodes them, saves them as `embedded_img_0.png`, `embedded_img_1.jpeg`, and so on inside the source's asset folder, and replaces the inline base64 string with a clean relative link. For `LMS.md`, the folder is `hm_images_LMS_md/`
+- if a Markdown file contains embedded base64 image strings (like `data:image/png;base64,...`), `hammerdown` decodes them, saves them as `embedded_img_1.png`, `embedded_img_2.jpeg`, and so on inside the source's asset folder, and replaces the inline base64 string with a clean relative link. For `LMS.md`, the folder is `hm_images_LMS_md/`
 
 ### PowerPoint Presentations (.pptx, .ppt)
 

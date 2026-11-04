@@ -159,7 +159,7 @@ def convert_docx(
             continue
         title, svg = rendered_chart
         image_dir.mkdir(parents=True, exist_ok=True)
-        image_name = f"chart_{saved_images:03d}.svg"
+        image_name = f"chart_{saved_images + 1:03d}.svg"
         (image_dir / image_name).write_text(svg, encoding="utf-8")
         chart_links[relation_id] = f"![{title}]({img_dir_name}/{image_name})"
         saved_images += 1

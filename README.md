@@ -74,7 +74,7 @@ folder/
 ├── report.docx
 ├── hm_report_docx.md
 └── hm_images_report_docx/
-    └── chart_000.svg
+    └── chart_001.svg
 ```
 
 PDF text is converted directly to Markdown without producing an asset folder. Asset folders are created only where the format exposes separate assets: Word charts are rendered as SVG, OpenDocument images are copied out, and base64 images in Markdown are decoded. Presentations and spreadsheets produce Markdown text and tables only. Web page (`.html`) and Google Drive ZIP exports copy their referenced images into the target folder with the same `hm_images_...` naming convention.
@@ -378,10 +378,10 @@ project/
 ├── summary.md
 └── hm_merged_into_summary_images/
     ├── hm_images_notes_docx/
-    │   └── chart_000.svg
+    │   └── chart_001.svg
     └── drafts/
         └── hm_images_plan_md/
-            └── embedded_img_0.png
+            └── embedded_img_1.png
 ```
 
 #### Streaming to stdout
@@ -434,7 +434,7 @@ For specialized format converters and low-level helpers, see [docs/PYTHON.md](do
 
 ### Extracting Base64 Images from Markdown
 
-If you have a Markdown file with embedded base64 images, running `hammerdown` with `--overwrite` extracts each image using its MIME type (`png`, `jpeg`, `webp`, `gif`, `svg` and other supported image subtypes) into a sibling folder named after the source. For `LMS.md`, the first decoded image is written as `hm_images_LMS_md/embedded_img_0.png` and the link in the document is rewritten to that path. The image is not converted to PNG: PNG is used only when the source data URI says `image/png`.
+If you have a Markdown file with embedded base64 images, running `hammerdown` with `--overwrite` extracts each image using its MIME type (`png`, `jpeg`, `webp`, `gif`, `svg` and other supported image subtypes) into a sibling folder named after the source. For `LMS.md`, the first decoded image is written as `hm_images_LMS_md/embedded_img_1.png` and the link in the document is rewritten to that path. The image is not converted to PNG: PNG is used only when the source data URI says `image/png`.
 
 ```sh
 hammerdown LMS.md --overwrite

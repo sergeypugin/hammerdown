@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 import zipfile
 from xml.etree import ElementTree as ET
+
+from docx import Document
 
 from hammerdown.parsers.math import mathml_to_latex, omml_to_latex
 from hammerdown.parsers.odt import convert_odt
@@ -11,10 +14,28 @@ from hammerdown.parsers.office import convert_docx
 
 def test_docx_preserves_formula_and_table_order(tmp_path: Path) -> None:
     source = Path("tests/inputs/report.docx")
-    markdown, images = convert_docx(str(source), str(tmp_path))
+    docx_path = tmp_path / source.name
+    doc = Document(str(source))
+    chart_tag = "{http://schemas.openxmlformats.org/drawingml/2006/chart}chart"
+    chart_paragraph = next(
+        element for element in doc.element.body if any(node.tag == chart_tag for node in element.iter())
+    )
+    duplicate_paragraph = deepcopy(chart_paragraph)
+    duplicate_chart = next(node for node in duplicate_paragraph.iter() if node.tag == chart_tag)
+    chart_relation = next(relation for relation in doc.part.rels.values() if relation.reltype.endswith("/chart"))
+    duplicate_relation_id = "rId100"
+    doc.part.rels.add_relationship(chart_relation.reltype, chart_relation.target_part, duplicate_relation_id)
+    duplicate_chart.set(
+        "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id", duplicate_relation_id
+    )
+    body = doc.element.body
+    body.insert(list(body).index(chart_paragraph) + 1, duplicate_paragraph)
+    doc.save(str(docx_path))
+
+    markdown, images = convert_docx(str(docx_path), str(tmp_path))
 
     assert markdown is not None
-    assert images == 1
+    assert images == 2
     assert r"\frac{1}{N}" in markdown
     assert r"\sum\_{i=1}^{N}" in markdown
     assert (
@@ -30,12 +51,15 @@ def test_docx_preserves_formula_and_table_order(tmp_path: Path) -> None:
     assert lines[actors_header + 1].startswith("| --- |")
     assert lines[actors_header + 2].startswith("| surname |")
     assert lines[actors_header + 3].startswith("| Holland |")
-    chart_link = "![Гистограмма распределения длин имён и функция Гаусса](hm_images_report_docx/chart_000.svg)"
-    assert chart_link in markdown
-    assert markdown.index("График 1 – Гистограмма и функция Гаусса") < markdown.index(chart_link)
-    assert markdown.index(chart_link) < markdown.index("12. ")
-    chart_path = tmp_path / "hm_images_report_docx" / "chart_000.svg"
-    assert ET.parse(chart_path).getroot().tag.endswith("svg")
+    chart_link_1 = "![Гистограмма распределения длин имён и функция Гаусса](hm_images_report_docx/chart_001.svg)"
+    chart_link_2 = "![Гистограмма распределения длин имён и функция Гаусса](hm_images_report_docx/chart_002.svg)"
+    assert chart_link_1 in markdown
+    assert chart_link_2 in markdown
+    assert markdown.index("График 1 – Гистограмма и функция Гаусса") < markdown.index(chart_link_1)
+    assert markdown.index(chart_link_1) < markdown.index(chart_link_2) < markdown.index("12. ")
+    for image_name in ("chart_001.svg", "chart_002.svg"):
+        chart_path = tmp_path / "hm_images_report_docx" / image_name
+        assert ET.parse(chart_path).getroot().tag.endswith("svg")
 
 
 
