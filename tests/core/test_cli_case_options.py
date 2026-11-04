@@ -57,7 +57,7 @@ def test_mixed_case_options_work_between_resources(monkeypatch):
         hammerdown.cli.main(
             [
                 "First/Resource.TXT",
-                "-T",
+                "--TrEe",
                 "Second/Resource.TXT",
                 "-I",
                 "Pattern/Case",
@@ -79,7 +79,7 @@ def test_mixed_case_options_work_between_resources(monkeypatch):
     assert (
         hammerdown.cli.main(
             [
-                "-T",
+                "--TrEe",
                 "-I",
                 "Include/CaseSensitive.TXT",
                 "-E",
@@ -103,7 +103,7 @@ def test_mixed_case_options_work_between_resources(monkeypatch):
 def test_optional_merge_value_is_preserved_when_followed_by_another_option(monkeypatch):
     captured = _capture_batch(monkeypatch)
 
-    assert hammerdown.cli.main(["-M", "Merge/CaseSensitive.MD", "-T", "Input/CaseSensitive.TXT"]) == 0
+    assert hammerdown.cli.main(["-M", "Merge/CaseSensitive.MD", "--TrEe", "Input/CaseSensitive.TXT"]) == 0
 
     args = captured["args"]
     assert args.merge == "Merge/CaseSensitive.MD"
@@ -160,6 +160,17 @@ def test_tokens_after_separator_are_not_normalized(monkeypatch):
 
     assert captured["args"].files == ["--TrEe", "Mixed/Resource.TXT"]
     assert captured["args"].tree is False
+
+
+@pytest.mark.parametrize("option", ["-t", "-T"])
+def test_tree_short_option_is_rejected_with_long_option_suggestion(option: str, capsys):
+    with pytest.raises(SystemExit) as exc:
+        hammerdown.cli.main([option, "resource.txt"])
+
+    assert exc.value.code == 2
+    error = capsys.readouterr().err
+    assert f"unrecognized option {option!r}" in error
+    assert "did you mean '--tree'?" in error
 
 
 @pytest.mark.parametrize(

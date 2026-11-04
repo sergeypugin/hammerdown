@@ -41,7 +41,7 @@ def test_no_args_output_reads_as_a_complete_sentence(capsys):
     [
         ["--stdout"],
         ["--all-formats"],
-        ["-t"],
+        ["--tree"],
         ["-i", "*.txt"],
         ["-e", "*.log"],
         ["-i", "["],
@@ -63,10 +63,10 @@ def test_conversion_flags_without_sources_are_rejected(argv: list[str], capsys):
 @pytest.mark.parametrize(
     "argv",
     [
-        ["--all-formats", "-t", "first.txt", "second.txt"],
-        ["-t", "first.txt", "--all-formats", "second.txt"],
-        ["first.txt", "-t", "--all-formats", "second.txt"],
-        ["first.txt", "second.txt", "-t", "--all-formats"],
+        ["--all-formats", "--tree", "first.txt", "second.txt"],
+        ["--tree", "first.txt", "--all-formats", "second.txt"],
+        ["first.txt", "--tree", "--all-formats", "second.txt"],
+        ["first.txt", "second.txt", "--tree", "--all-formats"],
     ],
 )
 def test_tree_flags_are_accepted_before_between_and_after_resources(argv, monkeypatch):
@@ -181,20 +181,16 @@ def test_skip_existing_flag(tmp_path: Path):
 
 
 
-def test_skip_existing_and_overwrite_statuses(tmp_path: Path, capsys):
-    import logging
-
+def test_skip_existing_and_overwrite_statuses(tmp_path: Path):
     source = tmp_path / "notes.txt"
     source.write_text("initial\n", encoding="utf-8")
     assert hammerdown.cli.main([str(source)]) == 0
     source.write_text("updated\n", encoding="utf-8")
 
-    with capsys.disabled():
-        assert hammerdown.cli.main(["--skip-existing", str(source)]) == 0
+    assert hammerdown.cli.main(["--skip-existing", str(source)]) == 0
     assert (tmp_path / "hm_notes_txt.md").read_text(encoding="utf-8") == "initial\n"
 
-    with capsys.disabled():
-        assert hammerdown.cli.main(["--overwrite", str(source)]) == 0
+    assert hammerdown.cli.main(["--overwrite", str(source)]) == 0
     assert source.read_text(encoding="utf-8") == "updated\n"
 
 
@@ -636,7 +632,7 @@ def test_tree_mode_with_include_filter(tmp_path: Path, monkeypatch):
     (web_dir / "keep.txt").write_text("keep this content", encoding="utf-8")
     (web_dir / "skip.md").write_text("skip this content", encoding="utf-8")
 
-    assert hammerdown.cli.main(["-t", "-i", "*.txt", str(web_dir)]) == 0
+    assert hammerdown.cli.main(["--tree", "-i", "*.txt", str(web_dir)]) == 0
     merged = tmp_path / "hammerdowned.md"
     assert merged.is_file()
     content = merged.read_text(encoding="utf-8")

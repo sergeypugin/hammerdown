@@ -192,14 +192,13 @@ def test_tree_mode_with_directory(tmp_path: Path, monkeypatch):
     assert "file2.txt" in content
 
 
-def test_tree_flag_short_form(tmp_path: Path, monkeypatch):
-    """Test that -t flag (short form of --tree) works"""
+def test_tree_flag_long_form(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     file1 = tmp_path / "doc.txt"
     file1.write_text("Hello\n", encoding="utf-8")
 
-    result = hammerdown.cli.main(["-t", str(file1)])
+    result = hammerdown.cli.main(["--tree", str(file1)])
     assert result == 0
 
     expected_output = tmp_path / "hammerdowned.md"

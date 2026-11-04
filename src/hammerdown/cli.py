@@ -171,6 +171,8 @@ def reject_single_dash_long_options(parser: argparse.ArgumentParser, argv: Seque
         if not token.startswith("-") or token.startswith("--") or token == "-":
             continue
         name = token[1:].split("=", 1)[0]
+        if name.casefold() == "t":
+            parser.error(f"unrecognized option {token!r}; did you mean '--tree'?")
         canonical_name = long_names.get(name.casefold())
         if canonical_name is not None:
             parser.error(f"unrecognized option {token!r}; did you mean '--{canonical_name}'?")
@@ -259,7 +261,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
         help="Include files ignored by Git when traversing directories",
     )
     parser.add_argument(
-        "-t",
         "--tree",
         action="store_true",
         help="Gather selected files into one Markdown tree document; may appear before, between, or after resources",
