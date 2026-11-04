@@ -107,12 +107,7 @@ def test_tree_discovery_honors_include_gitignored(tmp_path: Path, monkeypatch) -
         kwargs["completion_callback"](True, 0.01, 0, 0)
         return SimpleNamespace(success=True, markdown="content", error=None)
 
-    def initialize(target, _sources, _root):
-        Path(target).touch()
-
     monkeypatch.setattr(batch, "convert_file", convert)
-    monkeypatch.setattr(batch, "initialize_merge_file", initialize)
-    monkeypatch.setattr(batch, "append_merged_document", lambda *_args, **_kwargs: None)
     args = argparse.Namespace(
         files=[str(root)],
         merge=str(merged),

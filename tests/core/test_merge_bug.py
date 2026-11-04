@@ -1,12 +1,17 @@
 import os
-import gc
+
 import hammerdown.cli
 from pathlib import Path
 
 import pytest
 
 from hammerdown.core import merge as merge_core
-from hammerdown.core.merge import _MERGE_SESSIONS, append_merged_document, initialize_merge_file, merge_asset_paths
+from hammerdown.core.merge import (
+    MergeSession,
+    append_merged_document,
+    initialize_merge_file,
+    merge_asset_paths,
+)
 
 def test_merge_existing_output_file_is_used_as_output(tmp_path: Path):
     file1 = tmp_path / "doc1.txt"
@@ -26,6 +31,88 @@ def test_merge_existing_output_file_is_used_as_output(tmp_path: Path):
     assert "Hello from file 1" in output_file.read_text(encoding="utf-8")
 
 
+def test_explicit_merge_abort_discards_staging_and_preserves_previous_outputs(tmp_path: Path) -> None:
+    source = tmp_path / "doc.txt"
+    source.write_text("source\n", encoding="utf-8")
+    target = tmp_path / "merged.md"
+    target.write_text("previous merge\n", encoding="utf-8")
+    assets = tmp_path / "hm_merged_into_merged_images"
+    assets.mkdir()
+    (assets / "previous.png").write_bytes(b"previous asset")
+
+    owner = MergeSession(target)
+    initialize_merge_file(target, [source], tmp_path, owner)
+    asset_path, asset_prefix = merge_asset_paths(source, tmp_path, target, owner)
+    Path(asset_path).mkdir(parents=True, exist_ok=True)
+    (Path(asset_path) / "staged.png").write_bytes(b"staged asset")
+    staging_path = owner._state.staging.path
+
+    owner.abort()
+    owner.abort()
+
+    assert target.read_text(encoding="utf-8") == "previous merge\n"
+    assert (assets / "previous.png").read_bytes() == b"previous asset"
+    assert not staging_path.exists()
+    assert asset_prefix == Path(assets.name)
+
+
+def test_explicit_merge_finish_preserves_append_order(tmp_path: Path) -> None:
+    sources = [tmp_path / f"doc{index}.txt" for index in (1, 2, 3)]
+    for index, source in enumerate(sources, start=1):
+        source.write_text(f"source {index}\n", encoding="utf-8")
+    target = tmp_path / "merged.md"
+    owner = MergeSession(target)
+    initialize_merge_file(target, sources, tmp_path, owner)
+
+    for index, source in enumerate(sources, start=1):
+        _, asset_prefix = merge_asset_paths(source, tmp_path, target, owner)
+        append_merged_document(target, source, f"content {index}", tmp_path, asset_prefix, session=owner)
+
+    owner.finish()
+    merged = target.read_text(encoding="utf-8")
+    assert merged.index("FILE: doc1.txt") < merged.index("FILE: doc2.txt") < merged.index("FILE: doc3.txt")
+
+
+
+def test_append_rejects_out_of_order_source_without_advancing_session(tmp_path: Path) -> None:
+    sources = [tmp_path / f"doc{index}.txt" for index in (1, 2)]
+    for source in sources:
+        source.write_text("source\n", encoding="utf-8")
+    target = tmp_path / "merged.md"
+    owner = MergeSession(target)
+    initialize_merge_file(target, sources, tmp_path, owner)
+
+    _, asset_prefix = merge_asset_paths(sources[0], tmp_path, target, owner)
+    with pytest.raises(ValueError, match="appended in order"):
+        append_merged_document(target, sources[1], "out of order", tmp_path, asset_prefix, session=owner)
+
+    assert owner._state.appended == 0
+    append_merged_document(target, sources[0], "first", tmp_path, asset_prefix, session=owner)
+    owner.abort()
+
+
+def test_concurrent_merge_sessions_for_same_target_are_isolated(tmp_path: Path) -> None:
+    source = tmp_path / "doc.txt"
+    source.write_text("source\n", encoding="utf-8")
+    target = tmp_path / "merged.md"
+    first = MergeSession(target)
+    second = MergeSession(target)
+    assert first._state.staging.path != second._state.staging.path
+
+    initialize_merge_file(target, [source], tmp_path, first)
+    initialize_merge_file(target, [source], tmp_path, second)
+    _, first_prefix = merge_asset_paths(source, tmp_path, target, first)
+    _, second_prefix = merge_asset_paths(source, tmp_path, target, second)
+    append_merged_document(target, source, "first session", tmp_path, first_prefix, session=first)
+    append_merged_document(target, source, "second session", tmp_path, second_prefix, session=second)
+
+    first.finish()
+    assert "first session" in target.read_text(encoding="utf-8")
+    assert second._state.staging.path.is_dir()
+    second.abort()
+    assert not second._state.staging.path.exists()
+
+
 def test_failed_append_preserves_previous_merge_and_assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sources = [tmp_path / f"doc{index}.txt" for index in (1, 2, 3)]
     for index, source in enumerate(sources, start=1):
@@ -37,13 +124,14 @@ def test_failed_append_preserves_previous_merge_and_assets(tmp_path: Path, monke
     assets.mkdir()
     (assets / "previous.png").write_bytes(b"previous asset")
 
-    initialize_merge_file(target, sources, tmp_path)
-    first_handle, first_prefix = merge_asset_paths(sources[0], tmp_path, target)
-    Path(first_handle).mkdir(parents=True, exist_ok=True)
-    (Path(first_handle) / "one.png").write_bytes(b"staged asset")
-    append_merged_document(target, sources[0], "first", tmp_path, first_prefix)
+    owner = MergeSession(target)
+    initialize_merge_file(target, sources, tmp_path, owner)
+    first_asset_path, first_prefix = merge_asset_paths(sources[0], tmp_path, target, owner)
+    Path(first_asset_path).mkdir(parents=True, exist_ok=True)
+    (Path(first_asset_path) / "one.png").write_bytes(b"staged asset")
+    append_merged_document(target, sources[0], "first", tmp_path, first_prefix, session=owner)
 
-    second_handle, second_prefix = merge_asset_paths(sources[1], tmp_path, target)
+    _, second_prefix = merge_asset_paths(sources[1], tmp_path, target, owner)
     original_render = merge_core.render_merged_document
 
     def fail_second(source, *args, **kwargs):
@@ -53,15 +141,14 @@ def test_failed_append_preserves_previous_merge_and_assets(tmp_path: Path, monke
 
     monkeypatch.setattr(merge_core, "render_merged_document", fail_second)
     with pytest.raises(OSError, match="append failed"):
-        append_merged_document(target, sources[1], "second", tmp_path, second_prefix)
+        append_merged_document(target, sources[1], "second", tmp_path, second_prefix, session=owner)
 
-    assert _MERGE_SESSIONS[target.resolve()].target_existed
-    assert _MERGE_SESSIONS[target.resolve()].had_error
-    assert _MERGE_SESSIONS[target.resolve()].appended == 2
-    third_handle, third_prefix = merge_asset_paths(sources[2], tmp_path, target)
-    append_merged_document(target, sources[2], "third", tmp_path, third_prefix)
-    del first_handle, second_handle, third_handle
-    gc.collect()
+    assert owner._state.target_existed
+    assert owner._state.had_error
+    assert owner._state.appended == 2
+    _, third_prefix = merge_asset_paths(sources[2], tmp_path, target, owner)
+    append_merged_document(target, sources[2], "third", tmp_path, third_prefix, session=owner)
+    owner.finish()
 
     assert target.read_text(encoding="utf-8") == "previous merge\n"
     assert (assets / "previous.png").read_bytes() == b"previous asset"

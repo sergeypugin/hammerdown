@@ -40,6 +40,7 @@ from .google_drive import (
     get_google_file_info,
 )
 from .ipc import IPCCoordinator, try_delegate_to_coordinator
+from .merge import MergeSession
 
 logger = logging.getLogger("hammerdown")
 
@@ -65,20 +66,10 @@ class ConversionResult:
     duration: float = 0.0
     error: str | None = None
     output_path: Path | None = None
-    _merge_handle: object | None = None
 
     def __bool__(self) -> bool:
         # Skip-existing results have no Markdown but do have an output path.
         return self.success and (self.markdown is not None or self.output_path is not None)
-
-    def __del__(self) -> None:
-        try:
-            abandon = getattr(self._merge_handle, "abandon_if_idle", None)
-            if callable(abandon):
-                abandon()
-        except Exception:
-            # Destructors must not mask the original conversion error.
-            pass
 
 
 def is_generated_output(file_path: str | os.PathLike[str]) -> bool:
@@ -135,6 +126,7 @@ def convert_file(
     stdout: bool = False,
     asset_dir: str | os.PathLike[str] | None = None,
     write_markdown: bool = True,
+    merge_session: MergeSession | None = None,
 ) -> ConversionResult:
     normalized_path = normalize_path(file_path)
     source = Path(normalized_path)
@@ -171,7 +163,10 @@ def convert_file(
     else:
         out_dir = Path(normalize_path(target_dir)) if target_dir is not None else source.parent
     resource_dir = Path(normalize_path(asset_dir)) if asset_dir is not None else out_dir
-    merge_handle = getattr(asset_dir, "_merge_handle", None)
+    if merge_session is not None:
+        if asset_dir is None:
+            raise ValueError("asset_dir is required with merge_session")
+        resource_dir = merge_session.validate_asset_directory(resource_dir)
 
     out_md = get_output_path(source, out_dir)
     # Handle explicit source overwrite for text-like files
@@ -182,13 +177,13 @@ def convert_file(
         logger.error("%s", reason)
         if completion_callback:
             completion_callback(False, 0.0, 0, 0)
-        return ConversionResult(False, error=reason, output_path=out_md, _merge_handle=merge_handle)
+        return ConversionResult(False, error=reason, output_path=out_md)
 
     if skip_existing and out_md.is_file():
         logger.info("Skipping %s (output already exists: %s)", source.name, out_md.name)
         if completion_callback:
             completion_callback(True, 0.0, 0, 0)
-        return ConversionResult(True, duration=0.0, output_path=out_md, _merge_handle=merge_handle)
+        return ConversionResult(True, duration=0.0, output_path=out_md)
 
     if overwrite:
         if target_dir is not None:
@@ -213,7 +208,7 @@ def convert_file(
             completion_callback(False, 0.0, 0, 0)
         if temporary_dir is not None:
             temporary_dir.cleanup()
-        return ConversionResult(False, error=reason, _merge_handle=merge_handle)
+        return ConversionResult(False, error=reason)
 
     if not stdout and not is_within_staging(resource_dir):
         conversion_staging = OutputStaging.create(
@@ -231,11 +226,7 @@ def convert_file(
             conversion_staging.cleanup()
         if temporary_dir is not None:
             temporary_dir.cleanup()
-        return ConversionResult(
-            False,
-            error=f"failed to convert {source.name}",
-            _merge_handle=merge_handle,
-        )
+        return ConversionResult(False, error=f"failed to convert {source.name}")
 
     is_tty = sys.stdout.isatty() and logger.isEnabledFor(logging.INFO) and not batch_mode
     if is_tty:
@@ -295,7 +286,7 @@ def convert_file(
                 cleanup_staged_path(resource_dir / get_images_dir_name(source))
             if temporary_dir is not None:
                 temporary_dir.cleanup()
-            return ConversionResult(False, error=reason, _merge_handle=merge_handle)
+            return ConversionResult(False, error=reason)
 
         # Trim trailing whitespace on each line and ensure a single final newline
         normalized_text = md_text.replace("\r\n", "\n").replace("\r", "\n")
@@ -320,7 +311,6 @@ def convert_file(
                 images=saved_images,
                 tokens=counted_tokens,
                 duration=duration,
-                _merge_handle=merge_handle,
             )
 
         should_write_markdown = write_markdown or out_md == source
@@ -360,7 +350,6 @@ def convert_file(
             tokens=counted_tokens,
             duration=duration,
             output_path=out_md if should_write_markdown else None,
-            _merge_handle=merge_handle,
         )
     except Exception:
         duration = time.monotonic() - started_at
@@ -381,7 +370,6 @@ def convert_file(
             False,
             duration=duration,
             error=f"failed to convert {source.name}",
-            _merge_handle=merge_handle,
         )
 
 
@@ -394,6 +382,7 @@ __all__ = [
     "TEXT_EXTENSIONS",
     "CompletionCallback",
     "ConversionResult",
+    "MergeSession",
     "ProgressCallback",
     "get_output_path",
     "is_generated_output",

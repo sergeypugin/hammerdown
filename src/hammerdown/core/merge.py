@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
-import weakref
+
 
 from .output import OutputStaging, cleanup_staged_path, replace_staged_outputs
 from .path_utils import get_images_dir_name, normalize_path
@@ -148,11 +149,9 @@ def render_merge_header(sources: Sequence[str | Path], merge_root: Path) -> str:
     return _render_directory_structure(merge_root.name or "root", relative_paths)
 
 
-_PathBase = type(Path())
-
 
 @dataclass
-class _MergeSession:
+class _MergeState:
     target: Path
     staging: OutputStaging
     asset_root_name: str
@@ -162,8 +161,6 @@ class _MergeSession:
     appended: int = 0
     had_error: bool = False
     pending_source: Path | None = None
-    active_handle_ref: weakref.ReferenceType[_MergeAssetPath] | None = None
-    active_token: object | None = None
 
     @property
     def staged_target(self) -> Path:
@@ -178,222 +175,94 @@ class _MergeSession:
         return self.target.parent / self.asset_root_name
 
 
-_MERGE_SESSIONS: dict[Path, _MergeSession] = {}
+class MergeSession:
+    """Owns the staging and commit lifecycle for one batch merge."""
 
-
-class _MergeAssetPath(_PathBase):
-    """A staged asset path that can abandon its merge session."""
-
-    __slots__ = (
-        "_session_ref",
-        "_source",
-        "_finalizer",
-        "_consumed",
-        "_lease_token",
-        "__weakref__",
-    )
-
-    def __new__(
-        cls,
-        *pathsegments: str | os.PathLike[str],
-        session: _MergeSession | None = None,
-        source: str | os.PathLike[str] | None = None,
-    ) -> _MergeAssetPath:
-        # pathlib constructs derived paths by calling the concrete path type
-        # with ordinary path segments.  The lease is only attached when the
-        # explicit session and source keywords are supplied.
-        asset_path = super().__new__(cls, *pathsegments)
-        if session is None:
-            asset_path._session_ref = None
-            asset_path._source = None
-            asset_path._finalizer = None
-            asset_path._consumed = True
-            asset_path._lease_token = None
-        else:
-            if source is None:
-                raise TypeError("source is required for a merge asset path")
-            asset_path._session_ref = weakref.ref(session)
-            asset_path._source = Path(source).resolve()
-            asset_path._consumed = False
-            asset_path._lease_token = object()
-            session.active_token = asset_path._lease_token
-            asset_path._finalizer = weakref.finalize(
-                asset_path,
-                _abandon_merge_session,
-                weakref.ref(session),
-                asset_path._lease_token,
-            )
-        return asset_path
-
-    def __init__(
-        self,
-        *pathsegments: str | os.PathLike[str],
-        session: _MergeSession | None = None,
-        source: str | os.PathLike[str] | None = None,
-    ) -> None:
-        # pathlib needs its own internal path cache initialized as well.
-        super().__init__(*pathsegments)
-
-    def with_segments(self, *pathsegments: str | os.PathLike[str]) -> Path:
-        """Return ordinary paths for pathlib-derived values, not merge leases."""
-        return Path(*pathsegments)
+    def __init__(self, target: str | Path) -> None:
+        resolved_target = Path(target).resolve()
+        asset_root_name = f"hm_merged_into_{resolved_target.stem}_images"
+        self._state = _MergeState(
+            target=resolved_target,
+            staging=OutputStaging.create(resolved_target.parent, prefix=".hammerdown-merge-"),
+            asset_root_name=asset_root_name,
+            target_existed=resolved_target.exists(),
+        )
+        self._closed = False
 
     @property
-    def _merge_handle(self) -> _MergeAssetPath | None:
-        return self if self._session_ref is not None else None
+    def target(self) -> Path:
+        return self._state.target
 
-    def _session(self) -> _MergeSession | None:
-        return self._session_ref() if self._session_ref is not None else None
-
-    def _detach_finalizer(self) -> None:
-        if self._finalizer is not None:
-            self._finalizer.detach()
-
-    def abandon_if_idle(self) -> None:
-        if self._consumed:
+    def finish(self) -> None:
+        if self._closed:
             return
-        session = self._session()
-        self._detach_finalizer()
-        self._consumed = True
-        if session is not None and session.active_token is self._lease_token:
-            _abandon_active_lease(session, self._lease_token)
+        state = self._state
+        if state.sources and state.appended >= len(state.sources):
+            if state.had_error and state.target_existed:
+                self.abort()
+                return
+            try:
+                _commit_merge_session(state)
+            finally:
+                self._closed = True
+        else:
+            self.abort()
 
-    def consume(self) -> None:
-        if self._consumed:
-            return
-        session = self._session()
-        self._detach_finalizer()
-        self._consumed = True
-        if session is None or _MERGE_SESSIONS.get(session.target) is not session:
-            return
-        if session.active_handle_ref is not None and session.active_handle_ref() is self:
-            session.active_handle_ref = None
-        if session.active_token is self._lease_token:
-            session.active_token = None
-        if session.pending_source == self._source:
-            session.pending_source = None
+    def validate_asset_directory(self, path: str | Path) -> Path:
+        if self._closed:
+            raise RuntimeError("merge session is already closed")
+        asset_directory = Path(path).resolve()
+        if self._state.staging.path not in asset_directory.parents:
+            raise ValueError("merge asset directory must be inside this session's staging directory")
+        return asset_directory
 
-
-def _abandon_merge_session(
-    session_ref: weakref.ReferenceType[_MergeSession],
-    token: object,
-) -> None:
-    try:
-        session = session_ref()
-        if session is not None and session.active_token is token:
-            _abandon_active_lease(session, token)
-    except Exception:
-        # Finalizers can run during interpreter shutdown.
-        pass
+    def abort(self) -> None:
+        if not self._closed:
+            self._state.staging.cleanup()
+            self._closed = True
 
 
-def _merge_session(merge_target: Path) -> _MergeSession:
-    target = merge_target.resolve()
-    session = _MERGE_SESSIONS.get(target)
-    if session is not None:
-        return session
-
-    asset_root_name = f"hm_merged_into_{target.stem}_images"
-    staging = OutputStaging.create(target.parent, prefix=".hammerdown-merge-")
-    session = _MergeSession(
-        target=target,
-        staging=staging,
-        asset_root_name=asset_root_name,
-        target_existed=target.exists(),
-    )
-    _MERGE_SESSIONS[target] = session
-    return session
+def _require_session(merge_target: Path, session: MergeSession | None) -> _MergeState:
+    if session is None:
+        raise ValueError("an explicit MergeSession is required for merge operations")
+    state = session._state
+    if session._closed:
+        raise RuntimeError("merge session is already closed")
+    if state.target != Path(merge_target).resolve():
+        raise ValueError("merge session target does not match merge target")
+    return state
 
 
-def _discard_merge_session(session: _MergeSession) -> None:
-    if _MERGE_SESSIONS.get(session.target) is session:
-        _MERGE_SESSIONS.pop(session.target, None)
-        session.active_handle_ref = None
-        session.active_token = None
-        session.pending_source = None
-    session.staging.cleanup()
-
-
-def _abandon_active_lease(session: _MergeSession, token: object) -> None:
-    if session.active_token is not token:
-        return
-    if not session.initialized or session.appended == 0:
-        _discard_merge_session(session)
-        return
-
-    # The batch owns an initialized session until all expected sources append.
-    # A converter wrapper may drop the lease before the batch can append it.
-    session.active_handle_ref = None
-    session.active_token = None
-    session.pending_source = None
-
-
-def _commit_merge_session(session: _MergeSession) -> None:
+def _commit_merge_session(state: _MergeState) -> None:
     try:
         replace_staged_outputs(
             [
-                (session.staged_target, session.target),
-                (
-                    session.staged_asset_root if session.staged_asset_root.is_dir() else None,
-                    session.asset_target,
-                ),
+                (state.staged_target, state.target),
+                (state.staged_asset_root if state.staged_asset_root.is_dir() else None, state.asset_target),
             ]
         )
     finally:
-        _discard_merge_session(session)
-
-
-def _finish_merge_session(session: _MergeSession) -> None:
-    if not session.sources or session.appended < len(session.sources):
-        return
-
-    if session.had_error and session.target_existed:
-        _discard_merge_session(session)
-        return
-
-    _commit_merge_session(session)
+        state.staging.cleanup()
 
 
 def merge_asset_paths(
     source: str | Path,
     merge_root: Path,
     merge_target: Path,
+    session: MergeSession | None = None,
 ) -> tuple[Path, Path]:
-    session = _merge_session(merge_target)
-    try:
-        source_path = Path(source).resolve()
-        active_handle = session.active_handle_ref() if session.active_handle_ref is not None else None
-
-        if session.pending_source is not None:
-            if session.pending_source != source_path or active_handle is None:
-                _discard_merge_session(session)
-                session = _merge_session(merge_target)
-                active_handle = None
-        elif session.initialized:
-            expected = (
-                Path(session.sources[session.appended]).resolve()
-                if session.appended < len(session.sources)
-                else None
-            )
-            if expected != source_path:
-                _discard_merge_session(session)
-                session = _merge_session(merge_target)
-                active_handle = None
-
-        relative = relative_path_for_source(source_path, merge_root)
-        asset_prefix = Path(session.asset_root_name) / relative.parent
-        if active_handle is None:
-            session.pending_source = source_path
-            active_handle = _MergeAssetPath(
-                session.staging.path / asset_prefix,
-                session=session,
-                source=source_path,
-            )
-            session.active_handle_ref = weakref.ref(active_handle)
-        return active_handle, asset_prefix
-    except Exception:
-        _discard_merge_session(session)
-        raise
+    state = _require_session(merge_target, session)
+    source_path = Path(source).resolve()
+    if state.initialized:
+        expected = Path(state.sources[state.appended]).resolve() if state.appended < len(state.sources) else None
+        if expected != source_path:
+            raise ValueError(f"merge sources must be appended in order; expected {expected}, got {source_path}")
+    if state.pending_source is not None and state.pending_source != source_path:
+        raise ValueError(f"merge source {state.pending_source} has not been appended")
+    state.pending_source = source_path
+    relative = relative_path_for_source(source_path, merge_root)
+    asset_prefix = Path(state.asset_root_name) / relative.parent
+    return state.staging.path / asset_prefix, asset_prefix
 
 
 def render_merged_document(
@@ -442,27 +311,27 @@ def render_merged_markdown(
     return "\n\n".join(sections) + "\n"
 
 
-def initialize_merge_file(merge_target: Path, sources: Sequence[str | Path], merge_root: Path) -> None:
-    session = _merge_session(merge_target)
+def initialize_merge_file(
+    merge_target: Path,
+    sources: Sequence[str | Path],
+    merge_root: Path,
+    session: MergeSession | None = None,
+) -> None:
+    state = _require_session(merge_target, session)
     expected_sources = tuple(sources)
-    if session.initialized:
-        if session.sources == expected_sources:
+    if state.initialized:
+        if state.sources == expected_sources:
             return
-        _discard_merge_session(session)
-        session = _merge_session(merge_target)
+        raise ValueError("merge session was initialized with different sources")
 
-    try:
-        session.sources = expected_sources
-        session.staged_target.parent.mkdir(parents=True, exist_ok=True)
-        session.staged_target.write_text(
-            render_merge_header(expected_sources, merge_root) + "\n",
-            encoding="utf-8",
-            newline="\n",
-        )
-        session.initialized = True
-    except Exception:
-        _discard_merge_session(session)
-        raise
+    state.sources = expected_sources
+    state.staged_target.parent.mkdir(parents=True, exist_ok=True)
+    state.staged_target.write_text(
+        render_merge_header(expected_sources, merge_root) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    state.initialized = True
 
 
 def append_merged_document(
@@ -473,14 +342,21 @@ def append_merged_document(
     asset_prefix: Path,
     error: str | None = None,
     is_binary: bool = False,
+    session: MergeSession | None = None,
 ) -> None:
-    session = _merge_session(merge_target)
-    try:
-        if not session.initialized:
-            initialize_merge_file(merge_target, [source], merge_root)
+    state = _require_session(merge_target, session)
+    source_path = Path(source).resolve()
+    if not state.initialized:
+        initialize_merge_file(merge_target, [source], merge_root, session)
+    expected = Path(state.sources[state.appended]).resolve() if state.appended < len(state.sources) else None
+    if expected != source_path:
+        raise ValueError(f"merge sources must be appended in order; expected {expected}, got {source_path}")
+    if state.pending_source is not None and state.pending_source != source_path:
+        raise ValueError(f"merge source {state.pending_source} has not been appended")
 
-        if error:
-            session.had_error = True
+    if error:
+        state.had_error = True
+    try:
         rendered = render_merged_document(
             source,
             content,
@@ -489,24 +365,14 @@ def append_merged_document(
             error=error,
             is_binary=is_binary,
         )
-        with session.staged_target.open("a", encoding="utf-8", newline="\n") as output:
+        with state.staged_target.open("a", encoding="utf-8", newline="\n") as output:
             output.write("\n" + rendered + "\n")
     except Exception:
-        session.had_error = True
-        cleanup_staged_path(session.staging.path / asset_prefix)
-        active_handle = session.active_handle_ref() if session.active_handle_ref is not None else None
-        if active_handle is not None:
-            active_handle.consume()
-        session.active_handle_ref = None
-        session.active_token = None
-        session.pending_source = None
-        session.appended += 1
-        _finish_merge_session(session)
+        state.had_error = True
+        cleanup_staged_path(state.staging.path / asset_prefix)
+        state.pending_source = None
+        state.appended += 1
         raise
 
-    active_handle = session.active_handle_ref() if session.active_handle_ref is not None else None
-    if active_handle is not None:
-        active_handle.consume()
-    session.pending_source = None
-    session.appended += 1
-    _finish_merge_session(session)
+    state.pending_source = None
+    state.appended += 1

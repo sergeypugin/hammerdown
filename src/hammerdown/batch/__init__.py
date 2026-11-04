@@ -19,6 +19,7 @@ from ..core.discovery import DiscoveredTarget, DiscoveryResult, discover_paths, 
 from ..core.google_drive import download_google_url, extract_file_id, is_google_drive_url
 from ..core.ipc import IPCCoordinator, try_delegate_to_coordinator
 from ..core.merge import (
+    MergeSession,
     append_merged_document,
     convert_source_text,
     initialize_merge_file,
@@ -497,6 +498,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
     results: list[bool] = []
     merged_count = 0
     merge_initialized = False
+    merge_commit_failed = False
     batch_ui = BatchUI(ui_files, estimates=estimates)
     batch_ui.skipped_files.extend((Path(skip.path).name, skip.reason) for skip in discovery_skips)
     batch_ui.print_ignore_files(ignore_files)
@@ -508,7 +510,10 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         batch_ui.start()
 
     conversion_finished = False
+    merge_session: MergeSession | None = None
     try:
+        if merge_target is not None and not merge_skipped:
+            merge_session = MergeSession(merge_target)
         for idx, (f, error, category) in enumerate(targets):
             f_path = Path(f)
             if error:
@@ -574,11 +579,12 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                             else None
                         ),
                         asset_dir=(
-                            merge_asset_paths(f_path, merge_root, merge_target)[0]
+                            merge_asset_paths(f_path, merge_root, merge_target, merge_session)[0]
                             if merge_target is not None and merge_root is not None
                             else None
                         ),
                         write_markdown=merge_target is None,
+                        merge_session=merge_session,
                     )
             finally:
                 logger.disabled = logger_was_disabled
@@ -594,9 +600,9 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 if merge_target is not None and merge_root is not None:
                     try:
                         if not merge_initialized:
-                            initialize_merge_file(merge_target, merge_sources, merge_root)
+                            initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
                             merge_initialized = True
-                        _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target)
+                        _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
                         is_binary = _is_binary_file(f_path)
                         append_merged_document(
                             merge_target,
@@ -605,6 +611,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                             merge_root,
                             asset_prefix,
                             error=reason,
+                            session=merge_session,
                             is_binary=is_binary,
                         )
                     except OSError:
@@ -619,9 +626,9 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 else:
                     try:
                         if not merge_initialized:
-                            initialize_merge_file(merge_target, merge_sources, merge_root)
+                            initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
                             merge_initialized = True
-                        _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target)
+                        _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
                         is_binary = _is_binary_file(f_path)
                         append_merged_document(
                             merge_target,
@@ -630,6 +637,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                             merge_root,
                             asset_prefix,
                             is_binary=is_binary,
+                            session=merge_session,
                         )
                         merged_count += 1
                     except OSError as exc:
@@ -639,15 +647,23 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                         batch_ui.details[idx] = "-"
                         batch_ui.errors.append((f_path.name, f"could not append to merge output: {exc}"))
             results.append(succeeded)
+        if merge_session is not None:
+            try:
+                merge_session.finish()
+            except OSError as exc:
+                merge_commit_failed = True
+                batch_ui.errors.append((merge_session.target.name, f"could not commit merge output: {exc}"))
         conversion_finished = True
     finally:
         if not conversion_finished:
+            if merge_session is not None:
+                merge_session.abort()
             batch_ui.stop()
         if coordinator:
             coordinator.stop()
 
     failed_count = sum(not result for result in results)
-    merge_failed = False
+    merge_failed = merge_commit_failed
     if merge_target is not None and any(results) and not merge_skipped:
         if merge_initialized and merged_count > 0 and merge_target.is_file():
             batch_ui.add_result("Merged documents", merged_count)

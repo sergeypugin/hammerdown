@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import base64
-import gc
+
 import hashlib
 from pathlib import Path
 import pytest
 
 import hammerdown.batch as batch
 import hammerdown.core as core
-import hammerdown.core.merge as merge
+
 import hammerdown.core.output as output
 from hammerdown.cli import main
 
@@ -111,7 +111,82 @@ def test_successful_rerun_removes_stale_assets(
     assert not assets.exists()
     if mode != "direct":
         assert markdown.read_text(encoding="utf-8").count("FILE: source.md") == 1
-    assert not merge._MERGE_SESSIONS
+    assert not list(tmp_path.glob(".hammerdown-merge-*"))
+
+
+def test_skip_existing_merge_does_not_create_merge_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.md"
+    source.write_text(_markdown_with_images(1), encoding="utf-8")
+    target = tmp_path / "merged.md"
+    target.write_text("existing merge\n", encoding="utf-8")
+
+    def unexpected_session(*_args: object, **_kwargs: object):
+        raise AssertionError("skip-existing must not create a merge session")
+
+    monkeypatch.setattr(batch, "MergeSession", unexpected_session)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--merge", str(target), "--skip-existing", str(source)]) == 0
+    assert target.read_text(encoding="utf-8") == "existing merge\n"
+    assert not list(tmp_path.glob(".hammerdown-merge-*"))
+
+
+def test_merge_session_construction_failure_cleans_up_ui_and_coordinator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.md"
+    source.write_text("content\n", encoding="utf-8")
+    target = tmp_path / "merged.md"
+    calls: list[str] = []
+
+    class FakeUI:
+        can_redraw = True
+
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.skipped_files: list[tuple[str, str]] = []
+
+        def print_ignore_files(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def start(self) -> None:
+            calls.append("ui-start")
+
+        def stop(self) -> None:
+            calls.append("ui-stop")
+
+    class FakeCoordinator:
+        def start(self) -> bool:
+            calls.append("coordinator-start")
+            return True
+
+        def collect_files(self, files: list[str], assembly_timeout: float) -> list[str]:
+            return files
+
+        def stop(self) -> None:
+            calls.append("coordinator-stop")
+
+    def fail_session(*_args: object, **_kwargs: object):
+        raise OSError("intentional staging failure")
+
+    monkeypatch.setattr(batch, "BatchUI", FakeUI)
+    monkeypatch.setattr(batch, "IPCCoordinator", FakeCoordinator)
+    monkeypatch.setattr(batch, "hand_off_to_windows_terminal", lambda *_args: False)
+    monkeypatch.setattr(batch, "_ensure_console_window", lambda: None)
+    monkeypatch.setattr(batch, "MergeSession", fail_session)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(OSError, match="intentional staging failure"):
+        main(["--coordinator", "--merge", str(target), str(source)])
+
+    assert "ui-start" in calls
+    assert "ui-stop" in calls
+    assert "coordinator-start" in calls
+    assert "coordinator-stop" in calls
+    assert not list(tmp_path.glob(".hammerdown-merge-*"))
 
 
 def test_successful_rerun_removes_previous_asset_extensions(
@@ -213,7 +288,7 @@ def test_none_markdown_preserves_previous_merge_result(
     monkeypatch.setitem(core.CONVERTERS, ".md", return_no_markdown)
     assert _run(source, tmp_path, "merge", monkeypatch) == 1
     assert _combined_snapshot(markdown, assets) == before
-    assert not merge._MERGE_SESSIONS
+    assert not list(tmp_path.glob(".hammerdown-merge-*"))
     assert not list(tmp_path.glob(".hammerdown-*"))
 
 
@@ -230,10 +305,17 @@ def test_replace_failure_restores_previous_markdown_and_assets(
     before = _combined_snapshot(markdown, assets)
 
     real_replace = output.os.replace
+    installs = 0
 
     def fail_asset_install(source_path: str | Path, target_path: str | Path) -> None:
-        if Path(target_path) == assets and Path(source_path).name == assets.name:
-            raise OSError("intentional asset install failure")
+        nonlocal installs
+        if (
+            Path(source_path).name == assets.name
+            and Path(source_path).parent.name.startswith(".hammerdown-")
+        ):
+            installs += 1
+            if installs == 1:
+                raise OSError("intentional asset install failure")
         real_replace(source_path, target_path)
 
     monkeypatch.setattr(output.os, "replace", fail_asset_install)
@@ -241,51 +323,34 @@ def test_replace_failure_restores_previous_markdown_and_assets(
     assert _combined_snapshot(markdown, assets) == before
     assert not list(tmp_path.glob("*.hammerdown-backup-*"))
     assert not list(tmp_path.glob(".hammerdown-*"))
-    assert not merge._MERGE_SESSIONS
+    assert not list(tmp_path.glob(".hammerdown-merge-*"))
 
 
-def test_batch_exception_before_append_cleans_merge_session(
+def test_batch_conversion_exception_aborts_merge_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "source.md"
     source.write_text(_markdown_with_images(1), encoding="utf-8")
     target = tmp_path / "merged.md"
+    target.write_text("previous merge\n", encoding="utf-8")
+    assets = tmp_path / "hm_merged_into_merged_images"
+    assets.mkdir()
+    (assets / "previous.png").write_bytes(b"previous asset")
 
-    def fail_before_append(*_args: object, **_kwargs: object) -> None:
-        raise RuntimeError("intentional append failure")
+    def raise_conversion(*_args: object, **_kwargs: object) -> tuple[str | None, int]:
+        raise RuntimeError("intentional conversion exception")
 
-    monkeypatch.setattr(batch, "append_merged_document", fail_before_append)
-    with pytest.raises(RuntimeError, match="intentional append failure"):
+    monkeypatch.setattr(batch, "convert_file", raise_conversion)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match="intentional conversion exception"):
         main(["--merge", str(target), str(source)])
-    gc.collect()
 
-    assert not merge._MERGE_SESSIONS
-    assert not target.exists()
+    assert not list(tmp_path.glob(".hammerdown-merge-*"))
+    assert target.read_text(encoding="utf-8") == "previous merge\n"
+    assert (assets / "previous.png").read_bytes() == b"previous asset"
     assert not list(tmp_path.glob(".hammerdown-*"))
 
-
-def test_stale_merge_lease_cannot_remove_new_session(tmp_path: Path) -> None:
-    source = tmp_path / "source.md"
-    target = tmp_path / "merged.md"
-    source.write_text("content\n", encoding="utf-8")
-
-    old_handle, _ = merge.merge_asset_paths(source, tmp_path, target)
-    old_session = merge._MERGE_SESSIONS[target.resolve()]
-    merge._discard_merge_session(old_session)
-    new_handle, _ = merge.merge_asset_paths(source, tmp_path, target)
-    new_session = merge._MERGE_SESSIONS[target.resolve()]
-
-    assert not old_handle.parent.exists()
-    assert new_handle.parent.is_dir()
-    assert old_handle / "child"
-    del old_handle
-    gc.collect()
-
-    assert merge._MERGE_SESSIONS[target.resolve()] is new_session
-    del new_handle
-    gc.collect()
-    assert not merge._MERGE_SESSIONS
 
 def test_stdout_conversion_does_not_create_output_files(
     tmp_path: Path,
