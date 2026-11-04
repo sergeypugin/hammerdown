@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- Gitingest-compatible ordered include/exclude filtering, ignore-file discovery, tree mode, and all-format tree conversion
+- File-manager actions for merge, tree, and tree with all formats across Windows, Linux, and macOS
+- Idempotent output handling, stale asset cleanup, skip-existing behavior, and clearer batch result accounting
+- Bounded Google downloads and ZIP extraction; authenticated and bounded coordinator IPC
+
+### Fixed
+- Output target safety, failed-merge rollback, stdout/stderr separation, and coordinator option propagation
+- Platform launcher quoting, coordinator lifecycle/restart races, legacy Office temporary-file cleanup, and text overwrite coverage
+- Updater download limits, SHA-256 verification, and safe Windows update handoff
+
+### Changed
+- Generated image numbering starts at one; CLI option names are case-insensitive while preserving path/value case
+- Documentation and integration behavior updated for filters, outputs, tree workflows, and platform launchers
+
+---
+
 ## [3.2.2] - 2026-10-29
 
 ### Fixed
