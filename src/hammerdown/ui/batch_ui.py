@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, Any, Callable, TextIO, TypeVar, cast
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _synchronized(func: _F) -> _F:
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return func(self, *args, **kwargs)
+    return cast(_F, wrapper)
 
 from .batch_ui_render import (
     add_queue_columns as _add_queue_columns,
@@ -78,6 +88,7 @@ class BatchUI:
         self._logger_was_disabled = False
         self._live = None
         self._console: Console | None = None
+        self._lock = threading.RLock()
 
     def start(self) -> None:
         if not self.can_redraw:
@@ -244,6 +255,7 @@ class BatchUI:
             )
         )
 
+    @_synchronized
     def render(self) -> None:
         if self._live is not None:
             self._live.update(_LiveBatchRenderable(self), refresh=True)
@@ -263,6 +275,7 @@ class BatchUI:
     def _estimate_label(self, index: int) -> str:
         return _estimate_label(self, index)
 
+    @_synchronized
     def start_file(self, index: int, hint: str = "") -> None:
         self.current_idx = index
         self._progress_started_at = time.monotonic()
@@ -281,6 +294,7 @@ class BatchUI:
         else:
             logger.info("Processing %s%s...", self.files[index].name, f" {hint}" if hint else "")
 
+    @_synchronized
     def update_progress(self, index: int, current: int, total: int, unit: str = "pages") -> None:
         if total <= 0:
             return
@@ -294,6 +308,7 @@ class BatchUI:
         if self.can_redraw and time.monotonic() - self._progress_started_at >= PROGRESS_DISPLAY_DELAY:
             self.render()
 
+    @_synchronized
     def fail_file(self, index: int, reason: str) -> None:
         self.statuses[index] = "[!]"
         self.details[index] = "-"
@@ -304,6 +319,7 @@ class BatchUI:
         if self.can_redraw:
             self.render()
 
+    @_synchronized
     def skip_file(self, index: int, reason: str) -> None:
         self.statuses[index] = "[~]"
         self.details[index] = "-"
@@ -314,6 +330,7 @@ class BatchUI:
         if self.can_redraw:
             self.render()
 
+    @_synchronized
     def complete_file(
         self,
         index: int,

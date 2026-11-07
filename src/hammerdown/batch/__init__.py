@@ -10,13 +10,17 @@ from pathlib import Path
 from typing import Sequence
 
 from ..core import (
+    ConversionResult,
     TEXT_EXTENSIONS,
     convert_file,
     get_conversion_estimate_seconds,
     get_output_path,
 )
+from ..core.job import ConversionJob, prepare_conversion
 from ..core.discovery import DiscoveredTarget, DiscoveryResult, discover_paths, discover_tree, output_paths as compute_output_paths
 from ..core.google_drive import download_google_url, extract_file_id, is_google_drive_url
+from ..core.github import acquire_github, parse_github_locator
+from ..core.acquisition import acquire_inputs, validate_local_inputs
 from ..core.ipc import IPCCoordinator, try_delegate_to_coordinator
 from ..core.merge import (
     MergeSession,
@@ -35,8 +39,11 @@ from ..core.formatting import format_duration
 from ..core.filters import OrderedFilterValues
 from ..core.path_utils import normalize_path
 from ..core.platform_utils import is_windows
+from ..core.preflight import build_preflight_report, render_preflight_report
+from ..core.scheduler import create_scheduler, should_use_concurrent_scheduler
 
 logger = logging.getLogger("hammerdown")
+_prepare_conversion = prepare_conversion
 
 
 def _ensure_console_window() -> None:
@@ -116,9 +123,12 @@ def run_batch(args: argparse.Namespace) -> int:
 
 def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
     raw_files = args.files
+    initial_input_paths = list(raw_files)
     merge_requested = getattr(args, "merge", None)
     merge_auto = getattr(args, "merge_auto", False)
     tree_mode = getattr(args, "tree", False)
+    dir_struct = getattr(args, "dir_struct", False)
+    structure_mode = tree_mode or dir_struct
     all_formats = getattr(args, "all_formats", False)
 
     if tree_mode:
@@ -133,55 +143,100 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         logger.info("No supported documents found to convert")
         return 0
 
-    # Resolve Google Docs/Drive file URLs by downloading them first.
-    google_downloaded: set[str] = set()
-    google_failed: list[tuple[str, str]] = []
-    resolved_files: list[str] = []
-    for raw in raw_files:
-        if is_google_drive_url(raw):
-            try:
-                cached = download_google_url(raw, google_staging_dir)
-                if cached is None:
-                    google_failed.append((raw, "unsupported Google Drive link"))
-                    continue
-                google_downloaded.add(str(cached.resolve()))
-                resolved_files.append(str(cached))
-                logger.info("Downloaded %s to %s", raw, cached.name)
-            except urllib.error.HTTPError as e:
-                if e.code in (401, 403):
-                    category = "access denied"
-                elif e.code == 404:
-                    category = "not found"
-                elif e.code == 429:
-                    category = "rate limited"
-                elif 500 <= e.code <= 599:
-                    category = "server error"
-                else:
-                    category = "HTTP error"
-                reason = f"{category} (HTTP {e.code})"
-                google_failed.append((raw, reason))
-                logger.error("Could not download Google Drive URL: %s (%s)", raw, reason)
-            except (urllib.error.URLError, OSError, ValueError) as e:
-                google_failed.append((raw, f"download error: {e}"))
-                logger.error("Could not download Google Drive URL: %s (%s)", raw, e)
-        else:
-            resolved_files.append(raw)
-    raw_files = resolved_files
-
+    # Validate local paths, output paths and filters before any remote acquisition.
     output_dir = getattr(args, "output_dir", None)
     output_root = Path(output_dir).resolve() if output_dir else None
     if output_root is not None and output_root.exists() and not output_root.is_dir():
         logger.error("output directory path is not a directory: %s", output_root)
         return 1
-
     discovery_merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
-
     from ..core.filters import compile_cli_filters
-
-    include_spec, exclude_spec = compile_cli_filters(
-        getattr(args, "include", []),
-        getattr(args, "exclude", []),
+    try:
+        include_spec, exclude_spec = compile_cli_filters(
+            getattr(args, "include", []),
+            getattr(args, "exclude", []),
+        )
+    except (TypeError, ValueError) as exc:
+        logger.error("invalid filter pattern: %s", exc)
+        return 1
+    input_errors = validate_local_inputs(
+        raw_files,
+        allow_github_repository_root=structure_mode,
+        google_url_checker=is_google_drive_url,
     )
+    remote_inputs = [
+        raw
+        for raw in raw_files
+        if is_google_drive_url(raw)
+        or parse_github_locator(raw, allow_repository_root=structure_mode) is not None
+    ]
+    if input_errors and remote_inputs:
+        for path, reason in input_errors:
+            logger.error("%s: %s", path, reason)
+        return 1
+
+    # Resolve all remote inputs in one run-owned staging pass before discovery.
+    allow_github_root = structure_mode
+    acquired = acquire_inputs(
+        raw_files,
+        google_staging_dir,
+        allow_github_repository_root=allow_github_root,
+        google_downloader=download_google_url,
+        google_url_checker=is_google_drive_url,
+        github_acquirer=acquire_github,
+    )
+    google_downloaded = {
+        str(item.local_path.resolve())
+        for item in acquired.inputs
+        if item.provenance.get("kind") == "google" and item.local_path is not None
+    }
+    github_downloaded = {
+        str(item.local_path.resolve())
+        for item in acquired.inputs
+        if item.provenance.get("kind") == "github" and item.local_path is not None
+    }
+    acquisition_failed = [
+        (item.original, item.error or "input acquisition failed", item.provenance.get("kind"))
+        for item in acquired.inputs
+        if item.error is not None
+    ]
+    resolved_files = [
+        str(item.local_path)
+        for item in acquired.inputs
+        if item.local_path is not None
+    ]
+    raw_files = resolved_files
+
+    if getattr(args, "tokens", False) or getattr(args, "report_time", False) or dir_struct:
+        targets_for_report = (
+            discover_tree(
+                resolved_files,
+                include_patterns=include_spec,
+                exclude_patterns=exclude_spec,
+                all_formats=True if dir_struct and not getattr(args, "all_formats", False) else all_formats,
+                include_gitignored=getattr(args, "include_gitignored", False),
+            )
+            if dir_struct
+            else discover_paths(
+                resolved_files,
+                include_patterns=include_spec,
+                exclude_patterns=exclude_spec,
+                include_gitignored=getattr(args, "include_gitignored", False),
+            )
+        )
+        if acquired.errors:
+            targets_for_report.errors.extend(acquired.errors)
+        report = build_preflight_report(resolved_files, targets_for_report)
+        rendered_report = render_preflight_report(
+            report,
+            tokens=getattr(args, "tokens", False),
+            timing=getattr(args, "report_time", False),
+            structure=dir_struct,
+        )
+        print(rendered_report, end="")
+        return 1 if acquired.errors or targets_for_report.errors else 0
+
+
 
     def discover(paths: Sequence[str]) -> DiscoveryResult:
         if tree_mode:
@@ -245,13 +300,13 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         targets.append((generated, "all input resources are generated outputs; no input resources to convert", None))
     discovery_skips = skips_from_discovery(discovery, raw_files)
     ignore_files = list(discovery.ignore_files)
-    # Surface Google links that could not be downloaded as explicit errors
-    for url, reason in google_failed:
-        # Give a readable label instead of just Path(url).name (which is often "edit")
-        label = url
-        file_id = extract_file_id(url)
-        if file_id:
-            label = f"Google Doc ({file_id[:8]}...)"
+    for input_path, reason, kind in acquisition_failed:
+        label = input_path
+        if kind == "google":
+            file_id = extract_file_id(input_path)
+            if file_id:
+                label = f"Google Doc ({file_id[:8]}...)"
+        logger.error("%s: %s", label, reason)
         targets.append((label, reason, None))
     targets.sort(key=lambda item: item[0].lower())
     files = [path for path, error, _ in targets if error is None]
@@ -352,7 +407,13 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             args.include_gitignored = delegated["include_gitignored"]
             include_spec, exclude_spec = compile_cli_filters(args.include, args.exclude)
             discovery_merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
-        rescan_paths = [*raw_files, *collected_files]
+        local_rescan_inputs = [
+            path
+            for path in initial_input_paths
+            if not is_google_drive_url(path)
+            and parse_github_locator(path, allow_repository_root=structure_mode) is None
+        ]
+        rescan_paths = [*local_rescan_inputs, *raw_files, *collected_files]
         rescanned = discover(rescan_paths)
         targets = targets_from_discovery(rescanned, rescan_paths)
         if not targets and rescanned.generated_outputs:
@@ -512,147 +573,240 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
     conversion_finished = False
     merge_session: MergeSession | None = None
     try:
-        if merge_target is not None and not merge_skipped:
-            merge_session = MergeSession(merge_target)
-        for idx, (f, error, category) in enumerate(targets):
-            f_path = Path(f)
-            if error:
-                batch_ui.fail_file(idx, error)
-                results.append(False)
-                continue
+        use_concurrent = should_use_concurrent_scheduler(
+            merge=merge_target is not None,
+            tree=tree_mode,
+            dir_struct=dir_struct,
+            stdout=getattr(args, "stdout", False),
+        )
+        if use_concurrent:
+            scheduler = create_scheduler(prepare_fn=_prepare_conversion)
+            jobs: list[ConversionJob] = []
+            for idx, (f, error, category) in enumerate(targets):
+                if error is not None:
+                    continue
+                f_path = Path(f)
+                output_path = target_paths[idx]
+                is_google_cache = str(f_path.resolve()) in google_downloaded or str(f_path.resolve()) in github_downloaded
+                output_dir_for_job = (
+                    output_path.parent
+                    if output_root is not None or is_google_cache
+                    else f_path.parent
+                )
+                job = ConversionJob(
+                    source=f_path,
+                    output_path=(
+                        f_path
+                        if args.overwrite and f_path.suffix.lower() in TEXT_EXTENSIONS and not is_google_cache
+                        else output_path
+                    ),
+                    resource_dir=output_dir_for_job,
+                    skip_existing=args.skip_existing,
+                    batch_mode=True,
+                    input_index=idx,
+                )
+                jobs.append(job)
 
-            estimate = estimates[idx]
-            hint = f"~{format_duration(estimate)}" if estimate is not None else ""
-            batch_ui.start_file(idx, hint=hint)
-            extension = f_path.suffix.lower()
-            output_path = target_paths[idx]
-            status_info = ""
-            if merge_target is not None:
-                if merge_skipped:
-                    status_info = f"skipped, existing merge output: {merge_target.name}"
-            elif args.skip_existing and output_path.exists():
-                status_info = f"skipped, existing output: {output_path.name}"
-            elif args.overwrite and extension in TEXT_EXTENSIONS:
-                status_info = "overwritten"
-            elif args.overwrite:
-                status_info = "overwrite ignored (binary file)"
+            def on_job_start(job: ConversionJob) -> None:
+                if job.input_index is not None:
+                    idx = job.input_index
+                    estimate = estimates[idx]
+                    hint = f"~{format_duration(estimate)}" if estimate is not None else ""
+                    batch_ui.start_file(idx, hint=hint)
 
-            if merge_skipped and merge_target is not None:
-                reason = f"existing merge output: {merge_target.name}"
-                batch_ui.skip_file(idx, reason)
-                results.append(True)
-                continue
+            def on_job_progress(job: ConversionJob, current: int, total: int, unit: str = "pages") -> None:
+                if job.input_index is not None:
+                    batch_ui.update_progress(job.input_index, current, total, unit)
 
-            # Directly skip if the output exists to avoid re-parsing
-            if args.skip_existing and output_path.exists() and merge_target is None:
-                reason = f"existing output: {output_path.name}"
-                batch_ui.skip_file(idx, reason)
-                results.append(True)
-                continue
+            scheduled_iter = scheduler.schedule(
+                jobs,
+                on_start=on_job_start,
+                on_progress=on_job_progress,
+            )
 
-            def on_progress(current: int, total: int, unit: str = "pages") -> None:
-                batch_ui.update_progress(idx, current, total, unit)
-
-            def on_complete(success: bool, dur: float, imgs: int, tokens: int) -> None:
-                batch_ui.complete_file(idx, success, dur, imgs, tokens, status_info)
-
-            error_count_before = len(batch_ui.errors)
-            logger_was_disabled = logger.disabled
-            logger.disabled = True
-            is_google_cache = str(f_path.resolve()) in google_downloaded
             try:
-                if category == "source_code":
-                    res = convert_source_text(f_path)
-                    if res.success:
-                        on_complete(True, 0.0, 0, len(res.markdown or ""))
-                else:
-                    res = convert_file(
-                        f_path,
-                        overwrite=args.overwrite and not is_google_cache,
-                        skip_existing=args.skip_existing if merge_target is None else False,
-                        progress_callback=on_progress,
-                        completion_callback=on_complete,
-                        batch_mode=True,
-                        target_dir=(
-                            output_path.parent
-                            if merge_target is None and (output_root is not None or is_google_cache)
-                            else None
-                        ),
-                        asset_dir=(
-                            merge_asset_paths(f_path, merge_root, merge_target, merge_session)[0]
-                            if merge_target is not None and merge_root is not None
-                            else None
-                        ),
-                        write_markdown=merge_target is None,
-                        merge_session=merge_session,
-                    )
-            finally:
-                logger.disabled = logger_was_disabled
-            succeeded = bool(res)
-            if not succeeded:
-                reason = getattr(res, "error", None) or "conversion failed"
-                if len(batch_ui.errors) > error_count_before:
-                    name, previous_reason = batch_ui.errors[-1]
-                    batch_ui.errors[-1] = (name, reason or previous_reason)
-                else:
-                    batch_ui.errors.append((f_path.name, reason))
+                for idx, (f, error, category) in enumerate(targets):
+                    f_path = Path(f)
+                    if error:
+                        batch_ui.fail_file(idx, error)
+                        results.append(False)
+                        continue
 
-                if merge_target is not None and merge_root is not None:
-                    try:
-                        if not merge_initialized:
-                            initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
-                            merge_initialized = True
-                        _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
-                        is_binary = _is_binary_file(f_path)
-                        append_merged_document(
-                            merge_target,
-                            f_path,
-                            "",
-                            merge_root,
-                            asset_prefix,
-                            error=reason,
-                            session=merge_session,
-                            is_binary=is_binary,
+                    res = next(scheduled_iter)
+                    output_path = target_paths[idx]
+                    extension = f_path.suffix.lower()
+                    is_google_cache = str(f_path.resolve()) in google_downloaded or str(f_path.resolve()) in github_downloaded
+                    status_info = ""
+                    if res.status == "skipped":
+                        status_info = f"skipped, existing output: {output_path.name}"
+                    elif args.overwrite and extension in TEXT_EXTENSIONS and not is_google_cache:
+                        status_info = "overwritten"
+                    elif args.overwrite:
+                        status_info = "overwrite ignored (binary file)"
+
+                    cleanup_error = getattr(res, "cleanup_error", None)
+                    if cleanup_error:
+                        logger.warning(
+                            "Staging cleanup failed for %s: %s",
+                            f_path.name,
+                            cleanup_error,
                         )
-                    except OSError:
-                        pass
-            if succeeded and merge_target is not None and merge_root is not None:
-                if res.markdown is None:
-                    succeeded = False
-                    batch_ui.converted_count -= 1
-                    batch_ui.statuses[idx] = "[!]"
-                    batch_ui.details[idx] = "-"
-                    batch_ui.errors.append((f_path.name, "conversion returned no Markdown for merge"))
-                else:
-                    try:
-                        if not merge_initialized:
-                            initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
-                            merge_initialized = True
-                        _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
-                        is_binary = _is_binary_file(f_path)
-                        append_merged_document(
-                            merge_target,
+
+                    if res.status == "skipped":
+                        batch_ui.skip_file(idx, f"existing output: {output_path.name}")
+                        results.append(True)
+                    elif res.success:
+                        batch_ui.complete_file(idx, True, res.duration, res.images, res.tokens, status_info)
+                        results.append(True)
+                    else:
+                        reason = getattr(res, "error", None) or "conversion failed"
+                        batch_ui.complete_file(idx, False, res.duration, 0, 0, reason)
+                        results.append(False)
+            finally:
+                if not conversion_finished:
+                    scheduler.cancel()
+        else:
+            if merge_target is not None and not merge_skipped:
+                merge_session = MergeSession(merge_target)
+            for idx, (f, error, category) in enumerate(targets):
+                f_path = Path(f)
+                if error:
+                    batch_ui.fail_file(idx, error)
+                    results.append(False)
+                    continue
+
+                estimate = estimates[idx]
+                hint = f"~{format_duration(estimate)}" if estimate is not None else ""
+                batch_ui.start_file(idx, hint=hint)
+                extension = f_path.suffix.lower()
+                output_path = target_paths[idx]
+                status_info = ""
+                if merge_target is not None:
+                    if merge_skipped:
+                        status_info = f"skipped, existing merge output: {merge_target.name}"
+                elif args.skip_existing and output_path.exists():
+                    status_info = f"skipped, existing output: {output_path.name}"
+                elif args.overwrite and extension in TEXT_EXTENSIONS:
+                    status_info = "overwritten"
+                elif args.overwrite:
+                    status_info = "overwrite ignored (binary file)"
+
+                if merge_skipped and merge_target is not None:
+                    reason = f"existing merge output: {merge_target.name}"
+                    batch_ui.skip_file(idx, reason)
+                    results.append(True)
+                    continue
+
+                # Directly skip if the output exists to avoid re-parsing
+                if args.skip_existing and output_path.exists() and merge_target is None:
+                    reason = f"existing output: {output_path.name}"
+                    batch_ui.skip_file(idx, reason)
+                    results.append(True)
+                    continue
+
+                def on_progress(current: int, total: int, unit: str = "pages") -> None:
+                    batch_ui.update_progress(idx, current, total, unit)
+
+                def on_complete(success: bool, dur: float, imgs: int, tokens: int) -> None:
+                    batch_ui.complete_file(idx, success, dur, imgs, tokens, status_info)
+
+                error_count_before = len(batch_ui.errors)
+                logger_was_disabled = logger.disabled
+                logger.disabled = True
+                is_google_cache = str(f_path.resolve()) in google_downloaded
+                try:
+                    if category == "source_code":
+                        res = convert_source_text(f_path)
+                        if res.success:
+                            on_complete(True, 0.0, 0, len(res.markdown or ""))
+                    else:
+                        res = convert_file(
                             f_path,
-                            res.markdown,
-                            merge_root,
-                            asset_prefix,
-                            is_binary=is_binary,
-                            session=merge_session,
+                            overwrite=args.overwrite and not is_google_cache,
+                            skip_existing=args.skip_existing if merge_target is None else False,
+                            progress_callback=on_progress,
+                            completion_callback=on_complete,
+                            batch_mode=True,
+                            target_dir=(
+                                output_path.parent
+                                if merge_target is None and (output_root is not None or is_google_cache)
+                                else None
+                            ),
+                            asset_dir=(
+                                merge_asset_paths(f_path, merge_root, merge_target, merge_session)[0]
+                                if merge_target is not None and merge_root is not None
+                                else None
+                            ),
+                            write_markdown=merge_target is None,
+                            merge_session=merge_session,
                         )
-                        merged_count += 1
-                    except OSError as exc:
+                finally:
+                    logger.disabled = logger_was_disabled
+                succeeded = bool(res)
+                if not succeeded:
+                    reason = getattr(res, "error", None) or "conversion failed"
+                    if len(batch_ui.errors) > error_count_before:
+                        name, previous_reason = batch_ui.errors[-1]
+                        batch_ui.errors[-1] = (name, reason or previous_reason)
+                    else:
+                        batch_ui.errors.append((f_path.name, reason))
+
+                    if merge_target is not None and merge_root is not None:
+                        try:
+                            if not merge_initialized:
+                                initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
+                                merge_initialized = True
+                            _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
+                            is_binary = _is_binary_file(f_path)
+                            append_merged_document(
+                                merge_target,
+                                f_path,
+                                "",
+                                merge_root,
+                                asset_prefix,
+                                error=reason,
+                                session=merge_session,
+                                is_binary=is_binary,
+                            )
+                        except OSError:
+                            pass
+                if succeeded and merge_target is not None and merge_root is not None:
+                    if res.markdown is None:
                         succeeded = False
                         batch_ui.converted_count -= 1
                         batch_ui.statuses[idx] = "[!]"
                         batch_ui.details[idx] = "-"
-                        batch_ui.errors.append((f_path.name, f"could not append to merge output: {exc}"))
-            results.append(succeeded)
-        if merge_session is not None:
-            try:
-                merge_session.finish()
-            except OSError as exc:
-                merge_commit_failed = True
-                batch_ui.errors.append((merge_session.target.name, f"could not commit merge output: {exc}"))
+                        batch_ui.errors.append((f_path.name, "conversion returned no Markdown for merge"))
+                    else:
+                        try:
+                            if not merge_initialized:
+                                initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
+                                merge_initialized = True
+                            _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
+                            is_binary = _is_binary_file(f_path)
+                            append_merged_document(
+                                merge_target,
+                                f_path,
+                                res.markdown,
+                                merge_root,
+                                asset_prefix,
+                                is_binary=is_binary,
+                                session=merge_session,
+                            )
+                            merged_count += 1
+                        except OSError as exc:
+                            succeeded = False
+                            batch_ui.converted_count -= 1
+                            batch_ui.statuses[idx] = "[!]"
+                            batch_ui.details[idx] = "-"
+                            batch_ui.errors.append((f_path.name, f"could not append to merge output: {exc}"))
+                results.append(succeeded)
+            if merge_session is not None:
+                try:
+                    merge_session.finish()
+                except OSError as exc:
+                    merge_commit_failed = True
+                    batch_ui.errors.append((merge_session.target.name, f"could not commit merge output: {exc}"))
         conversion_finished = True
     finally:
         if not conversion_finished:

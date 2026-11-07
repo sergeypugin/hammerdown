@@ -10,6 +10,11 @@ logger = logging.getLogger("hammerdown")
 
 ProgressCallback = Callable[[int, int, str], None]
 
+# Raising this cap gave no stable throughput gain in 30-page benchmarks,
+# so keep the native page pool bounded.
+PDF_WORKER_CAP = 4
+PDF_CHUNK_SIZE_PAGES: int | None = 32
+
 
 def convert_pdf_or_ebook(
     file_path: str,
@@ -28,7 +33,14 @@ def convert_pdf_or_ebook(
 
     if page_count > 1:
         cpu_cnt = os.cpu_count() or 4
-        chunk_size = max(2, (page_count + cpu_cnt - 1) // cpu_cnt)
+        if PDF_CHUNK_SIZE_PAGES is None:
+            chunk_size = max(2, (page_count + cpu_cnt - 1) // cpu_cnt)
+        else:
+            if not isinstance(PDF_CHUNK_SIZE_PAGES, int) or isinstance(PDF_CHUNK_SIZE_PAGES, bool):
+                raise ValueError("PDF_CHUNK_SIZE_PAGES must be a positive integer or None")
+            if PDF_CHUNK_SIZE_PAGES <= 0:
+                raise ValueError("PDF_CHUNK_SIZE_PAGES must be a positive integer or None")
+            chunk_size = PDF_CHUNK_SIZE_PAGES
         page_chunks = [
             list(range(i, min(i + chunk_size, page_count)))
             for i in range(0, page_count, chunk_size)
@@ -67,7 +79,7 @@ def convert_pdf_or_ebook(
         if progress_callback:
             progress_callback(0, page_count, "pages")
 
-        worker_count = min(len(page_chunks), cpu_cnt)
+        worker_count = min(len(page_chunks), cpu_cnt, PDF_WORKER_CAP)
         with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
             future_to_chunk = [executor.submit(_convert_chunk_worker, chunk) for chunk in page_chunks]
             chunk_results = [f.result() for f in future_to_chunk]

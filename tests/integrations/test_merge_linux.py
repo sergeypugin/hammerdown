@@ -103,12 +103,23 @@ def test_desktop_merge_action_uses_merge_auto_command() -> None:
     assert merge_action["Icon"] == "hammerdown_merge"
 
 
+
+def test_desktop_tree_actions_use_exact_commands() -> None:
+    sections = _parse_desktop(_desktop_file_content('"hammerdown"'))
+
+    assert sections["Desktop Action Tree"]["Exec"] == '"hammerdown" --tree %F'
+    assert sections["Desktop Action TreeAll"]["Exec"] == (
+        '"hammerdown" --tree --all-formats %F'
+    )
+
+
 def test_kde_servicemenu_lists_merge_strictly_second() -> None:
     sections = _parse_desktop(_kde_servicemenu_content('"hammerdown"'))
 
     assert sections["Desktop Entry"]["Actions"] == (
         "HammerDown;HammerDownMerge;HammerDownTree;HammerDownTreeAll;"
     )
+    assert sections["Desktop Entry"]["X-KDE-Submenu"] == "Hammerdown"
     assert list(sections) == [
         "Desktop Entry",
         "Desktop Action HammerDown",
@@ -127,6 +138,16 @@ def test_kde_merge_action_uses_merge_auto_command() -> None:
     assert merge_action["Name"] == "Hammerdown and merge"
     assert merge_action["Exec"] == '"hammerdown" --coordinator --right-click --merge-auto %F'
     assert merge_action["Icon"] == "hammerdown_merge"
+
+
+
+def test_kde_tree_actions_use_exact_commands() -> None:
+    sections = _parse_desktop(_kde_servicemenu_content('"hammerdown"'))
+
+    assert sections["Desktop Action HammerDownTree"]["Exec"] == '"hammerdown" --tree %F'
+    assert sections["Desktop Action HammerDownTreeAll"]["Exec"] == (
+        '"hammerdown" --tree --all-formats %F'
+    )
 
 
 def test_merge_icon_mapping_resolves_to_existing_fallback() -> None:
@@ -154,6 +175,10 @@ def test_install_writes_merge_action_to_desktop_file(installed_home: Path) -> No
     assert sections["Desktop Entry"]["Actions"] == "Merge;Tree;TreeAll;"
     assert _entries_in_order(sections) == list(ENTRY_NAMES)
     assert merge_action["Exec"] == f"{exec_cmd} --coordinator --right-click --merge-auto %F"
+    assert sections["Desktop Action Tree"]["Exec"] == f"{exec_cmd} --tree %F"
+    assert sections["Desktop Action TreeAll"]["Exec"] == (
+        f"{exec_cmd} --tree --all-formats %F"
+    )
 
 
 @pytest.mark.parametrize("kde_file", KDE_DESKTOP_FILES.values(), ids=KDE_DESKTOP_FILES.keys())
@@ -164,9 +189,14 @@ def test_install_writes_merge_action_to_kde_files(installed_home: Path, kde_file
     assert sections["Desktop Entry"]["Actions"] == (
         "HammerDown;HammerDownMerge;HammerDownTree;HammerDownTreeAll;"
     )
+    assert sections["Desktop Entry"]["X-KDE-Submenu"] == "Hammerdown"
     assert [sections[key]["Name"] for key in sections if key != "Desktop Entry"] == list(ENTRY_NAMES)
     assert sections["Desktop Action HammerDownMerge"]["Exec"] == (
         f"{exec_cmd} --coordinator --right-click --merge-auto %F"
+    )
+    assert sections["Desktop Action HammerDownTree"]["Exec"] == f"{exec_cmd} --tree %F"
+    assert sections["Desktop Action HammerDownTreeAll"]["Exec"] == (
+        f"{exec_cmd} --tree --all-formats %F"
     )
 
 
@@ -181,7 +211,12 @@ def test_install_writes_merge_script_for_each_file_manager(installed_home: Path,
     assert merge_script.read_text(encoding="utf-8") == (
         f'exec {shlex.quote(str(launcher))} --coordinator --right-click --merge-auto "$@"\n'
     )
-
+    assert (scripts_dir / "Hammerdown tree").read_text(encoding="utf-8") == (
+        f'exec {shlex.quote(str(launcher))} --tree "$@"\n'
+    )
+    assert (scripts_dir / "Hammerdown tree with all formats").read_text(encoding="utf-8") == (
+        f'exec {shlex.quote(str(launcher))} --tree --all-formats "$@"\n'
+    )
 
 def test_install_copies_merge_icon_from_existing_asset(installed_home: Path) -> None:
     source = _find_icon_pngs()["hammerdown_merge.png"]

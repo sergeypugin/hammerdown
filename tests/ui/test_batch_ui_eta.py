@@ -52,6 +52,23 @@ def test_batch_ui_shows_cached_estimates_and_total(tmp_path: Path):
     assert "Elapsed:" not in summary_output.getvalue()
 
 
+class _FakePrepared:
+    def __init__(self, job):
+        self.job = job
+        self.source = job.source
+        self.output_path = job.output_path
+        self.images = 0
+        self.tokens = 0
+        self.duration = 0.01
+        self.status = "prepared"
+        self.success = True
+        self.error = None
+
+    def commit(self):
+        self.status = "committed"
+        return self
+
+
 def test_run_batch_precomputes_all_estimates_before_conversion(tmp_path: Path, monkeypatch):
     first = tmp_path / "a.txt"
     second = tmp_path / "b.txt"
@@ -63,14 +80,12 @@ def test_run_batch_precomputes_all_estimates_before_conversion(tmp_path: Path, m
         events.append(("estimate", path.name))
         return 0.5
 
-    def convert(file_path, **kwargs):
-        source = Path(file_path)
-        events.append(("convert", source.name))
-        kwargs["completion_callback"](True, 0.01, 0, 0)
-        return True
-
     monkeypatch.setattr(batch, "get_conversion_estimate_seconds", estimate)
-    monkeypatch.setattr(batch, "convert_file", convert)
+    def prepare(job, progress_callback=None):
+        events.append(("convert", job.source.name))
+        return _FakePrepared(job)
+
+    monkeypatch.setattr(batch, "_prepare_conversion", prepare)
     args = argparse.Namespace(
         files=[str(first), str(second)],
         coordinator=False,

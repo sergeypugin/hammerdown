@@ -40,9 +40,9 @@ For `.pdf`, `.epub`, `.mobi`, `.fb2`, and `.xps` files, `hammerdown` reads the d
 flowchart TD
     A[PDF or e-book file] --> B{Page count}
     B -->|1 page| C[Convert in the main thread]
-    B -->|more than 1 page| D["chunk = max(2, ceil(pages / cpus))"]
+    B -->|more than 1 page| D["chunk = 32 pages"]
     D --> E[Split into contiguous page chunks]
-    E --> F[Thread pool with up to cpus workers]
+    E --> F["Thread pool with at most min(cpus, 4) workers"]
     F --> G[Append chunk results in page order]
     G --> H[Final Markdown]
     F -->|a chunk fails| I[Retry its pages one by one]
@@ -51,10 +51,10 @@ flowchart TD
     J --> G
 ```
 
-Because `pymupdf4llm` runs in a single stream by default, `hammerdown` takes over PDF chunking logic to parallelize conversion across all available CPU cores:
+Because `pymupdf4llm` runs in a single stream by default, `hammerdown` takes over PDF chunking logic to parallelize conversion while keeping memory use bounded:
 
-- workload chunking: pages are divided into continuous page blocks of size $\max(2, \lceil N_{\text{pages}} / N_{\text{cpu}} \rceil)$ rather than individual isolated pages
-- concurrent execution: page chunks are dispatched to a `ThreadPoolExecutor` with up to $N_{\text{cpu}}$ worker threads
+- workload chunking: pages are divided into continuous blocks of 32 pages rather than individual isolated pages
+- concurrent execution: page chunks are dispatched to a `ThreadPoolExecutor` with at most `min(cpu_count, 4)` worker threads
 
 For single-page documents ($N_{\text{pages}} = 1$), execution runs directly in the main thread to eliminate thread scheduling overhead.
 
@@ -62,7 +62,7 @@ For single-page documents ($N_{\text{pages}} = 1$), execution runs directly in t
 
 Distributing PDF extraction page-by-page (1 page per worker) introduces overhead compared to balanced continuous chunks:
 
-1. **Document re-opening cost**: each isolated `to_markdown(pages=[i])` call forces PyMuPDF4LLM to re-parse the document catalog, font tables, and XREF entries. Processing 100 pages individually re-initializes document metadata 100 times, whereas chunking by CPU core count re-initializes it only $N_{\text{cpu}}$ times.
+1. **Document re-opening cost**: each isolated `to_markdown(pages=[i])` call forces PyMuPDF4LLM to re-parse the document catalog, font tables, and XREF entries. Processing 100 pages individually re-initializes document metadata 100 times, whereas fixed 32-page chunks re-initialize it only four times.
 2. **Context preservation and layout continuity**: multi-page tables, continuous code blocks, and running headers spanning page boundaries are accurately merged when adjacent pages remain in the same chunk.
 3. **Queue and GIL overhead**: dispatching thousands of micro-tasks saturates thread pool queues without adding extra parallelism beyond physical CPU core capacity.
 
@@ -80,7 +80,7 @@ Because PyMuPDF4LLM performs layout analysis and reading-order reconstruction ac
 
 $$\text{Estimated Time} = \max(1.0,\; N_{\text{pages}} \times 0.9)$$
 
-On multi-core CPUs, concurrent chunk execution accelerates actual wall-clock processing time proportionally to available CPU cores and page count.
+On multi-core CPUs, concurrent chunk execution shortens wall-clock time until the worker cap is reached. Measured 30-page runs did not improve when the internal cap was raised from 4 to 10, so the cap stays at 4.
 
 Example log:
 ```text
@@ -106,7 +106,110 @@ Structured office documents and text are parsed directly from their XML archives
 Multi-threading is intentionally restricted to PDF documents:
 - PDF files require visual page-layout reconstruction, font raster analysis, and vector curve extraction (~0.8--1.0s per page), making multi-threaded page chunking essential for responsive processing
 - structured office documents (`.docx`, `.odt`, `.xlsx`) parse nearly instantaneously (<0.1s total), so introducing thread scheduling overhead would degrade rather than improve conversion speed
-- batch conversion across files runs sequentially in a single loop, so there is no multi-process parallelism; the only thread pools in the project are the PDF page-chunk pool and the golden-test pool
+- batch conversion runs through a bounded in-process pipeline, not a sequential loop and not multi-process parallelism
+
+#### Batch Scheduler Policy
+
+The batch scheduler keeps a small in-flight window of conversions and commits staged results in input order, so a fast file does not jump ahead of an earlier slow file in the user-visible output.
+
+Concurrency bounds are separate by resource type:
+- `heavy` covers formats that perform substantial parsing in native extensions
+- `pdf` covers `.pdf`, `.epub`, `.mobi`, `.fb2`, and `.xps`, because they all use the same page-pool parser; the default is one PDF-like job at a time
+- `legacy` covers `.doc`, `.xls`, and `.ppt`, which drive external office applications; the default is one legacy job at a time
+- text formats do not consume heavy permits
+
+The PDF permit is separate from the heavy permit on purpose. A PDF job that is waiting for the PDF slot must not occupy a heavy slot needed by a DOCX or XLSX job, otherwise a queue of PDFs can starve non-PDF work.
+
+
+#### Specialized Output Modes
+
+The IPC coordinator and the conversion scheduler are separate layers. The coordinator aggregates inputs from multiple launches; the bounded scheduler controls ordinary per-file conversion jobs. The current mode matrix is:
+
+| Mode | IPC coordinator | Bounded scheduler | Output behavior |
+| :--- | :--- | :--- | :--- |
+| ordinary per-file conversion | optional in coordinator mode | yes | staged results committed in input order |
+| `merge` | optional in coordinator mode | no | sequential merge session appends one ordered target |
+| `tree` | optional in coordinator-capable launchers | no | tree discovery followed by the ordered merge path |
+| `stdout` | explicitly disallowed | no | sequential conversion writes Markdown directly to stdout |
+
+`merge` and `tree` could be moved onto a concurrent staged-results pipeline, but that requires ordered target writes, isolated asset namespaces, cancellation rules, and atomic final publication. `stdout` has an additional ownership constraint: one process must own the output stream, so coordinator support would need an explicit result protocol instead of allowing multiple processes to write to stdout.
+
+#### Warm-up Decision
+
+No production pre-warm step is enabled. The available Office benchmark used three fresh CLI processes (`1.168s`, `1.110s`, and `1.445s` for the same legacy document), so it cannot separate Python startup, Office startup, filesystem cache, and converter warm-up. The PDF worker-cap and chunk-size experiments also used separate processes with alternating order to reduce cache bias; they were not controlled cold-versus-warm preheat experiments.
+
+The evidence does not show a repeatable user-visible benefit that would justify launching a dummy PDF or Office conversion before the real work. Keep warm-up as a future experiment only if a controlled cold/warm benchmark measures startup, peak memory, cancellation, and total end-to-end time separately.
+
+#### Measured Batch and PDF Worker Limits
+
+Measurements used the first 30 pages of an 812-page PDF on a 12-core machine. The full file was never converted. Each cell ran in a separate process, chunk boundaries were identical, and run order alternated to reduce warm-cache bias.
+
+| PDF worker cap | Runs | Median | Chunks | Output parity |
+| :--- | :--- | :--- | :--- | :--- |
+| 4 | 29.64s, 30.08s, 30.32s, 31.90s | 30.20s | 10 | SHA-256 matched |
+| 10 | 26.86s, 30.01s, 30.21s, 48.21s | 30.11s | 10 | SHA-256 matched |
+
+Peak resident memory in a separate pair of runs was 349.5 MB at cap 4 and 357.3 MB at cap 10. The medians differ by less than 0.3%, while the slowest cap-10 run took 48.2s. Raising the cap therefore produced no stable speedup and slightly more variance.
+
+Two PDFs converted at the same time with the outer scheduler also showed no stable gain:
+
+| Outer workers (inner cap 4) | Runs |
+| :--- | :--- |
+| 1 | 60.84s, 49.75s, 46.71s |
+| 2 | 58.82s, 51.68s, 50.21s |
+
+Both configurations produced identical output hashes. This is why the default keeps one PDF-like job active at a time; it is a conservative bound, not a claim that one is optimal on every machine.
+
+These numbers come from a 30-page sample, so they bound thread and memory behavior rather than predict full-book duration. Do not treat cap 4 as a tuned optimum on every CPU; it is a resource bound that showed no measurable time penalty in these runs.
+
+#### Mixed-Batch In-Flight Window
+
+The scheduler was also measured against the 13 supported inputs in `tests/inputs`, including PDFs, legacy Office documents, DOCX, ODT, XLSX, CSV, Markdown, and text. Each configuration used a separate process, the same inputs, full output hashing, and the same worker limit as its in-flight limit:
+
+| In-flight / workers | Runs | Pooled median | Output parity |
+| :--- | :--- | :--- | :--- |
+| 1 | 39.72s, 38.11s, 32.64s, 33.34s | 35.73s | all matched |
+| 2 | 33.84s, 31.50s, 34.76s, 32.78s | 33.31s | all matched |
+| 4 | 29.83s, 33.40s, 32.17s, 34.27s | 32.78s | all matched |
+
+The four-worker median was only 0.53s, or 1.6%, below the two-worker median, and it won only two of four paired comparisons. This is not enough evidence to change the default. The scheduler therefore keeps `in_flight_limit=2` as a conservative general-purpose setting. It is a measured default, not a universal optimum.
+
+A separate three-run legacy benchmark on `tests/inputs/report.doc` took 1.168s, 1.110s, and 1.445s, with identical output hashes. Each run started a new CLI process, so these numbers include Python and Office-engine startup and cannot distinguish process warm-up from OS or filesystem cache effects. They do not justify Office prewarming. The successful engine was not identified by the benchmark, because both the Microsoft Word COM and LibreOffice fallback paths are available on the machine.
+
+#### Why the Scheduler Does Not Yet Use a Unified Work-Unit Queue
+
+A possible future design is a single batch queue containing one task per ordinary file and several page-range tasks per PDF. For example, five PDFs with four chunks each could contribute 20 page tasks, while Word and text documents remain whole-file tasks. A global budget could then lend unused capacity between files instead of maintaining nested per-file pools.
+
+This is not enabled yet. Keeping the current per-file staging and commit boundary is safer until a prototype proves a benefit on mixed workloads. A naive implementation is unsafe because:
+
+- a PDF parent that waits for its own chunks in the same bounded pool can deadlock when all workers are occupied by waiting parents
+- a FIFO queue can starve ordinary files behind all chunks from one large PDF
+- chunks must be assembled by page range, while files and merge inputs must still be committed in input order
+- cancellation must wait for active native calls to stop before deleting staging; queued work must not commit late results
+- a global worker count alone does not bound memory or native-library thread usage
+
+If the unified design is revisited, the first implementation should use a batch-scoped scheduler with non-blocking PDF coordinators, bounded chunks admitted round-robin per file, one global work budget, and the existing per-file staging/commit boundary. Word and text documents should remain whole-file tasks unless their converters gain a safe independent split point. Before enabling it, compare the current scheduler with the prototype on a mixed set containing short two-page PDFs, longer PDFs, and ordinary files, recording total time, per-file latency, peak RSS, fairness, cancellation behavior, and output hashes.
+
+A two-page PDF is not split into two parallel tasks by the current implementation. The split branch is selected because `page_count > 1`, but `chunk_size` is at least two, so the document becomes one two-page chunk and uses one worker. Single-page PDFs bypass the pool entirely. The current PDF split is based on page count, not line count.
+
+#### Chunk-Size Experiment on a Large-Document Sample
+
+A benchmark converted the first 270 pages of an 812-page Harris PDF; the full book was not converted. The extracted sample is 10,352,509 bytes with SHA-256 `67507383b2ea31388633e0524ad45dbbca02dafcebf6046f2877483f49852cea`. The retained matrix records a 12-core host, worker cap 4, page ranges, output sizes, and hashes. The sample hash and the successful current, fixed-32, and fixed-64 outputs were independently checked against the retained files. Each policy was run three times in separate processes, with sequential and reverse ordering to reduce warm-cache bias.
+
+| Chunk policy | Chunks | Runs | Median | Output SHA-256 | Status |
+| :--- | ---: | :--- | ---: | :--- | :--- |
+| CPU-derived policy, 23 pages on this host | 12 | 293.731s, 267.162s, 244.943s | 267.162s | `9b510327bc7cecc40903ea82ae419b1ee10b0b33f11f711c7e09bf7fd191b1` | verified retained output |
+| fixed 32 pages | 9 | 245.189s, 238.291s, 218.543s | 238.291s | `ef5b286d3f62fb907a50019efde43c35b60e3aec6364709e43efaeb494f4c990` | verified retained output |
+| fixed 64 pages | 5 | 388.528s | -- | `e34e42af615d9b3c12ec2a2ac2204a5fd8bb4222bc309da5661a5a243c0c27e9` | exploratory comparison only |
+| fixed 96 pages | -- | -- | -- | -- | excluded: timeout report and retained file do not match |
+
+A bounded line comparison of the three valid outputs found 7,060 lines in each. After normalizing Markdown heading depth, the nonblank line sequences are identical, and all non-heading lines match exactly. Heading depth differs in 140 lines for fixed 32 pages (110 headings moved to a shallower level and 30 to a deeper level) and 240 lines for fixed 64 pages (all moved to a shallower level). This is a Markdown structure difference, not evidence of missing or reordered prose. The outputs are final concatenations, not per-chunk artifacts, so the changes cannot yet be mapped to specific seams or classified as caused by the chunk boundary.
+
+The old fixed-96 harness used `subprocess.run(timeout=...)` without verified process-tree cleanup, and its retained Markdown does not match the metadata. Exclude that artifact. The new private harness has a unique attempt directory, validates exit status and output hashes, and has passed parent/descendant timeout tests; no new large Harris benchmark has been run with it yet.
+
+Switch the production default to fixed 32-page chunks. Across three safe runs, the median was 238.291s versus 267.162s for the CPU-derived policy, an improvement of about 11%, and the fixed-32 output hash was stable. The valid outputs contain the same prose after heading-depth normalization, with no missing, duplicated, or reordered content found. Heading-depth differences remain a documented fidelity caveat, and the result is based on a 270-page sample rather than the full 812-page book. No production Markdown joiner is justified.
+
+The verified implementation contract is page-based chunking, ordered assembly, and a four-worker cap. A two-page PDF enters the chunking branch but remains one chunk containing pages 0 and 1, so it uses one worker; a single-page PDF bypasses the executor. A regression test now checks the two-page boundary explicitly.
 
 ### Why Python Multi-threading is Real Parallelism Here
 
@@ -134,3 +237,41 @@ Conversion durations are displayed in human-readable notation rather than raw se
 - under 1 minute: one decimal place, for example `0.5s` or `45.1s`
 - under 1 hour: minutes plus one decimal place of seconds, for example `1m 35.7s` or `12m 4.0s`
 - 1 hour and above: hours and whole minutes, for example `1h 30m` or `2h 0m`
+
+## Alternative Runtimes Investigation (Go and Rust)
+
+During Stage 8 architectural planning, empirical benchmarks were performed to test whether offloading process coordination or core logic to Go or Rust provides a measurable performance benefit.
+
+### 1. Finite State Machine (Rust vs Python)
+
+A synthetic benchmark tested execution speed on a deterministic finite state machine (1,000,000 events per iteration across 10 iterations) running on Linux (WSL Ubuntu):
+
+| Metric | Python 3.14 | Rust 1.99 (Release) | Difference |
+| :--- | :--- | :--- | :--- |
+| Warm throughput | 32.38M events/s | 130.62M events/s | 4.04x speedup |
+| Cold process start (median) | 201.86ms | 19.47ms | 10.37x faster |
+
+While Rust is substantially faster at pure algorithmic state evaluation, this does not translate to document conversion. In `hammerdown`, over 95% of wall-clock time is spent inside compiled C libraries (`PyMuPDF`, `onnxruntime`, XML parsers) and disk I/O. Rewriting the Python layer in Rust would save less than 0.3s on a 30s batch while adding build complexity, toolchain requirements, and cross-platform binary packaging overhead.
+
+### 2. Process Coordinator (Go vs Python)
+
+A benchmark evaluated process supervision and job dispatch overhead comparing a Go coordinator against a Python coordinator controlling long-lived Python worker processes.
+
+On a synthetic benchmark with small payload roundtrips:
+- 100 jobs: Go and Python performed identically (1.00x--1.03x speedup).
+- 2,000 jobs: Go was 1.15x--1.28x faster in queue dispatch overhead.
+
+However, when tested against the actual 13-document fixture suite (`tests/inputs`) containing real PDF, DOCX, XLSX, ODT, and text files:
+
+| Workers | Python Coordinator (Median) | Go Coordinator (Median) | Ratio | Output Parity (SHA-256) |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 worker | 34.38s | 32.62s | 1.054x | 13 / 13 matched |
+| 2 workers | 39.22s | 39.00s | 1.005x | 13 / 13 matched |
+| 4 workers | 39.51s | 39.65s | 0.996x | 13 / 13 matched |
+
+### Conclusion on External Languages
+
+1. Heavy document operations (PDF layout parsing, OCR, table extraction, DOCX conversion) dominate total duration. Supervision overhead between Go and Python accounts for under 1% of total batch runtime.
+2. Launching external CLI processes per file introduces 0.5s--1.0s of interpreter and C-extension startup overhead per invocation. A single batch process or long-lived worker pool is significantly faster than spawning separate CLI instances.
+3. Introducing Go or Rust sidecars creates deployment friction, multi-platform compilation requirements, and PyInstaller bundling issues without providing user-visible conversion speedups.
+4. The verified path for performance scaling in `hammerdown` is in-process concurrent task scheduling (`ThreadPoolExecutor` bounded by CPU/format requirements) using existing Python boundaries.

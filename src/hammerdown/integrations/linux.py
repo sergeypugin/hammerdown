@@ -84,7 +84,7 @@ def _kde_servicemenu_content(exec_cmd: str) -> str:
         f"MimeType={mimes}\n"
         "Actions=HammerDown;HammerDownMerge;HammerDownTree;HammerDownTreeAll;\n"
         "X-KDE-Priority=TopLevel\n"
-        "X-KDE-Submenu=\n"
+        "X-KDE-Submenu=Hammerdown\n"
         "\n"
         "[Desktop Action HammerDown]\n"
         "Name=Hammerdown\n"

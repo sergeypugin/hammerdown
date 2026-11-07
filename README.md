@@ -11,6 +11,8 @@
   <img src="assets/logo.svg" alt="hammerdown logo" width="220" height="220">
 </div>
 
+<p align="center"><em>Only the worthy can lift it</em></p>
+
 `hammerdown` is a cross-platform tool and Python library for converting PDF, Word, Excel, PowerPoint, OpenDocument, CSV, and plain-text documents into clean Markdown. Word charts are rendered as SVG, OpenDocument and Markdown images are extracted, and mathematical formulas are converted to LaTeX.
 
 The PDF pipeline is built on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM), which do the actual page-layout reconstruction and Markdown generation. This is the central feature the project was built around. Everything else -- routing, batch handling, merging, and file-manager integration -- is built around that core.
@@ -135,18 +137,21 @@ You can integrate `hammerdown` directly into your OS file manager to convert doc
 hammerdown --install
 ```
 
-What this does:
+After installation, Hammerdown adds four file-manager actions. Their exact presentation depends on the platform, but the actions have the same meaning:
 
-- on Windows: adds four actions to the File Explorer context menu for files and folders, creates matching **Send to** commands for first-level access in Windows 11, and activates an IPC coordinator to process multi-file selections in a single terminal window
-- on Linux: installs the launcher into `~/.local/bin`, installs a FreeDesktop application entry in `~/.local/share/applications/hammerdown.desktop` with MIME associations, registers KDE Dolphin ServiceMenus in `~/.local/share/kio/servicemenus` and `~/.local/share/kservices5/ServiceMenus`, and adds scripts for Nautilus, Nemo, and Caja
-- on macOS: installs the launcher into `~/.local/bin`, creates four Automator Quick Actions in `~/Library/Services`, and generates a drag-and-drop Droplet in `~/Applications/Hammerdown.app` with `CFBundleDocumentTypes` for Finder "Open With"
+- **Convert to Markdown** converts each selected file or recursively selected folder into separate Markdown output and any extracted assets
+- **Merge** converts the selected resources and combines successful results into one Markdown document
+- **Tree** collects supported text and source files into one tree document
+- **Tree with all formats** works like Tree and also includes supported document formats such as PDF, Word, Excel, PowerPoint, OpenDocument, e-books, and ZIP inputs
 
-After installation, the file-manager actions are exactly four:
+How to find the actions:
 
-- **Hammerdown** converts each selected file or recursively selected folder to its own `hm_*.md` file and asset folder
-- **Hammerdown and merge** combines the selected resources into `hammerdowned.md` next to the first resolved source document
-- **Hammerdown tree** selects Gitingest-like text and code files and combines them into one tree document
-- **Hammerdown tree with all formats** does the same as **Hammerdown tree**, and also includes supported Hammerdown document formats such as PDF, Word, Excel, PowerPoint, OpenDocument, e-book, and ZIP inputs
+| Platform or file manager | Where the actions appear |
+| :--- | :--- |
+| Windows File Explorer | A **Hammerdown** submenu with the four actions for selected files and folders; matching commands are also available in **Send to** |
+| KDE Dolphin | A **Hammerdown** submenu in the context menu |
+| Nautilus, Nemo, and Caja | Four separate file-manager actions or scripts |
+| macOS Finder | Four separate Quick Actions; the installed droplet is also available for drag and drop |
 
 On Windows, multi-file selections are collected by a hidden background coordinator and opened in a single Windows Terminal window titled `Hammerdown`, so selecting several documents never produces several console windows. When Windows Terminal is not installed, the same run falls back to one regular console window instead.
 
@@ -157,7 +162,7 @@ hammerdown --uninstall
 ```
 
 > [!note]
-> `hammerdown --install` updates all four file-manager actions and their Send to commands. Run it after upgrading to refresh launcher scripts.
+> `hammerdown --install` creates or refreshes the four file-manager actions supported by your platform. On Windows it also refreshes the **Send to** commands.
 
 #### Supported platforms for file-manager integration
 

@@ -41,6 +41,7 @@ from .google_drive import (
 )
 from .ipc import IPCCoordinator, try_delegate_to_coordinator
 from .merge import MergeSession
+from .scheduler import BatchScheduler, classify_format, create_scheduler, should_use_concurrent_scheduler
 
 logger = logging.getLogger("hammerdown")
 
@@ -374,6 +375,10 @@ def convert_file(
 
 
 __all__ = [
+    "BatchScheduler",
+    "classify_format",
+    "create_scheduler",
+    "should_use_concurrent_scheduler",
     "APP_DESCRIPTION",
     "APP_NAME",
     "DEFAULT_OVERWRITE",

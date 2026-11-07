@@ -37,6 +37,8 @@ tmp_ret = collect_all("hammerdown")
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 # Explicitly include symbols.json (PyInstaller may miss package-data)
 datas.append((str(Path(SPECPATH) / "src" / "hammerdown" / "parsers" / "math" / "symbols.json"), "hammerdown/parsers/math"))
+for asset_name in ("icon.ico", "icon_merge_gold.ico", "icon_tree_blue.ico", "icon_tree_all_red.ico"):
+    datas.append((str(Path(SPECPATH) / "src" / "hammerdown" / "assets" / asset_name), "hammerdown/assets"))
 
 a = Analysis(
     ["src/hammerdown/__main__.py"],

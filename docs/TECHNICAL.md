@@ -34,7 +34,7 @@ Key naming rules:
 
 - text and layout are reconstructed with [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM) on top of [PyMuPDF](https://pymupdf.readthedocs.io/), with OCR disabled (`use_ocr=False`)
 - the PDF path produces text-only Markdown: `convert_pdf_or_ebook` always reports `0` extracted images and never writes an asset folder
-- documents with more than one page are split into contiguous chunks of roughly `ceil(pages / cpu_count)` pages (minimum 2) and converted concurrently in a `ThreadPoolExecutor`
+- documents with more than one page are split into contiguous 32-page chunks and converted concurrently in a `ThreadPoolExecutor` capped at four workers
 - a chunk that fails falls back to safe per-page conversion, emitting an HTML comment warning for any page that cannot be parsed
 - the progress counter and callback are updated from worker threads and guarded by a lock
 - single-page documents convert on the main thread without a pool

@@ -280,6 +280,9 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--merge-auto", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stdout", action="store_true", help="Write the merged Markdown document to stdout")
+    parser.add_argument("--tokens", action="store_true", help="Report source and estimated token counts without converting")
+    parser.add_argument("--time", dest="report_time", action="store_true", help="Report conversion time estimates without converting")
+    parser.add_argument("--dir-struct", action="store_true", help="Report the selected directory structure without converting")
     parser.add_argument(
         "--confirm",
         action="store_true",
@@ -311,6 +314,9 @@ def _main(argv: Sequence[str] | None = None) -> int:
             args.merge_auto,
             args.stdout,
             args.confirm,
+            args.tokens,
+            args.report_time,
+            args.dir_struct,
             args.include_gitignored,
         )
     )
@@ -318,9 +324,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
         conversion_options_present or not (args.install or args.uninstall or args.update)
     ):
         parser.error("no input resources were provided")
-
-    args.include = validate_filter_patterns(parser, args.include, "--include")
-    args.exclude = validate_filter_patterns(parser, args.exclude, "--exclude")
 
     output_dir_values = args.output_dir or []
     output_dirs = {os.path.normcase(os.path.abspath(path)) for path in output_dir_values}
@@ -341,8 +344,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
             parser.error("--tree cannot be combined with -w/--overwrite")
 
     all_formats = getattr(args, "all_formats", False)
-    if all_formats and not tree_mode:
-        parser.error("--all-formats can only be used with --tree")
+    if all_formats and not tree_mode and not args.dir_struct:
+        parser.error("--all-formats can only be used with --tree or --dir-struct")
 
     if args.output_dir and args.overwrite:
         parser.error("-w/--overwrite cannot be combined with -o/--output-dir")
@@ -352,6 +355,21 @@ def _main(argv: Sequence[str] | None = None) -> int:
         parser.error("-o/--output-dir cannot be used in coordinator mode")
     if args.confirm and not args.stdout:
         parser.error("--confirm can only be used with --stdout")
+    report_mode = args.tokens or args.report_time or args.dir_struct
+    if args.tree and args.dir_struct:
+        parser.error("--tree cannot be combined with --dir-struct")
+    if report_mode and args.merge:
+        parser.error("report modes cannot be combined with --merge")
+    if report_mode and args.merge_auto:
+        parser.error("report modes cannot be combined with --merge-auto")
+    if report_mode and args.stdout:
+        parser.error("report modes cannot be combined with --stdout")
+    if report_mode and args.output_dir:
+        parser.error("report modes cannot be combined with --output-dir")
+    if report_mode and args.overwrite:
+        parser.error("report modes cannot be combined with --overwrite")
+    if report_mode and args.skip_existing:
+        parser.error("report modes cannot be combined with --skip-existing")
     # --merge-auto mutual exclusions
     if args.merge_auto and args.merge:
         parser.error("--merge-auto cannot be combined with --merge")
@@ -378,6 +396,10 @@ def _main(argv: Sequence[str] | None = None) -> int:
         parser.error("--stdout cannot be combined with --skip-existing")
     if args.stdout and coordinator_mode:
         parser.error("--stdout cannot be used in coordinator mode")
+
+    # All flag conflicts are settled before validating paths/patterns or starting acquisition.
+    args.include = validate_filter_patterns(parser, args.include, "--include")
+    args.exclude = validate_filter_patterns(parser, args.exclude, "--exclude")
 
     if not logger.handlers:
         logging.basicConfig(level=logging.INFO, format="%(message)s")

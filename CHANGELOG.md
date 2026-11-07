@@ -32,6 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.0] - 2026-11-07
+
+### Added
+- bounded batch scheduler with ordered commits, resource-aware concurrency, and clearer preflight reporting
+- Windows Hammerdown submenu with Convert to Markdown, Merge, Tree, and Tree with all formats actions
+- matching file-manager actions and documentation for KDE, Nautilus, Nemo, Caja, and macOS
+- provenance-safe PDF chunk benchmark harness and regression coverage for page-boundary behavior
+
+### Fixed
+- output target collisions, failed merge rollback, coordinator lifecycle races, updater verification, and stale integration assets
+- Windows launcher quoting and packaged icon collection for the new context-menu actions
+- PDF worker oversubscription by capping the native page pool at four workers
+
+### Changed
+- PDF chunk results remain assembled in page order and fall back to per-page conversion when a chunk fails
+- installation documentation now explains the actions and platform-specific presentation after `hammerdown --install`
+- release CI now validates tests, type checks, release metadata, platform artifacts, checksums, and PyPI publishing
+
 ## [3.2.2] - 2026-10-29
 
 ### Fixed

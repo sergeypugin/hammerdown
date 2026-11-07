@@ -8,37 +8,33 @@ When you convert a document with `hammerdown`, processing follows three stages:
 
 ```mermaid
 flowchart TD
-    subgraph S1 [1. Input handling]
-        A[Files, folders or Google Drive links] --> B[Download links to a staging folder]
-        B --> C[Recursive expansion and deduplication]
-        C --> D[Include and exclude filters]
-    end
-
-    subgraph S2 [2. Parsing and extraction]
-        D --> E{Format router}
-        E -->|pdf, epub, mobi, fb2, xps| F[PyMuPDF4LLM page chunks]
-        E -->|docx, doc, odt| G[Word and OpenDocument parser]
-        E -->|xlsx, xls, csv| H[Spreadsheet and CSV parser]
-        E -->|pptx, ppt| I[Presentation parser]
-        E -->|md, txt, log| J[Text parser]
-        E -->|html, htm, zip| K[HTML and archive parser]
-        G --> L[Extracted assets]
-        J --> L
-        K --> L
-        F --> M[Raw Markdown]
-        G --> M
-        H --> M
-        I --> M
-        J --> M
-        K --> M
-    end
-
-    subgraph S3 [3. Output]
-        M --> N[Line endings normalized, trailing whitespace trimmed]
-        N --> O["hm_report_docx.md"]
-        L --> P["hm_images_report_docx/"]
-    end
+    A[Input files and options] --> B{Coordinator mode}
+    B -->|yes| C[IPC coordinator collects files]
+    B -->|no| D[Discovery and preflight]
+    C --> D
+    D --> E{Output mode}
+    E -->|ordinary per-file| F[Bounded batch scheduler]
+    E -->|merge or tree| G[Ordered merge assembly]
+    E -->|stdout| H[Sequential stdout stream]
+    F --> I[In-flight window of two jobs]
+    I --> J[Resource permits]
+    J -->|heavy| K[Heavy conversion job]
+    J -->|PDF| L[PDF conversion job]
+    J -->|legacy| M[Legacy conversion job]
+    K --> N[Staged result]
+    L --> O[Contiguous 32-page chunks]
+    O --> P[PDF pool with at most four workers]
+    P --> Q[Page-order reassembly]
+    Q --> N
+    M --> N
+    N --> R[Ordered commit]
+    G --> S[Merge file and asset commit]
+    H --> T[Markdown bytes to stdout]
 ```
+
+The IPC coordinator is an optional input-aggregation layer, not the conversion scheduler. `merge` and `tree` may use it when launched in coordinator mode, including Windows multi-file actions, but their output assembly remains sequential because one target file and its asset namespace must be updated in source order. `stdout` is intentionally excluded from coordinator mode and writes the assembled Markdown stream directly; it does not create a file commit.
+
+The three specialized paths could be redesigned to use a shared coordinator and concurrent assembly, but that would require explicit output protocols for ordered writes, temporary assets, cancellation, and atomic publication. The current separation keeps those boundaries safe and predictable.
 
 ## Pipeline Stages
 
@@ -131,8 +127,9 @@ In non-TTY runs (pipes, CI, redirected logs) no live view is drawn. Each file is
 `src/hammerdown/` is split by responsibility:
 
 - entry points: `cli.py` (argparse parser, flag validation, dispatch to `batch`, `integrations`, and `core.updater`), `__main__.py` (the frozen-build entry point)
-- orchestration: `batch/__init__.py` (`run_batch`, the coordinator hand-off, and the public `convert_files`; files are converted one at a time)
+- orchestration: `batch/__init__.py` (`run_batch`, the optional coordinator hand-off, and the public `convert_files`; ordinary per-file conversions use a bounded in-process scheduler, while merge, tree, and stdout use specialized output paths)
 - conversion core: `core/__init__.py` (`to_markdown`, `convert_file`, `ConversionResult`, `SUPPORTED_EXTENSIONS`, and re-exports of parsers and helpers)
+- batch pipeline: `core/job.py` (`ConversionJob`, `prepare_conversion`, staged commit and abort), `core/scheduler.py` (bounded permit-based scheduler), `core/preflight.py` (ordered validation and reporting), `core/acquisition.py` (remote input staging)
 - input resolution: `core/discovery.py` (`expand_paths` for recursive resolution, dedup, include/exclude filters, and ignored-directory pruning; `output_paths` for the `-o` layout, which raises on filename collisions), `core/google_drive.py` (link detection, download, and title extraction)
 - alternate pipelines: `core/merge.py` (`merge_root_for_inputs`, `render_merge_header`, `merge_asset_paths`, `render_merged_document`, `render_merged_markdown`, `initialize_merge_file`, `append_merged_document`), `core/stdout_mode.py` (`approximate_tokens`, `confirm_stdout`, `run_stdout_conversion`)
 - estimates: `core/estimates.py` (single source of truth for the ETA via `describe`, `get_conversion_estimate_seconds`, and `get_conversion_estimate`, plus `PDF_EXTENSIONS`, `LEGACY_EXTENSIONS`, and `FAST_TEXT_EXTENSIONS`)

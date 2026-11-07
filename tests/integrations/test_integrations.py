@@ -87,9 +87,10 @@ def test_install_windows_creates_sendto_shortcut(tmp_path: Path, monkeypatch):
     assert tree_sendto_cmd.is_file()
     assert "--coordinator --right-click --tree %*" in tree_sendto_cmd.read_text(encoding="utf-8")
 
-    assert r"Software\Classes\Directory\shell\hammerdown" in recorded_keys
-    assert r"Software\Classes\Directory\Background\shell\hammerdown" in recorded_keys
-    tree_key = r"Software\Classes\AllFilesystemObjects\shell\hammerdown_tree"
+    parent_key = r"Software\Classes\AllFilesystemObjects\shell\Hammerdown"
+    assert parent_key in recorded_keys
+    assert r"Software\Classes\Directory\Background\shell\Hammerdown" in recorded_keys
+    tree_key = parent_key + r"\shell\tree"
     assert tree_key in recorded_keys
 
 

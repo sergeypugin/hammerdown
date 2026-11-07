@@ -9,6 +9,23 @@ import hammerdown.cli
 import hammerdown.batch as batch
 
 
+class _FakePrepared:
+    def __init__(self, job):
+        self.job = job
+        self.source = job.source
+        self.output_path = job.output_path
+        self.images = 0
+        self.tokens = 0
+        self.duration = 0.01
+        self.status = "prepared"
+        self.success = True
+        self.error = None
+
+    def commit(self):
+        self.status = "committed"
+        return self
+
+
 def _selection(tmp_path: Path) -> tuple[Path, Path, Path]:
     root = tmp_path / "source"
     root.mkdir()
@@ -61,15 +78,14 @@ def test_ignore_file_report_precedes_conversion(tmp_path: Path, monkeypatch, cap
     root, _, visible = _selection(tmp_path)
     observed: list[str] = []
 
-    def convert(_path, **kwargs):
+    def prepare(job, progress_callback=None):
         output = capsys.readouterr().out
         observed.append(output)
         assert "Ignore files used (1)" in output
         assert str(root / ".gitignore") in output
-        kwargs["completion_callback"](True, 0.01, 0, 0)
-        return SimpleNamespace(success=True, markdown="markdown", error=None)
+        return _FakePrepared(job)
 
-    monkeypatch.setattr(batch, "convert_file", convert)
+    monkeypatch.setattr(batch, "_prepare_conversion", prepare)
 
     assert batch.convert_files([visible]) == 0
     assert observed
@@ -152,16 +168,15 @@ def test_coordinator_rescan_preserves_include_gitignored(tmp_path: Path, monkeyp
 
     converted: list[str] = []
 
-    def convert(path, **kwargs):
-        converted.append(Path(path).name)
-        kwargs["completion_callback"](True, 0.01, 0, 0)
-        return SimpleNamespace(success=True, markdown="content", error=None)
-
     monkeypatch.setattr(batch, "discover_paths", capture_discover)
     monkeypatch.setattr(batch, "IPCCoordinator", Coordinator)
     monkeypatch.setattr(batch, "hand_off_to_windows_terminal", lambda *_args: False)
     monkeypatch.setattr(batch, "_ensure_console_window", lambda: None)
-    monkeypatch.setattr(batch, "convert_file", convert)
+    def prepare(job, progress_callback=None):
+        converted.append(job.source.name)
+        return _FakePrepared(job)
+
+    monkeypatch.setattr(batch, "_prepare_conversion", prepare)
     monkeypatch.setattr("builtins.input", lambda: "")
     args = argparse.Namespace(
         files=[str(root)],
@@ -197,17 +212,16 @@ def test_include_gitignored_does_not_delegate_to_coordinator_without_option_supp
         def start(self):
             return False
 
-    def convert(path, **kwargs):
-        converted.append(Path(path).name)
-        kwargs["completion_callback"](True, 0.01, 0, 0)
-        return SimpleNamespace(success=True, markdown="content", error=None)
-
     def unexpected_delegate(*_args, **_kwargs):
         raise AssertionError("include_gitignored must not be delegated without IPC support")
 
     monkeypatch.setattr(batch, "IPCCoordinator", Coordinator)
     monkeypatch.setattr(batch, "try_delegate_to_coordinator", unexpected_delegate)
-    monkeypatch.setattr(batch, "convert_file", convert)
+    def prepare(job, progress_callback=None):
+        converted.append(job.source.name)
+        return _FakePrepared(job)
+
+    monkeypatch.setattr(batch, "_prepare_conversion", prepare)
     monkeypatch.setattr("builtins.input", lambda: "")
     args = argparse.Namespace(
         files=[str(root)],
