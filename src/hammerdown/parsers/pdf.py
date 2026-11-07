@@ -16,6 +16,57 @@ PDF_WORKER_CAP = 4
 PDF_CHUNK_SIZE_PAGES: int | None = 32
 
 
+def get_pdf_page_count(file_path: str) -> int:
+    """Return the page count without starting a conversion worker."""
+    import pymupdf  # type: ignore
+
+    with pymupdf.open(file_path) as doc:
+        return len(doc)
+
+
+def convert_pdf_chunk(file_path: str, pages: list[int], output_path: str) -> int:
+    """Convert one page chunk and write the result to a worker-owned file."""
+    try:
+        import pymupdf4llm  # type: ignore
+    except ImportError:
+        logger.error("PDF support requires pymupdf4llm")
+        raise
+
+    warnings = 0
+    try:
+        markdown = str(
+            pymupdf4llm.to_markdown(
+                file_path,
+                pages=pages,
+                write_images=False,
+                use_ocr=False,
+            )
+        )
+    except Exception:
+        parts: list[str] = []
+        for page in pages:
+            try:
+                parts.append(
+                    str(
+                        pymupdf4llm.to_markdown(
+                            file_path,
+                            pages=[page],
+                            write_images=False,
+                            use_ocr=False,
+                        )
+                    )
+                )
+            except Exception:
+                warnings += 1
+                parts.append(f"\n\n<!-- Warning: failed to parse page {page + 1} -->\n\n")
+        markdown = "".join(parts)
+
+    from pathlib import Path
+
+    Path(output_path).write_text(markdown, encoding="utf-8", newline="\n")
+    return warnings
+
+
 def convert_pdf_or_ebook(
     file_path: str,
     out_dir: str,

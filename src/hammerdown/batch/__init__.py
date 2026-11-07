@@ -580,7 +580,19 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             stdout=getattr(args, "stdout", False),
         )
         if use_concurrent:
-            scheduler = create_scheduler(prepare_fn=_prepare_conversion)
+            has_real_pdf = any(
+                Path(path).suffix.lower() in {".pdf", ".epub", ".mobi", ".fb2", ".xps"}
+                and Path(path).is_file()
+                and Path(path).stat().st_size > 1024
+                for path, error, _ in targets
+                if error is None
+            )
+            scheduler = create_scheduler(
+                prepare_fn=_prepare_conversion,
+                use_work_units=has_real_pdf,
+                work_unit_max_workers=min(os.cpu_count() or 4, 8),
+                work_unit_pdf_limit=2,
+            )
             jobs: list[ConversionJob] = []
             for idx, (f, error, category) in enumerate(targets):
                 if error is not None:

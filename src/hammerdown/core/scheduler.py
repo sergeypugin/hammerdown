@@ -6,9 +6,10 @@ import logging
 import os
 from pathlib import Path
 import threading
-from typing import Callable, Iterator, Literal, Sequence
+from typing import Callable, Iterator, Literal, Sequence, cast
 
 from .job import ConversionJob, PreparedConversion, failed_conversion, prepare_conversion
+from .work_unit_scheduler import WorkUnitScheduler
 
 logger = logging.getLogger("hammerdown")
 
@@ -346,6 +347,10 @@ def create_scheduler(
     legacy_limit: int = 1,
     cancel_on_error: bool = False,
     prepare_fn: Callable[..., PreparedConversion] = prepare_conversion,
+    use_work_units: bool = False,
+    work_unit_max_workers: int | None = None,
+    work_unit_in_flight_limit: int | None = None,
+    work_unit_pdf_limit: int = 2,
 ) -> BatchScheduler:
     sequential = not should_use_concurrent_scheduler(
         merge=merge,
@@ -353,6 +358,19 @@ def create_scheduler(
         dir_struct=dir_struct,
         stdout=stdout,
     )
+    if use_work_units and not sequential:
+        return cast(
+            BatchScheduler,
+            WorkUnitScheduler(
+                max_workers=work_unit_max_workers or max_workers,
+                in_flight_limit=work_unit_in_flight_limit,
+                heavy_limit=heavy_limit,
+                pdf_limit=work_unit_pdf_limit,
+                legacy_limit=legacy_limit,
+                cancel_on_error=cancel_on_error,
+                prepare_fn=prepare_fn,
+            ),
+        )
     return BatchScheduler(
         max_workers=1 if sequential else max_workers,
         in_flight_limit=1 if sequential else in_flight_limit,
