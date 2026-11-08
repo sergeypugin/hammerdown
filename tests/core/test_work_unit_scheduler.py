@@ -113,3 +113,17 @@ def test_text_units_share_pool_without_becoming_pdf_chunks(monkeypatch, tmp_path
     assert [result.status for result in results] == ["committed", "committed"]
     assert pdf_job.output_path.read_text(encoding="utf-8") == "chunk-0\nchunk-32\nchunk-64\n"
     assert text_job.output_path.read_text(encoding="utf-8") == "text\n"
+
+
+def test_chunk_size_env_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HAMMERDOWN_PDF_CHUNK_PAGES", "7")
+    scheduler = WorkUnitScheduler(max_workers=2)
+    assert scheduler.chunk_size_pages == 7
+
+    monkeypatch.setenv("HAMMERDOWN_PDF_CHUNK_PAGES", "invalid")
+    scheduler = WorkUnitScheduler(max_workers=2, chunk_size_pages=32)
+    assert scheduler.chunk_size_pages == 32
+
+    monkeypatch.delenv("HAMMERDOWN_PDF_CHUNK_PAGES")
+    scheduler = WorkUnitScheduler(max_workers=2, chunk_size_pages=32)
+    assert scheduler.chunk_size_pages == 32

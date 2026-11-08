@@ -26,6 +26,15 @@ def calculate_optimal_workers(
     system_reserve_mb: int = 700
 ) -> int:
     """Calculate the optimal number of workers based on CPU and available RAM."""
+    env_workers = os.environ.get("HAMMERDOWN_WORKERS")
+    if env_workers:
+        try:
+            forced = int(env_workers)
+        except ValueError:
+            forced = 0
+        if forced >= 1:
+            return forced
+
     cpu_limit = min(os.cpu_count() or 4, 6)
     available_mb = psutil.virtual_memory().available // (1024 * 1024)
     ram_limit = max(1, (available_mb - system_reserve_mb) // mb_per_worker)
@@ -49,6 +58,8 @@ def should_use_concurrent_scheduler(
     stdout: bool = False,
     use_work_units: bool = False,
 ) -> bool:
+    if os.environ.get("HAMMERDOWN_FORCE_SEQUENTIAL") == "1":
+        return False
     if dir_struct or stdout:
         return False
     return True

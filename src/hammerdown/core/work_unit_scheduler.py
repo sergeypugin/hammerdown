@@ -49,6 +49,18 @@ class _WorkUnit:
     output_path: Path | None = None
 
 
+def _env_chunk_size(default: int) -> int:
+    raw = os.environ.get("HAMMERDOWN_PDF_CHUNK_PAGES")
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError:
+            return default
+        if value >= 1:
+            return value
+    return default
+
+
 class WorkUnitScheduler:
     """Bounded scheduler for atomic files and PDF page chunks."""
 
@@ -72,7 +84,7 @@ class WorkUnitScheduler:
         self.pdf_limit = max(1, pdf_limit)
         self.cancel_on_error = cancel_on_error
         self.prepare_fn = prepare_fn
-        self.chunk_size_pages = max(1, chunk_size_pages)
+        self.chunk_size_pages = max(1, _env_chunk_size(chunk_size_pages))
         self._cancelled = threading.Event()
         self._active_prepared: dict[int, PreparedConversion] = {}
         self._lock = threading.Lock()
