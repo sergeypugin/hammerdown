@@ -248,7 +248,7 @@ def test_scheduler_propagates_keyboard_interrupt_and_cleans_prepared_staging(tmp
     assert staging_paths and all(not path.exists() for path in staging_paths)
 
 
-@pytest.mark.parametrize("mode", ["merge", "tree", "dir_struct", "stdout"])
+@pytest.mark.parametrize("mode", ["dir_struct", "stdout"])
 def test_special_modes_use_sequential_scheduler(mode: str) -> None:
     assert not should_use_concurrent_scheduler(**{mode: True})
     scheduler = create_scheduler(
@@ -262,6 +262,17 @@ def test_special_modes_use_sequential_scheduler(mode: str) -> None:
     assert scheduler.heavy_limit == 1
     assert scheduler.legacy_limit == 1
     assert scheduler.in_flight_limit == 1
+
+
+@pytest.mark.parametrize("mode", ["merge", "tree"])
+def test_merge_and_tree_use_concurrent_scheduler(mode: str) -> None:
+    assert should_use_concurrent_scheduler(**{mode: True})
+    scheduler = create_scheduler(
+        merge=mode == "merge",
+        tree=mode == "tree",
+    )
+    assert not scheduler.sequential
+    assert scheduler.max_workers >= 1
 
 
 def test_ordinary_mode_uses_concurrent_scheduler() -> None:

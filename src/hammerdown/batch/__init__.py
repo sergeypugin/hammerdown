@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 import tempfile
 import urllib.error
 from pathlib import Path
@@ -16,7 +17,7 @@ from ..core import (
     get_conversion_estimate_seconds,
     get_output_path,
 )
-from ..core.job import ConversionJob, prepare_conversion
+from ..core.job import ConversionJob, PreparedConversion, failed_conversion, prepare_conversion
 from ..core.discovery import DiscoveredTarget, DiscoveryResult, discover_paths, discover_tree, output_paths as compute_output_paths
 from ..core.google_drive import download_google_url, extract_file_id, is_google_drive_url
 from ..core.github import acquire_github, parse_github_locator
@@ -37,10 +38,11 @@ from ..ui.batch_ui import BatchUI
 from ..core.stdout_mode import confirm_stdout, run_stdout_conversion
 from ..core.formatting import format_duration
 from ..core.filters import OrderedFilterValues
+from ..core.output import OutputStaging
 from ..core.path_utils import normalize_path
 from ..core.platform_utils import is_windows
 from ..core.preflight import build_preflight_report, render_preflight_report
-from ..core.scheduler import create_scheduler, should_use_concurrent_scheduler
+from ..core.scheduler import BatchScheduler, calculate_optimal_workers, create_scheduler, should_use_concurrent_scheduler
 
 logger = logging.getLogger("hammerdown")
 _prepare_conversion = prepare_conversion
@@ -133,6 +135,9 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
 
     if tree_mode:
         merge_auto = False
+        
+    # Ensure merge_sources is defined for all paths
+    merge_sources: list[str] = []
     if merge_requested and getattr(args, "overwrite", False):
         logger.error("--merge cannot be combined with --overwrite")
         return 1
@@ -308,13 +313,23 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 label = f"Google Doc ({file_id[:8]}...)"
         logger.error("%s: %s", label, reason)
         targets.append((label, reason, None))
-    targets.sort(key=lambda item: item[0].lower())
-    files = [path for path, error, _ in targets if error is None]
-    ui_files = [path for path, _, _ in targets]
-    estimates = [
-        get_conversion_estimate_seconds(Path(path)) if error is None else None
-        for path, error, _ in targets
-    ]
+    files: list[str] = []
+    merge_sources: list[str] = []
+    ui_files: list[str] = []
+    estimates: list[float | None] = []
+
+    def update_merge_state():
+        nonlocal files, merge_sources, ui_files, estimates
+        targets.sort(key=lambda item: item[0].lower())
+        files = [path for path, error, _ in targets if error is None]
+        merge_sources = [str(Path(p).resolve()) for p in files]
+        ui_files = [path for path, _, _ in targets]
+        estimates = [
+            get_conversion_estimate_seconds(Path(path)) if error is None else None
+            for path, error, _ in targets
+        ]
+
+    update_merge_state()
 
     if getattr(args, "stdout", False):
         initial_errors = [(path, error) for path, error, _ in targets if error is not None]
@@ -419,56 +434,12 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         if not targets and rescanned.generated_outputs:
             generated = Path(rescanned.generated_outputs[0]).name
             targets.append((generated, "all input resources are generated outputs; no input resources to convert", None))
-        def normalized_path(path: str) -> Path | None:
-            try:
-                value = normalize_path(path)
-                return Path(value).resolve() if value else None
-            except (OSError, ValueError):
-                return None
-
-        rescanned_target_paths: set[Path] = set()
-        for target in rescanned.targets:
-            resolved = normalized_path(target.path)
-            if resolved is not None:
-                rescanned_target_paths.add(resolved)
-        rescanned_skip_paths: set[Path] = set()
-        for skip in rescanned.skipped:
-            resolved = normalized_path(skip.path)
-            if resolved is not None:
-                rescanned_skip_paths.add(resolved)
-        rescanned_error_paths: set[Path] = set()
-        for path, _ in rescanned.errors:
-            resolved = normalized_path(path)
-            if resolved is not None:
-                rescanned_error_paths.add(resolved)
-        rescan_input_paths: set[Path] = set()
-        for path in rescan_paths:
-            resolved = normalized_path(path)
-            if resolved is not None:
-                rescan_input_paths.add(resolved)
-        for target in initial_errors:
-            path, _, _ = target
-            resolved = normalized_path(path)
-            if resolved is not None:
-                if resolved in rescanned_target_paths or resolved in rescanned_skip_paths:
-                    continue
-                if resolved in rescanned_error_paths:
-                    continue
-                if resolved in rescan_input_paths and resolved.exists():
-                    continue
-            if target not in targets:
-                targets.append(target)
+            
+        update_merge_state()
+        ignore_files = sorted(set(ignore_files).union(rescanned.ignore_files))
         discovery_skips.extend(
             skip for skip in skips_from_discovery(rescanned, rescan_paths) if skip not in discovery_skips
         )
-        ignore_files = sorted(set(ignore_files).union(rescanned.ignore_files))
-        targets.sort(key=lambda item: item[0].lower())
-        files = [path for path, error, _ in targets if error is None]
-        ui_files = [path for path, _, _ in targets]
-        estimates = [
-            get_conversion_estimate_seconds(Path(path)) if error is None else None
-            for path, error, _ in targets
-        ]
         output_path_inputs = [*raw_files, *collected_files]
 
         # The worker is asynchronous, while Google sources live only in this run's staging directory.
@@ -495,8 +466,9 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 break
         merge_requested = str(merge_parent / "hammerdowned.md")
 
-    merge_sources = [path for path, error, _ in targets if error is None]
-    if tree_mode and merge_requested is None:
+    # merge_sources is already correctly defined and resolved by update_merge_state().
+    merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
+    if merge_target is None and tree_mode:
         coordinator_tree = (
             getattr(args, "right_click", False)
             or getattr(args, "coordinator", False)
@@ -508,7 +480,8 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             else Path.cwd()
         )
         merge_requested = str(merge_parent / "hammerdowned.md")
-    merge_target = Path(normalize_path(merge_requested)) if merge_requested else None
+        merge_target = Path(normalize_path(merge_requested))
+
     if merge_target is not None and any(Path(path).resolve() == merge_target.resolve() for path in merge_sources):
         logger.error("merge target cannot be one of the source files: %s", merge_target)
         if coordinator:
@@ -516,7 +489,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         return 1
 
     merge_root = (
-        merge_root_for_inputs(output_path_inputs, [Path(path) for path in merge_sources])
+        merge_root_for_inputs(output_path_inputs, [Path(path) for path in merge_sources]).resolve()
         if merge_target is not None
         else None
     )
@@ -572,82 +545,195 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
 
     conversion_finished = False
     merge_session: MergeSession | None = None
+
+    has_real_pdf = any(
+        Path(path).suffix.lower() in {".pdf", ".epub", ".mobi", ".fb2", ".xps"}
+        and Path(path).is_file()
+        and Path(path).stat().st_size > 1024
+        for path, error, _ in targets
+        if error is None
+    )
+
+    scheduler: BatchScheduler | None = None
     try:
+        if merge_target is not None and not merge_skipped:
+            merge_session = MergeSession(merge_target)
         use_concurrent = should_use_concurrent_scheduler(
             merge=merge_target is not None,
             tree=tree_mode,
             dir_struct=dir_struct,
             stdout=getattr(args, "stdout", False),
+            use_work_units=has_real_pdf,
         )
         if use_concurrent:
-            has_real_pdf = any(
-                Path(path).suffix.lower() in {".pdf", ".epub", ".mobi", ".fb2", ".xps"}
-                and Path(path).is_file()
-                and Path(path).stat().st_size > 1024
-                for path, error, _ in targets
-                if error is None
-            )
-            scheduler = create_scheduler(
-                prepare_fn=_prepare_conversion,
-                use_work_units=has_real_pdf,
-                work_unit_max_workers=min(os.cpu_count() or 4, 8),
-                work_unit_pdf_limit=2,
-            )
-            jobs: list[ConversionJob] = []
-            for idx, (f, error, category) in enumerate(targets):
-                if error is not None:
-                    continue
-                f_path = Path(f)
-                output_path = target_paths[idx]
-                is_google_cache = str(f_path.resolve()) in google_downloaded or str(f_path.resolve()) in github_downloaded
-                output_dir_for_job = (
-                    output_path.parent
-                    if output_root is not None or is_google_cache
-                    else f_path.parent
-                )
-                job = ConversionJob(
-                    source=f_path,
-                    output_path=(
-                        f_path
-                        if args.overwrite and f_path.suffix.lower() in TEXT_EXTENSIONS and not is_google_cache
-                        else output_path
-                    ),
-                    resource_dir=output_dir_for_job,
-                    skip_existing=args.skip_existing,
-                    batch_mode=True,
-                    input_index=idx,
-                )
-                jobs.append(job)
-
-            def on_job_start(job: ConversionJob) -> None:
-                if job.input_index is not None:
-                    idx = job.input_index
-                    estimate = estimates[idx]
-                    hint = f"~{format_duration(estimate)}" if estimate is not None else ""
-                    batch_ui.start_file(idx, hint=hint)
-
-            def on_job_progress(job: ConversionJob, current: int, total: int, unit: str = "pages") -> None:
-                if job.input_index is not None:
-                    batch_ui.update_progress(job.input_index, current, total, unit)
-
-            scheduled_iter = scheduler.schedule(
-                jobs,
-                on_start=on_job_start,
-                on_progress=on_job_progress,
-            )
-
-            try:
+            if merge_target is not None and merge_skipped:
                 for idx, (f, error, category) in enumerate(targets):
+                    if error is not None:
+                        batch_ui.fail_file(idx, error)
+                        results.append(False)
+                    else:
+                        batch_ui.skip_file(idx, f"existing merge output: {merge_target.name}")
+                        results.append(True)
+            else:
+                ui_completed: set[int] = set()
+                merge_prepare_errors: dict[int, BaseException] = {}
+
+                def finish_ui(job: ConversionJob, success: bool, duration: float, images: int, tokens: int) -> None:
+                    idx = job.input_index if job.input_index is not None else -1
+                    ui_completed.add(idx)
+                    batch_ui.complete_file(idx, success, duration, images, tokens, "")
+
+                def prepare_for_merge(job: ConversionJob, progress_callback=None) -> PreparedConversion:
+                    started_at = time.monotonic()
+                    if job.category == "source_code":
+                        raw = convert_source_text(job.source)
+                        duration = time.monotonic() - started_at
+                        if raw.success:
+                            tokens = len(raw.markdown or "")
+                            finish_ui(job, True, duration, 0, tokens)
+                            staging = OutputStaging.create(
+                                job.resource_dir.parent,
+                                prefix=f".hammerdown-{job.source.stem}-src-",
+                            )
+                            staged = staging.path / job.output_path.name
+                            staged.write_text(raw.markdown or "", encoding="utf-8", newline="\n")
+                            return PreparedConversion(
+                                job=job,
+                                source=job.source,
+                                output_path=job.output_path,
+                                staged_markdown=staged,
+                                staging=staging,
+                                tokens=tokens,
+                                duration=duration,
+                            )
+                        return failed_conversion(job, raw.error or "conversion failed", duration=duration)
+
+                    asset_dir = None
+                    if merge_session is not None and merge_root is not None:
+                        asset_dir = merge_session.staging_asset_directory(job.source, merge_root)
+
+                    def completion_callback(success: bool, duration: float, images: int, tokens: int) -> None:
+                        finish_ui(job, success, duration, images, tokens)
+
+                    try:
+                        raw = convert_file(
+                            job.source,
+                            overwrite=args.overwrite,
+                            skip_existing=False,
+                            progress_callback=progress_callback,
+                            completion_callback=completion_callback,
+                            batch_mode=True,
+                            asset_dir=asset_dir,
+                            write_markdown=False,
+                            merge_session=merge_session,
+                        )
+                    except Exception as exc:
+                        if job.input_index is not None:
+                            merge_prepare_errors[job.input_index] = exc
+                        return failed_conversion(job, f"failed to convert {job.source.name}")
+
+                    duration = getattr(raw, "duration", None) or (time.monotonic() - started_at)
+                    if getattr(raw, "success", False):
+                        staged_markdown_path: Path | None = None
+                        staging: OutputStaging | None = None
+                        markdown_text = getattr(raw, "markdown", None)
+                        if markdown_text is not None:
+                            staging = OutputStaging.create(
+                                job.resource_dir.parent,
+                                prefix=f".hammerdown-{job.source.stem}-merge-",
+                            )
+                            staged_markdown_path = staging.path / job.output_path.name
+                            staged_markdown_path.write_text(markdown_text, encoding="utf-8", newline="\n")
+                        return PreparedConversion(
+                            job=job,
+                            source=job.source,
+                            output_path=job.output_path,
+                            staged_markdown=staged_markdown_path,
+                            staging=staging,
+                            images=getattr(raw, "images", 0),
+                            tokens=getattr(raw, "tokens", 0),
+                            duration=duration,
+                        )
+                    return failed_conversion(
+                        job,
+                        getattr(raw, "error", None) or f"conversion failed for {job.source.name}",
+                        duration=duration,
+                    )
+
+                scheduler = create_scheduler(
+                    merge=merge_target is not None,
+                    tree=tree_mode,
+                    dir_struct=dir_struct,
+                    stdout=getattr(args, "stdout", False),
+                    prepare_fn=prepare_for_merge if merge_target is not None else _prepare_conversion,
+                    use_work_units=has_real_pdf,
+                    work_unit_max_workers=calculate_optimal_workers(),
+                    work_unit_pdf_limit=2,
+                    in_flight_limit=1 if merge_target is not None and not has_real_pdf else None,
+                )
+                jobs: list[ConversionJob] = []
+                for idx, (f, error, category) in enumerate(targets):
+                    if error is not None:
+                        continue
                     f_path = Path(f)
+                    output_path = target_paths[idx]
+                    is_google_cache = str(f_path.resolve()) in google_downloaded or str(f_path.resolve()) in github_downloaded
+                    output_dir_for_job = (
+                        output_path.parent
+                        if output_root is not None or is_google_cache
+                        else f_path.parent
+                    )
+                    job = ConversionJob(
+                        source=f_path,
+                        output_path=(
+                            f_path
+                            if args.overwrite and f_path.suffix.lower() in TEXT_EXTENSIONS and not is_google_cache
+                            else output_path
+                        ),
+                        resource_dir=output_dir_for_job,
+                        skip_existing=args.skip_existing if merge_target is None else False,
+                        batch_mode=True,
+                        input_index=idx,
+                        category=category,
+                    )
+                    jobs.append(job)
+
+                def on_job_start(job: ConversionJob) -> None:
+                    if job.input_index is not None:
+                        idx = job.input_index
+                        estimate = estimates[idx]
+                        hint = f"~{format_duration(estimate)}" if estimate is not None else ""
+                        batch_ui.start_file(idx, hint=hint)
+
+                def on_job_progress(job: ConversionJob, current: int, total: int, unit: str = "pages") -> None:
+                    if job.input_index is not None:
+                        batch_ui.update_progress(job.input_index, current, total, unit)
+
+                scheduled_iter = scheduler.schedule(
+                    jobs,
+                    on_start=on_job_start,
+                    on_progress=on_job_progress,
+                    auto_commit=merge_target is None,
+                )
+
+                resolved_merge_sources = [Path(s).resolve() for s in merge_sources]
+
+                for idx, (f, error, category) in enumerate(targets):
+                    f_path = Path(f).resolve()
                     if error:
                         batch_ui.fail_file(idx, error)
                         results.append(False)
                         continue
 
+                    error_count_before = len(batch_ui.errors)
                     res = next(scheduled_iter)
+                    if merge_target is not None:
+                        pending_error = merge_prepare_errors.pop(idx, None)
+                        if pending_error is not None:
+                            raise pending_error
                     output_path = target_paths[idx]
                     extension = f_path.suffix.lower()
-                    is_google_cache = str(f_path.resolve()) in google_downloaded or str(f_path.resolve()) in github_downloaded
+                    is_google_cache = str(f_path) in google_downloaded or str(f_path) in github_downloaded
                     status_info = ""
                     if res.status == "skipped":
                         status_info = f"skipped, existing output: {output_path.name}"
@@ -668,20 +754,128 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                         batch_ui.skip_file(idx, f"existing output: {output_path.name}")
                         results.append(True)
                     elif res.success:
-                        batch_ui.complete_file(idx, True, res.duration, res.images, res.tokens, status_info)
+                        # Parallel Merge / Tree Support
+                        if merge_target is not None and merge_root is not None:
+                            try:
+                                if not merge_initialized:
+                                    initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
+                                    merge_initialized = True
+
+                                asset_dir, asset_prefix = merge_asset_paths(
+                                    f_path, merge_root, merge_target, merge_session
+                                )
+                                is_binary = _is_binary_file(f_path)
+
+                                # Work-unit PDF assembly leaves assets in job-local
+                                # staging; relocate them under the session asset prefix.
+                                staged_assets = getattr(res, "staged_assets", None)
+                                if staged_assets is not None and staged_assets.is_dir():
+                                    asset_dir.mkdir(parents=True, exist_ok=True)
+                                    os.replace(staged_assets, asset_dir / staged_assets.name)
+
+                                content: str | None = None
+                                staged_markdown = getattr(res, "staged_markdown", None)
+                                if staged_markdown is not None and staged_markdown.exists():
+                                    content = staged_markdown.read_text(encoding="utf-8")
+
+                                if content is None:
+                                    res.abort()
+                                    if idx in ui_completed:
+                                        batch_ui.converted_count -= 1
+                                        batch_ui.statuses[idx] = "[!]"
+                                        batch_ui.details[idx] = "-"
+                                    batch_ui.errors.append(
+                                        (f_path.name, "conversion returned no Markdown for merge")
+                                    )
+                                    results.append(False)
+                                    continue
+
+                                append_merged_document(
+                                    merge_target,
+                                    f_path,
+                                    content,
+                                    merge_root,
+                                    asset_prefix,
+                                    is_binary=is_binary,
+                                    session=merge_session,
+                                )
+                                merged_count += 1
+                                # Now that we merged it, we can discard the conversion result
+                                # (since merge target IS the output in merge mode)
+                                res.abort()
+                            except OSError as exc:
+                                res.abort()
+                                if idx in ui_completed:
+                                    batch_ui.converted_count -= 1
+                                    batch_ui.statuses[idx] = "[!]"
+                                    batch_ui.details[idx] = "-"
+                                    batch_ui.errors.append(
+                                        (f_path.name, f"could not append to merge output: {exc}")
+                                    )
+                                else:
+                                    batch_ui.complete_file(idx, False, res.duration, 0, 0, f"merge failed: {exc}")
+                                results.append(False)
+                                continue
+
+                        if idx not in ui_completed:
+                            batch_ui.complete_file(idx, True, res.duration, res.images, res.tokens, status_info)
                         results.append(True)
                     else:
                         reason = getattr(res, "error", None) or "conversion failed"
-                        batch_ui.complete_file(idx, False, res.duration, 0, 0, reason)
+                        # Handle Merge Failure during parallel run
+                        if merge_target is not None and merge_root is not None:
+                            if idx in ui_completed:
+                                if len(batch_ui.errors) > error_count_before:
+                                    name, previous_reason = batch_ui.errors[-1]
+                                    batch_ui.errors[-1] = (name, reason or previous_reason)
+                                else:
+                                    batch_ui.errors.append((f_path.name, reason))
+                            try:
+                                if not merge_initialized:
+                                    initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
+                                    merge_initialized = True
+                                _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
+                                is_binary = _is_binary_file(f_path)
+                                append_merged_document(
+                                    merge_target,
+                                    f_path,
+                                    "",
+                                    merge_root,
+                                    asset_prefix,
+                                    error=reason,
+                                    session=merge_session,
+                                    is_binary=is_binary,
+                                )
+                            except OSError:
+                                pass
+                            res.abort()
+                        if idx not in ui_completed:
+                            batch_ui.complete_file(idx, False, res.duration, 0, 0, reason)
                         results.append(False)
-            finally:
-                if not conversion_finished:
-                    scheduler.cancel()
+
+                if merge_session is not None:
+                    try:
+                        merge_session.finish()
+                    except OSError as exc:
+                        merge_commit_failed = True
+                        batch_ui.errors.append((merge_session.target.name, f"could not commit merge output: {exc}"))
         else:
-            if merge_target is not None and not merge_skipped:
-                merge_session = MergeSession(merge_target)
+            # Sequential fallback
+            resolved_merge_sources = [Path(s).resolve() for s in merge_sources]
+            
+            class MockPrepared:
+                def __init__(self, res, duration):
+                    self.success = bool(res)
+                    self.markdown = res.markdown if res else None
+                    self.duration = duration
+                    self.images = res.images if res else 0
+                    self.tokens = res.tokens if res else 0
+                    self.status = "committed" if res else "failed"
+                def abort(self):
+                    pass
+
             for idx, (f, error, category) in enumerate(targets):
-                f_path = Path(f)
+                f_path = Path(f).resolve()
                 if error:
                     batch_ui.fail_file(idx, error)
                     results.append(False)
@@ -726,13 +920,15 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 logger_was_disabled = logger.disabled
                 logger.disabled = True
                 is_google_cache = str(f_path.resolve()) in google_downloaded
+                started_at = time.monotonic()
                 try:
                     if category == "source_code":
-                        res = convert_source_text(f_path)
-                        if res.success:
-                            on_complete(True, 0.0, 0, len(res.markdown or ""))
+                        res_raw = convert_source_text(f_path)
+                        if res_raw.success:
+                            on_complete(True, 0.0, 0, len(res_raw.markdown or ""))
+                        res = MockPrepared(res_raw, time.monotonic() - started_at)
                     else:
-                        res = convert_file(
+                        res_raw = convert_file(
                             f_path,
                             overwrite=args.overwrite and not is_google_cache,
                             skip_existing=args.skip_existing if merge_target is None else False,
@@ -752,11 +948,13 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                             write_markdown=merge_target is None,
                             merge_session=merge_session,
                         )
+                        res = MockPrepared(res_raw, time.monotonic() - started_at)
                 finally:
                     logger.disabled = logger_was_disabled
+                    
                 succeeded = bool(res)
                 if not succeeded:
-                    reason = getattr(res, "error", None) or "conversion failed"
+                    reason = getattr(res_raw, "error", None) or "conversion failed"
                     if len(batch_ui.errors) > error_count_before:
                         name, previous_reason = batch_ui.errors[-1]
                         batch_ui.errors[-1] = (name, reason or previous_reason)
@@ -766,7 +964,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                     if merge_target is not None and merge_root is not None:
                         try:
                             if not merge_initialized:
-                                initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
+                                initialize_merge_file(merge_target, resolved_merge_sources, merge_root, merge_session)
                                 merge_initialized = True
                             _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
                             is_binary = _is_binary_file(f_path)
@@ -782,6 +980,8 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                             )
                         except OSError:
                             pass
+                        if hasattr(res, "abort"):
+                            res.abort()
                 if succeeded and merge_target is not None and merge_root is not None:
                     if res.markdown is None:
                         succeeded = False
@@ -792,7 +992,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                     else:
                         try:
                             if not merge_initialized:
-                                initialize_merge_file(merge_target, merge_sources, merge_root, merge_session)
+                                initialize_merge_file(merge_target, resolved_merge_sources, merge_root, merge_session)
                                 merge_initialized = True
                             _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
                             is_binary = _is_binary_file(f_path)
@@ -812,6 +1012,8 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                             batch_ui.statuses[idx] = "[!]"
                             batch_ui.details[idx] = "-"
                             batch_ui.errors.append((f_path.name, f"could not append to merge output: {exc}"))
+                        
+                    res.abort()
                 results.append(succeeded)
             if merge_session is not None:
                 try:
@@ -821,6 +1023,8 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                     batch_ui.errors.append((merge_session.target.name, f"could not commit merge output: {exc}"))
         conversion_finished = True
     finally:
+        if 'scheduler' in locals() and scheduler:
+            scheduler.cancel()
         if not conversion_finished:
             if merge_session is not None:
                 merge_session.abort()

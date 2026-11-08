@@ -66,6 +66,7 @@ def test_pdf_chunk_failure_does_not_publish_partial_output(monkeypatch, tmp_path
         in_flight_limit=4,
         heavy_limit=4,
         pdf_limit=2,
+        chunk_size_pages=32,
     ).run([pdf_job])
 
     assert results[0].status == "failed"
@@ -105,6 +106,7 @@ def test_text_units_share_pool_without_becoming_pdf_chunks(monkeypatch, tmp_path
         in_flight_limit=4,
         heavy_limit=4,
         pdf_limit=2,
+        chunk_size_pages=32,
         prepare_fn=prepare,
     ).run([pdf_job, text_job])
 

@@ -3,17 +3,22 @@ from __future__ import annotations
 from collections import deque
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 import os
 import threading
 import time
 from typing import Callable, Iterator, Sequence
 
+import psutil
+
 from ..parsers.pdf import convert_pdf_chunk, get_pdf_page_count
 from .job import ConversionJob, PreparedConversion, failed_conversion, prepare_conversion
 from .output import OutputStaging
 from .path_utils import get_images_dir_name
 from .resources import token_count
+
+logger = logging.getLogger("hammerdown")
 
 PDF_EXTENSIONS = {".pdf", ".epub", ".mobi", ".fb2", ".xps"}
 ProgressCallback = Callable[[ConversionJob, int, int, str], None]
@@ -57,7 +62,7 @@ class WorkUnitScheduler:
         pdf_limit: int = 2,
         cancel_on_error: bool = False,
         prepare_fn: Callable[..., PreparedConversion] = prepare_conversion,
-        chunk_size_pages: int = 32,
+        chunk_size_pages: int = 100,
     ) -> None:
         cpu = os.cpu_count() or 4
         self.max_workers = max(1, max_workers if max_workers is not None else min(cpu, 8))
@@ -180,6 +185,8 @@ class WorkUnitScheduler:
             assert unit.output_path is not None
             warnings = convert_pdf_chunk(str(unit.job.source), list(unit.pages), str(unit.output_path))
             return unit, None, warnings, None
+        except MemoryError:
+            return unit, None, 0, "MemoryError: System ran out of memory during conversion"
         except Exception as exc:
             return unit, None, 0, str(exc)
         finally:
@@ -218,6 +225,7 @@ class WorkUnitScheduler:
         on_start: StartCallback | None = None,
         on_progress: ProgressCallback | None = None,
         on_complete: CompleteCallback | None = None,
+        auto_commit: bool = True,
     ) -> Iterator[PreparedConversion]:
         if not jobs:
             return
@@ -232,6 +240,12 @@ class WorkUnitScheduler:
         executor = ThreadPoolExecutor(max_workers=self.max_workers)
 
         def dispatch() -> None:
+            # Dynamic RAM Safety Guard: pause dispatch if available RAM is dangerously low (< 500 MB)
+            available_mb = psutil.virtual_memory().available // (1024 * 1024)
+            if available_mb < 500 and len(active) > 0:
+                logger.warning("Low available memory (%d MB). Throttling dispatch...", available_mb)
+                return
+
             while len(active) < min(self.max_workers, self.in_flight_limit):
                 selected: _WorkUnit | None = None
                 for category in ("pdf", "heavy", "legacy"):
@@ -266,6 +280,15 @@ class WorkUnitScheduler:
                             unit = active.pop(future)
                             active_counts[self._category(unit)] -= 1
                             completed, prepared, _warnings, error = future.result()
+                            
+                            # Hard Fallback: Reduce limits if MemoryError occurred
+                            if error and "MemoryError" in error:
+                                logger.error("Memory error caught. Falling back to safe sequential limits.")
+                                self.max_workers = 1
+                                self.in_flight_limit = 1
+                                self.pdf_limit = 1
+                                self.heavy_limit = 1
+
                             unit_key = completed.job_index
                             if completed.plan is None:
                                 results[unit_key] = prepared or failed_conversion(completed.job, f"failed to convert {completed.job.source.name}: {error or 'unknown error'}")
@@ -290,10 +313,13 @@ class WorkUnitScheduler:
                     result = immediate[key]
                 else:
                     result = results.pop(key)
-                if result.status == "prepared":
+                
+                if auto_commit and result.status == "prepared":
                     result = result.commit()
-                    if result.status == "committed":
-                        self.committed_order.append(job)
+                
+                if result.status == "committed":
+                    self.committed_order.append(job)
+                
                 if on_complete is not None:
                     on_complete(job, result)
                 yield result

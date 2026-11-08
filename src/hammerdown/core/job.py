@@ -31,6 +31,7 @@ class ConversionJob:
     skip_existing: bool = False
     batch_mode: bool = False
     input_index: int | None = None
+    category: str | None = None
 
     @property
     def identity(self) -> tuple[int | None, Path]:

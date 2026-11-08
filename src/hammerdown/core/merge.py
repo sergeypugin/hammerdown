@@ -216,6 +216,19 @@ class MergeSession:
             raise ValueError("merge asset directory must be inside this session's staging directory")
         return asset_directory
 
+    def staging_asset_directory(self, source: str | Path, merge_root: Path) -> Path:
+        """Return where one source's assets belong in session staging.
+
+        Unlike merge_asset_paths this performs no append-order bookkeeping, so
+        concurrent workers may compute their destinations ahead of the ordered
+        append pass.
+        """
+        if self._closed:
+            raise RuntimeError("merge session is already closed")
+        state = self._state
+        relative = relative_path_for_source(Path(source).resolve(), merge_root)
+        return state.staging.path / Path(state.asset_root_name) / relative.parent
+
     def abort(self) -> None:
         if not self._closed:
             self._state.staging.cleanup()

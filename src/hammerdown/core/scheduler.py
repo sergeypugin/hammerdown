@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import threading
 from typing import Callable, Iterator, Literal, Sequence, cast
+import psutil
 
 from .job import ConversionJob, PreparedConversion, failed_conversion, prepare_conversion
 from .work_unit_scheduler import WorkUnitScheduler
@@ -19,6 +20,16 @@ PDF_EXTENSIONS = {".pdf", ".epub", ".mobi", ".fb2", ".xps"}
 ProgressCallback = Callable[[ConversionJob, int, int, str], None]
 StartCallback = Callable[[ConversionJob], None]
 CompleteCallback = Callable[[ConversionJob, PreparedConversion], None]
+
+def calculate_optimal_workers(
+    mb_per_worker: int = 300,
+    system_reserve_mb: int = 700
+) -> int:
+    """Calculate the optimal number of workers based on CPU and available RAM."""
+    cpu_limit = min(os.cpu_count() or 4, 6)
+    available_mb = psutil.virtual_memory().available // (1024 * 1024)
+    ram_limit = max(1, (available_mb - system_reserve_mb) // mb_per_worker)
+    return min(cpu_limit, ram_limit)
 
 def classify_format(job_or_path: ConversionJob | Path | str) -> FormatCategory:
     source = job_or_path.source if isinstance(job_or_path, ConversionJob) else Path(job_or_path)
@@ -36,8 +47,9 @@ def should_use_concurrent_scheduler(
     tree: bool = False,
     dir_struct: bool = False,
     stdout: bool = False,
+    use_work_units: bool = False,
 ) -> bool:
-    if merge or tree or dir_struct or stdout:
+    if dir_struct or stdout:
         return False
     return True
 
@@ -197,6 +209,7 @@ class BatchScheduler:
         on_start: StartCallback | None = None,
         on_progress: ProgressCallback | None = None,
         on_complete: CompleteCallback | None = None,
+        auto_commit: bool = True,
     ) -> Iterator[PreparedConversion]:
         if not jobs:
             return
@@ -206,6 +219,7 @@ class BatchScheduler:
                 on_start=on_start,
                 on_progress=on_progress,
                 on_complete=on_complete,
+                auto_commit=auto_commit,
             )
             return
         executor = ThreadPoolExecutor(max_workers=self.max_workers)
@@ -244,20 +258,16 @@ class BatchScheduler:
                 if self._cancelled.is_set():
                     prepared.abort()
                     break
-                if prepared.status == "prepared":
-                    committed = prepared.commit()
-                    if committed.status == "committed":
-                        self.committed_order.append(job)
-                    if on_complete is not None:
-                        on_complete(job, committed)
-                    yield committed
-                else:
-                    if on_complete is not None:
-                        on_complete(job, prepared)
-                    yield prepared
-                    if self.cancel_on_error and not prepared.success:
-                        self.cancel()
-                        break
+                if auto_commit and prepared.status == "prepared":
+                    prepared = prepared.commit()
+                if prepared.status == "committed":
+                    self.committed_order.append(job)
+                if on_complete is not None:
+                    on_complete(job, prepared)
+                yield prepared
+                if self.cancel_on_error and not prepared.success:
+                    self.cancel()
+                    break
         except BaseException:
             self.cancel()
             raise
@@ -272,6 +282,7 @@ class BatchScheduler:
         on_start: StartCallback | None = None,
         on_progress: ProgressCallback | None = None,
         on_complete: CompleteCallback | None = None,
+        auto_commit: bool = True,
     ) -> Iterator[PreparedConversion]:
         for job in jobs:
             if self._cancelled.is_set():
@@ -301,20 +312,16 @@ class BatchScheduler:
             if self._cancelled.is_set():
                 prepared.abort()
                 break
-            if prepared.status == "prepared":
-                committed = prepared.commit()
-                if committed.status == "committed":
-                    self.committed_order.append(job)
-                if on_complete is not None:
-                    on_complete(job, committed)
-                yield committed
-            else:
-                if on_complete is not None:
-                    on_complete(job, prepared)
-                yield prepared
-                if self.cancel_on_error and not prepared.success:
-                    self.cancel()
-                    break
+            if auto_commit and prepared.status == "prepared":
+                prepared = prepared.commit()
+            if prepared.status == "committed":
+                self.committed_order.append(job)
+            if on_complete is not None:
+                on_complete(job, prepared)
+            yield prepared
+            if self.cancel_on_error and not prepared.success:
+                self.cancel()
+                break
 
     def run(
         self,
@@ -385,6 +392,7 @@ def create_scheduler(
 __all__ = [
     "BatchScheduler",
     "FormatCategory",
+    "calculate_optimal_workers",
     "classify_format",
     "create_scheduler",
     "should_use_concurrent_scheduler",
