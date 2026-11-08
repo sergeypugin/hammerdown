@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import os
+import threading
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 
 from .output import OutputStaging, cleanup_staged_path, replace_staged_outputs
@@ -180,13 +182,18 @@ class MergeSession:
 
     def __init__(self, target: str | Path) -> None:
         resolved_target = Path(target).resolve()
+        self._lock_handle, self._lock_path, self._lock_key = _acquire_target_lock(resolved_target)
         asset_root_name = f"hm_merged_into_{resolved_target.stem}_images"
-        self._state = _MergeState(
-            target=resolved_target,
-            staging=OutputStaging.create(resolved_target.parent, prefix=".hammerdown-merge-"),
-            asset_root_name=asset_root_name,
-            target_existed=resolved_target.exists(),
-        )
+        try:
+            self._state = _MergeState(
+                target=resolved_target,
+                staging=OutputStaging.create(resolved_target.parent, prefix=".hammerdown-merge-"),
+                asset_root_name=asset_root_name,
+                target_existed=resolved_target.exists(),
+            )
+        except Exception:
+            _release_target_lock(self._lock_handle, self._lock_path, self._lock_key)
+            raise
         self._closed = False
 
     @property
@@ -197,16 +204,17 @@ class MergeSession:
         if self._closed:
             return
         state = self._state
-        if state.sources and state.appended >= len(state.sources):
-            if state.had_error and state.target_existed:
-                self.abort()
-                return
-            try:
+        try:
+            if state.sources and state.appended >= len(state.sources):
+                if state.had_error and state.target_existed:
+                    state.staging.cleanup()
+                    return
                 _commit_merge_session(state)
-            finally:
-                self._closed = True
-        else:
-            self.abort()
+            else:
+                state.staging.cleanup()
+        finally:
+            self._closed = True
+            _release_target_lock(self._lock_handle, self._lock_path, self._lock_key)
 
     def validate_asset_directory(self, path: str | Path) -> Path:
         if self._closed:
@@ -231,8 +239,89 @@ class MergeSession:
 
     def abort(self) -> None:
         if not self._closed:
-            self._state.staging.cleanup()
-            self._closed = True
+            try:
+                self._state.staging.cleanup()
+            finally:
+                self._closed = True
+                _release_target_lock(self._lock_handle, self._lock_path, self._lock_key)
+
+
+def _target_lock_path(target: Path) -> Path:
+    return target.parent / f".{target.name}.hammerdown-merge.lock"
+
+
+_PROCESS_LOCKS: dict[str, int] = {}
+_PROCESS_LOCKS_GUARD = threading.Lock()
+
+
+def _acquire_target_lock(target: Path) -> tuple[Any, Path | None, str | None]:
+    """Take an advisory OS lock so two processes cannot merge into one target.
+
+    Within a single process the lock is reference-counted so isolated sessions
+    for the same target remain possible. Returns (handle, path); (None, None)
+    when the path is already held by this process, and (None, None) with no
+    protection only when the lock file cannot even be created.
+    """
+    key = str(target).lower()
+    with _PROCESS_LOCKS_GUARD:
+        if _PROCESS_LOCKS.get(key):
+            _PROCESS_LOCKS[key] += 1
+            return None, None, key
+    lock_path = _target_lock_path(target)
+    try:
+        handle = open(lock_path, "w", encoding="utf-8")
+    except OSError:
+        return None, None, None
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        handle.close()
+        raise OSError(f"another hammerdown process is writing to {target}") from exc
+    with _PROCESS_LOCKS_GUARD:
+        _PROCESS_LOCKS[key] = 1
+    return handle, lock_path, key
+
+
+def _release_target_lock(handle: Any, lock_path: Path | None, key: str | None) -> None:
+    if handle is None:
+        if key is not None:
+            with _PROCESS_LOCKS_GUARD:
+                count = _PROCESS_LOCKS.get(key, 0)
+                if count > 1:
+                    _PROCESS_LOCKS[key] = count - 1
+                else:
+                    _PROCESS_LOCKS.pop(key, None)
+        return
+    if key is not None:
+        with _PROCESS_LOCKS_GUARD:
+            _PROCESS_LOCKS.pop(key, None)
+    if lock_path is None:
+        return
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except Exception:
+        pass
+    try:
+        handle.close()
+    except Exception:
+        pass
+    with contextlib.suppress(OSError):
+        lock_path.unlink()
 
 
 def _require_session(merge_target: Path, session: MergeSession | None) -> _MergeState:

@@ -616,3 +616,20 @@ def test_batch_releases_permits_and_continues_after_prepare_error(
     assert batch_module.run_batch(args) == 1
     assert working_started.is_set()
     assert batch_module.get_output_path(sources[1]).is_file()
+
+
+def test_force_sequential_env_overrides_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HAMMERDOWN_FORCE_SEQUENTIAL", "1")
+    assert not should_use_concurrent_scheduler(merge=True)
+    assert not should_use_concurrent_scheduler(tree=True)
+    assert not should_use_concurrent_scheduler()
+    assert create_scheduler(merge=True).sequential
+
+
+def test_workers_env_forces_worker_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    from hammerdown.core.scheduler import calculate_optimal_workers
+
+    monkeypatch.setenv("HAMMERDOWN_WORKERS", "3")
+    assert calculate_optimal_workers() == 3
+    monkeypatch.setenv("HAMMERDOWN_WORKERS", "bogus")
+    assert calculate_optimal_workers() >= 1

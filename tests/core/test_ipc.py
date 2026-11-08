@@ -195,3 +195,40 @@ def test_cli_delegates_to_active_coordinator(tmp_path: Path, monkeypatch):
         assert any(str(source) in item for item in collected)
     finally:
         coordinator.stop()
+
+
+def test_delegate_rejected_after_assembly_closed(monkeypatch) -> None:
+    monkeypatch.setattr(ipc, "IPC_REQUEST_READ_TIMEOUT", 0.05)
+    pipe_address = _unique_test_pipe()
+    coordinator = IPCCoordinator(pipe_name=pipe_address)
+    assert coordinator.start()
+    try:
+        assert try_delegate_to_coordinator(["first.pdf"], {}, pipe_name=pipe_address)
+        coordinator.collect_files([], assembly_timeout=0.05)
+        coordinator.close_assembly()
+        assert not try_delegate_to_coordinator(["late.pdf"], {}, pipe_name=pipe_address)
+    finally:
+        coordinator.stop()
+
+
+def test_delegate_failure_falls_back_to_local_conversion(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "notes.txt"
+    source.write_text("content\n", encoding="utf-8")
+
+    class DecliningCoordinator:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            return False
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr("hammerdown.batch.IPCCoordinator", DecliningCoordinator)
+    monkeypatch.setattr("hammerdown.batch.try_delegate_to_coordinator", lambda files, options: False)
+    monkeypatch.setattr("builtins.input", lambda *args: "")
+
+    assert hammerdown.cli.main(["--coordinator", str(source)]) == 0
+    assert (tmp_path / "hm_notes_txt.md").is_file()

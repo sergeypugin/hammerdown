@@ -153,3 +153,38 @@ def test_failed_append_preserves_previous_merge_and_assets(tmp_path: Path, monke
     assert target.read_text(encoding="utf-8") == "previous merge\n"
     assert (assets / "previous.png").read_bytes() == b"previous asset"
     assert not list(tmp_path.glob(".hammerdown-merge-*"))
+
+
+def test_merge_session_rejects_foreign_holder_of_same_target(tmp_path: Path):
+    target = tmp_path / "merged.md"
+    target.write_text("previous\n", encoding="utf-8")
+    lock_path = target.parent / f".{target.name}.hammerdown-merge.lock"
+
+    foreign = open(lock_path, "w", encoding="utf-8")
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(foreign.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(foreign.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        with pytest.raises(OSError, match="another hammerdown process"):
+            MergeSession(target)
+    finally:
+        if os.name == "nt":
+            import msvcrt
+
+            foreign.seek(0)
+            msvcrt.locking(foreign.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(foreign.fileno(), fcntl.LOCK_UN)
+        foreign.close()
+
+    session = MergeSession(target)
+    session.abort()
+    assert not lock_path.exists()

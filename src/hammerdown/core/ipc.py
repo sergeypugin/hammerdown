@@ -218,8 +218,14 @@ def try_delegate_to_coordinator(
             conn = Client(address, authkey=authkey)
             conn.send(request)
             response = conn.recv()
-            if isinstance(response, dict) and response.get("status") == "ok":
-                return True
+            if isinstance(response, dict):
+                if response.get("status") == "ok":
+                    return True
+                if response.get("reason") in {
+                    "coordinator is busy",
+                    "coordinator options conflict with the active request",
+                }:
+                    return False
         except Exception:
             time.sleep(retry_delay)
         finally:
@@ -239,6 +245,7 @@ class IPCCoordinator:
         self._lifecycle_generation = 0
         self._active_connections: set[Any] = set()
         self._delegated_options: DelegatedOptions | None = None
+        self._assembly_open = False
         self._running = False
         self._thread: threading.Thread | None = None
         self._authkey: bytes | None = None
@@ -268,6 +275,8 @@ class IPCCoordinator:
             _write_session_secret(self._authkey)
             self.listener = Listener(self.address, authkey=self._authkey)
             self._running = True
+            with self._delivery_condition:
+                self._assembly_open = True
             self._thread = threading.Thread(target=self._server_loop, daemon=True)
             self._thread.start()
             return True
@@ -283,6 +292,15 @@ class IPCCoordinator:
             self._release_lock()
             return False
 
+    def close_assembly(self) -> None:
+        """Stop accepting delegated files; the owner is converting on its own.
+
+        Delegated launches then receive a busy rejection and convert locally
+        instead of having their files silently dropped at shutdown.
+        """
+        with self._delivery_condition:
+            self._assembly_open = False
+
     def set_initial_options(self, options: Mapping[str, Any]) -> None:
         normalized = _serialize_options(options)
         if self._delegated_options is None:
@@ -294,6 +312,7 @@ class IPCCoordinator:
         self._incoming_queue = queue.Queue()
         self._lifecycle_generation += 1
         self._delegated_options = None
+        self._assembly_open = False
 
     def _fail_from_server_thread(self) -> None:
         with self._delivery_condition:
@@ -372,6 +391,11 @@ class IPCCoordinator:
                     continue
                 new_files = request["files"]
                 if new_files:
+                    with self._delivery_condition:
+                        assembly_open = self._assembly_open
+                    if not assembly_open:
+                        conn.send({"status": "error", "reason": "coordinator is busy"})
+                        continue
                     if self._delegated_options is not None and self._delegated_options != request["options"]:
                         conn.send({"status": "error", "reason": "coordinator options conflict with the active request"})
                         continue

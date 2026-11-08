@@ -390,17 +390,27 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             ):
                 logger.info("Delegated %d files to active hammerdown coordinator", len(files))
                 return 0
-            reporting_ui = BatchUI(ui_files, estimates=estimates)
-            reporting_ui.errors.extend((path, error) for path, error, _ in targets if error is not None)
-            reporting_ui.skipped_files.extend((Path(skip.path).name, skip.reason) for skip in discovery_skips)
-            reporting_ui.print_error_list()
-            reporting_ui.print_ignore_files(ignore_files)
-            reporting_ui.print_skipped_list()
-            return 1 if reporting_ui.errors else 0
+            if files:
+                # Delegation declined (coordinator busy, options conflict, or
+                # unreachable): convert locally instead of exiting silently.
+                logger.info("Coordinator unavailable; converting %d files locally", len(files))
+                coordinator = None
+                use_ipc = False
+            else:
+                reporting_ui = BatchUI(ui_files, estimates=estimates)
+                reporting_ui.errors.extend((path, error) for path, error, _ in targets if error is not None)
+                reporting_ui.skipped_files.extend((Path(skip.path).name, skip.reason) for skip in discovery_skips)
+                reporting_ui.print_error_list()
+                reporting_ui.print_ignore_files(ignore_files)
+                reporting_ui.print_skipped_list()
+                return 1 if reporting_ui.errors else 0
 
     if coordinator is not None and coordinator_started:
         initial_errors = [target for target in targets if target[1] is not None]
         collected_files = coordinator.collect_files(files, assembly_timeout=2.0)
+        close_assembly = getattr(coordinator, "close_assembly", None)
+        if close_assembly is not None:
+            close_assembly()
         delegated = getattr(coordinator, "delegated_options", None)
         if delegated is not None:
             tree_mode = delegated["tree"]
