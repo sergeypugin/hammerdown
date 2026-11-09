@@ -44,8 +44,11 @@ def test_documentation_paths_exist():
         text = doc_path.read_text(encoding="utf-8")
         for path_str in extract_paths(text):
             path = Path(path_str)
-            if not path.exists():
-                missing.setdefault(str(path), []).append(str(doc_path))
+            # Markdown links resolve relative to the document file, so accept
+            # document-relative targets (assets/...) as well as repo-root ones.
+            if path.exists() or (doc_path.parent / path_str).exists():
+                continue
+            missing.setdefault(str(path), []).append(str(doc_path))
 
     if missing:
         lines = ["Broken documentation paths:"]
