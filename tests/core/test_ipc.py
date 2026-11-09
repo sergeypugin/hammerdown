@@ -197,8 +197,7 @@ def test_cli_delegates_to_active_coordinator(tmp_path: Path, monkeypatch):
         coordinator.stop()
 
 
-def test_delegate_rejected_after_assembly_closed(monkeypatch) -> None:
-    monkeypatch.setattr(ipc, "IPC_REQUEST_READ_TIMEOUT", 0.05)
+def test_delegate_rejected_after_assembly_closed() -> None:
     pipe_address = _unique_test_pipe()
     coordinator = IPCCoordinator(pipe_name=pipe_address)
     assert coordinator.start()

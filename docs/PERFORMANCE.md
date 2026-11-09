@@ -140,6 +140,8 @@ No production pre-warm step is enabled. The available Office benchmark used thre
 
 The evidence does not show a repeatable user-visible benefit that would justify launching a dummy PDF or Office conversion before the real work. Keep warm-up as a future experiment only if a controlled cold/warm benchmark measures startup, peak memory, cancellation, and total end-to-end time separately.
 
+A later controlled probe (see the work-unit matrix section) separated the startup cost itself: `hammerdown.cli` imports in about 0.3s, and the `pymupdf`/`pymupdf4llm` import adds about 2.1s of cold-process time. The pre-warm conclusion is unchanged; the actionable finding is that the import cost, not conversion warm-up, dominates small-file runs.
+
 #### Measured Batch and PDF Worker Limits
 
 Measurements used the first 30 pages of an 812-page PDF on a 12-core machine. The full file was never converted. Each cell ran in a separate process, chunk boundaries were identical, and run order alternated to reduce warm-cache bias.
@@ -178,6 +180,9 @@ A separate three-run legacy benchmark on `tests/inputs/report.doc` took 1.168s, 
 
 #### Why the Scheduler Does Not Yet Use a Unified Work-Unit Queue
 
+> [!note]
+> Status update: the unified design described below is now implemented as `WorkUnitScheduler` and runs in production for batch jobs containing real PDFs, including merge and tree modes. The hazards listed here were the design contract it had to satisfy: bounded chunk admission, ordered assembly, per-file staging boundaries, and cancellation that never commits late results. The measurements above constrain its chunk policy; the worker bound stays dynamic.
+
 A possible future design is a single batch queue containing one task per ordinary file and several page-range tasks per PDF. For example, five PDFs with four chunks each could contribute 20 page tasks, while Word and text documents remain whole-file tasks. A global budget could then lend unused capacity between files instead of maintaining nested per-file pools.
 
 This is not enabled yet. Keeping the current per-file staging and commit boundary is safer until a prototype proves a benefit on mixed workloads. A naive implementation is unsafe because:
@@ -210,6 +215,36 @@ The old fixed-96 harness used `subprocess.run(timeout=...)` without verified pro
 Switch the production default to fixed 32-page chunks. Across three safe runs, the median was 238.291s versus 267.162s for the CPU-derived policy, an improvement of about 11%, and the fixed-32 output hash was stable. The valid outputs contain the same prose after heading-depth normalization, with no missing, duplicated, or reordered content found. Heading-depth differences remain a documented fidelity caveat, and the result is based on a 270-page sample rather than the full 812-page book. No production Markdown joiner is justified.
 
 The verified implementation contract is page-based chunking, ordered assembly, and a four-worker cap. A two-page PDF enters the chunking branch but remains one chunk containing pages 0 and 1, so it uses one worker; a single-page PDF bypasses the executor. A regression test now checks the two-page boundary explicitly.
+
+#### Work-Unit Scheduler Chunk and Worker Matrix (180-page PDF)
+
+A second matrix ran on a Windows laptop with an Intel i7-1355U (2 P-cores + 8 E-cores, 12 threads) against a 180-page mixed-content PDF converted through the production CLI (`python -m hammerdown <file> -o <dir>`), one subprocess per attempt, strictly sequential scheduling, a 300 s hard per-attempt timeout, psutil process-tree peak-RSS sampling, and three attempts per configuration. The chunk size and worker count were injected through `HAMMERDOWN_PDF_CHUNK_PAGES` and `HAMMERDOWN_WORKERS`; `HAMMERDOWN_FORCE_SEQUENTIAL=1` produced the legacy-path baseline. Every successful attempt across every configuration produced the identical output SHA-256 `b34e675dfe1777beed91146c3a872b1d514cfeb1a01f27e2057dcbfc1bf3cf5f`.
+
+| Chunk pages | Attempts | Median | Min | Max | Peak RSS | Note |
+| :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| 8 | 3 | 204.5s | 199.5s | 207.6s | 364 MB | |
+| 16 | 3 | 204.5s | 202.1s | 217.6s | 367 MB | |
+| 24 | 3 | 206.3s | 202.4s | 217.8s | 375 MB | |
+| 32 | 3 | 204.3s | 199.9s | 223.1s | 381 MB | |
+| 48 | 3 | 205.7s | 204.2s | 210.4s | 398 MB | |
+| 64 | 3 | 198.4s | 188.5s | 203.7s | 412 MB | fastest median, within noise of 32 |
+| 100 | 3 | -- | -- | -- | -- | 3 of 3 exceeded the 300 s cap |
+| legacy sequential path | 3 | 232.2s | 228.4s | 239.4s | 422 MB | internal 32-page chunks, cap 4 |
+
+Every median between 8 and 64 pages sits inside a 4% band, which is the size of the within-configuration spread, while peak RSS grows monotonically from 364 MB to 412 MB as chunks enlarge. The 100-page default that shipped unmeasured in the work-unit scheduler was the only configuration that could not finish inside the 300 s budget, so it was slower than even the sequential path on this host. The production default is therefore fixed 32-page chunks, matching the earlier Harris-sample decision, the converter constant in `parsers/pdf.py`, and the documented behavior in `ARCHITECTURE.md` and `TECHNICAL.md`.
+
+| Workers at 64-page chunks | Attempts | Median | Min | Max | Peak RSS |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| 2 | 3 | 187.6s | 184.7s | 190.7s | 414 MB |
+| 4 | 3 | 215.4s | 201.8s | 289.3s | 415 MB |
+| 6 | 2 | 232.5s | 174.3s | 290.7s | 413 MB |
+| 8 | 3 | 188.4s | 181.0s | 251.2s | 412 MB |
+
+The worker sweep shows no monotonic trend: two and eight workers land within 0.5s of each other, while four and six look slower with spreads up to 63%. With only three 64-page chunks in the document, caps above three cannot add parallelism anyway, and the variance is dominated by P/E-core placement on this laptop. No fixed worker count is justified; the scheduler keeps the dynamic RAM-aware `calculate_optimal_workers` bound with its 700 MB system reserve.
+
+The warm-up probe measured cold interpreter startup separately: importing `hammerdown.cli` costs about 0.3s median (37 MB), while additionally importing `pymupdf` and `pymupdf4llm` costs about 2.1s median (151 MB). That two-second fixed cost is under 1% of a large conversion, but it dominates single small-file CLI runs, which argues for import laziness rather than for any pre-warm conversion step.
+
+A follow-up worker sweep at 32-page chunks was started but discarded: concurrent maintenance work on the same laptop polluted its attempts (all attempts hit the 300 s cap), which is exactly the measurement hygiene the earlier sections warn about. Benchmarks must run with the machine otherwise idle.
 
 ### Why Python Multi-threading is Real Parallelism Here
 

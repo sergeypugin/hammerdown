@@ -74,7 +74,7 @@ class WorkUnitScheduler:
         pdf_limit: int = 2,
         cancel_on_error: bool = False,
         prepare_fn: Callable[..., PreparedConversion] = prepare_conversion,
-        chunk_size_pages: int = 100,
+        chunk_size_pages: int = 32,
     ) -> None:
         cpu = os.cpu_count() or 4
         self.max_workers = max(1, max_workers if max_workers is not None else min(cpu, 8))

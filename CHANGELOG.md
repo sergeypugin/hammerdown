@@ -20,15 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File-manager actions for merge, tree, and tree with all formats across Windows, Linux, and macOS
 - Idempotent output handling, stale asset cleanup, skip-existing behavior, and clearer batch result accounting
 - Bounded Google downloads and ZIP extraction; authenticated and bounded coordinator IPC
+- Ordered page-chunk work-unit scheduling for merge and tree batch modes
+- Coordinator busy-rejection for delegates that arrive after batch assembly closes, with local-conversion fallback
+- Cross-process advisory locking on merge target files
+- Benchmark overrides `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, and `HAMMERDOWN_FORCE_SEQUENTIAL`
 
 ### Fixed
 - Output target safety, failed-merge rollback, stdout/stderr separation, and coordinator option propagation
 - Platform launcher quoting, coordinator lifecycle/restart races, legacy Office temporary-file cleanup, and text overwrite coverage
 - Updater download limits, SHA-256 verification, and safe Windows update handoff
+- Early merge-mode auto-commit overwriting staged outputs before all sources were appended
 
 ### Changed
 - Generated image numbering starts at one; CLI option names are case-insensitive while preserving path/value case
 - Documentation and integration behavior updated for filters, outputs, tree workflows, and platform launchers
+- PDF work-unit chunking defaults to measured 32-page chunks instead of the unmeasured 100-page value
 
 ---
 
