@@ -25,7 +25,7 @@ Converts any supported document to Markdown and extracts any embedded assets.
 
 - `file_path` (`str | Path`): path to the source document
 - `target_dir` (`str | Path | None`, optional): directory where extracted assets are written; defaults to the directory of the source file
-- `progress_callback` (`Callable[[int, int, str], None] | None`, optional): callback invoked as units (pages, slides, sheets, elements) are converted, taking `(current, total, unit)`
+- `progress_callback` (`Callable[[int, int, str], None] | None`, optional): callback invoked as units (pages, slides, sheets, elements, rows, file) are converted, taking `(current, total, unit)`
 - Returns: `tuple[str | None, int]` -- the generated Markdown string (or `None` on error) and the number of saved images
 
 ```python
@@ -53,11 +53,12 @@ convert_file(
     stdout=False,
     asset_dir=None,
     write_markdown=True,
+    merge_session=None,
 ) -> ConversionResult
 ```
 
 - `file_path` (`str | Path`): path to the source document
-- `overwrite` (`bool`, default `False`): rewrites plain-text sources (`.txt`, `.md`) in place instead of producing a copy; ignored with a warning for binary formats
+- `overwrite` (`bool`, default `False`): rewrites plain-text sources (`.txt`, `.md`, `.log`, `.csv`) in place instead of producing a copy; ignored with a warning for binary formats and rejected when combined with `target_dir`
 - `skip_existing` (`bool`, default `False`): returns success without converting when the output file already exists
 - `progress_callback` (`Callable[[int, int, str], None] | None`, optional): custom progress callback
 - `completion_callback` (`Callable[[bool, float, int, int], None] | None`, optional): invoked with `(success, duration, images, tokens)` when conversion finishes
@@ -65,7 +66,8 @@ convert_file(
 - `target_dir` (`str | Path | None`, optional): output directory for the Markdown file; defaults to the source directory
 - `stdout` (`bool`, default `False`): returns the Markdown in `result.markdown` without writing files, inlining assets as base64; cannot be combined with `overwrite`, `skip_existing`, `target_dir`, or `asset_dir`
 - `asset_dir` (`str | Path | None`, optional): directory where extracted assets go; defaults to the output directory
-- `write_markdown` (`bool`, default `True`): when `False`, the Markdown is returned in `result.markdown` but not written to disk; this is how merge mode collects text
+- `write_markdown` (`bool`, default `True`): when `False`, the Markdown is returned in `result.markdown` but not written to disk, unless `overwrite=True` rewrites a plain-text source in place; this is how merge mode collects text
+- `merge_session` (`MergeSession | None`, default `None`): internal merge plumbing that appends into a caller-provided merge session; requires `asset_dir` when set
 - Returns: `ConversionResult`
 
 `ConversionResult` is a frozen dataclass with these fields:
@@ -91,7 +93,7 @@ else:
 ```
 
 > [!note]
-> `overwrite=True` only rewrites plain-text sources in place, and the plain-text extensions are exactly `.txt` and `.md`. For binary formats the flag is ignored with a warning.
+> `overwrite=True` only rewrites plain-text sources in place, and the plain-text extensions are exactly `.txt`, `.md`, `.log`, and `.csv`. For `.csv` this replaces the CSV content with the converted Markdown table. For binary formats the flag is ignored with a warning.
 
 ### `convert_files(...)`
 
@@ -109,18 +111,23 @@ convert_files(
     merge=None,
     stdout=False,
     confirm=False,
+    include_gitignored=False,
 ) -> int
 ```
 
 - `files` (`Sequence[str | Path]`): files or directories to convert
-- `include` / `exclude` (`Sequence[str]`, optional): regular expressions applied to each path relative to the inputs
+- `include` / `exclude` (`Sequence[str]`, optional): GitWildMatch (gitignore-style) patterns; each value accepts comma- or whitespace-separated patterns and is matched against each path relative to the resource context
+- `include_gitignored` (`bool`, default `False`): mirrors the CLI `--include-gitignored` flag
 - `overwrite`, `skip_existing`, `output_dir`, `merge`, `stdout`, `confirm`: mirror the CLI flags of the same names
 
 ```python
 import hammerdown
 
-exit_code = hammerdown.convert_files(["folder/"], merge="summary.md", include=[r"reports/.*"])
+exit_code = hammerdown.convert_files(["folder/"], merge="summary.md", include=["reports/**"])
 ```
+
+> [!note]
+> `merge` writes one target file and replaces it on every run; for durable per-file output call `convert_files` without `merge` instead`
 
 The function raises `ValueError` for unsupported option combinations:
 
@@ -128,7 +135,7 @@ The function raises `ValueError` for unsupported option combinations:
 - `stdout` with `merge`, `output_dir`, `overwrite`, or `skip_existing`
 - `merge` with `overwrite` or `output_dir`
 - `overwrite` with `skip_existing` or `output_dir`
-- an invalid regular expression in `include` or `exclude`
+- a malformed filter value in `include` or `exclude` (for example, an unterminated quote)
 
 ## Format-Specific Converters
 
@@ -231,7 +238,7 @@ from hammerdown.parsers.markdown_render import render_markdown_table
 
 ### Estimation helpers
 
-The estimation model lives in `hammerdown.estimates` and is shared by the CLI hints and the API:
+The estimation model lives in `hammerdown.core.estimates` and is shared by the CLI hints and the API:
 
 - `describe(path)` -> `tuple[float | None, str]` -- the estimated duration in seconds and a display hint suffix such as ` (9 pages, est. ~8.1s)`
 - `get_conversion_estimate_seconds(path)` -> `float | None` -- just the estimated duration
