@@ -61,6 +61,18 @@ def _env_chunk_size(default: int) -> int:
     return default
 
 
+def _env_pdf_limit(default: int) -> int:
+    raw = os.environ.get("HAMMERDOWN_PDF_LIMIT")
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError:
+            return default
+        if value >= 1:
+            return value
+    return default
+
+
 class WorkUnitScheduler:
     """Bounded scheduler for atomic files and PDF page chunks."""
 
@@ -81,7 +93,7 @@ class WorkUnitScheduler:
         self.in_flight_limit = max(1, in_flight_limit if in_flight_limit is not None else self.max_workers)
         self.heavy_limit = max(1, heavy_limit if heavy_limit is not None else self.max_workers)
         self.legacy_limit = max(1, legacy_limit)
-        self.pdf_limit = max(1, pdf_limit)
+        self.pdf_limit = max(1, _env_pdf_limit(pdf_limit))
         self.cancel_on_error = cancel_on_error
         self.prepare_fn = prepare_fn
         self.chunk_size_pages = max(1, _env_chunk_size(chunk_size_pages))

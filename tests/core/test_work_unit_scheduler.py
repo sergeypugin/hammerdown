@@ -127,3 +127,21 @@ def test_chunk_size_env_override(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("HAMMERDOWN_PDF_CHUNK_PAGES")
     scheduler = WorkUnitScheduler(max_workers=2, chunk_size_pages=32)
     assert scheduler.chunk_size_pages == 32
+
+
+def test_pdf_limit_env_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HAMMERDOWN_PDF_LIMIT", "4")
+    scheduler = WorkUnitScheduler(max_workers=2)
+    assert scheduler.pdf_limit == 4
+
+    monkeypatch.setenv("HAMMERDOWN_PDF_LIMIT", "invalid")
+    scheduler = WorkUnitScheduler(max_workers=2, pdf_limit=2)
+    assert scheduler.pdf_limit == 2
+
+    monkeypatch.setenv("HAMMERDOWN_PDF_LIMIT", "0")
+    scheduler = WorkUnitScheduler(max_workers=2, pdf_limit=2)
+    assert scheduler.pdf_limit == 2
+
+    monkeypatch.delenv("HAMMERDOWN_PDF_LIMIT")
+    scheduler = WorkUnitScheduler(max_workers=2, pdf_limit=3)
+    assert scheduler.pdf_limit == 3
