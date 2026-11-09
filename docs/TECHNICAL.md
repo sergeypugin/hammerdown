@@ -34,7 +34,7 @@ Key naming rules:
 
 - text and layout are reconstructed with [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM) on top of [PyMuPDF](https://pymupdf.readthedocs.io/), with OCR disabled (`use_ocr=False`)
 - the PDF path produces text-only Markdown: `convert_pdf_or_ebook` always reports `0` extracted images and never writes an asset folder
-- documents with more than one page are split into contiguous 32-page chunks and converted concurrently in a `ThreadPoolExecutor` capped at four workers
+- in ordinary batch runs, multi-page documents are planned by the work-unit scheduler into contiguous 32-page chunks (`HAMMERDOWN_PDF_CHUNK_PAGES` overrides the size) that convert concurrently under a PDF permit of two (`HAMMERDOWN_PDF_LIMIT` overrides it); the parser's own `ThreadPoolExecutor` capped at four workers performs the same chunked conversion on the sequential-fallback and stdout paths
 - a chunk that fails falls back to safe per-page conversion, emitting an HTML comment warning for any page that cannot be parsed
 - the progress counter and callback are updated from worker threads and guarded by a lock
 - single-page documents convert on the main thread without a pool
@@ -117,7 +117,7 @@ On Windows, selecting multiple files in Explorer normally starts a separate proc
 ### Recursive Directory Traversal
 When a directory is passed to `hammerdown`, it recursively discovers resources while pruning directories and files excluded by safety rules. `hm_*.md` and `hammerdowned.md` are generated outputs and are excluded from the recursive source set. Explicitly passing one of these files is an error, and a directory containing only generated outputs fails because no input resources remain. Discovery deduplicates canonical paths, so repeated files, a file plus its containing directory, and overlapping parent/child roots are processed once.
 
-Tree mode (`-t` / `--tree`) always writes one combined Markdown target. It collects Gitingest-like text and source-like files without adding Hammerdown's binary document formats by default. `--all-formats` adds supported Hammerdown documents, while unknown binary files remain skipped. The tree target defaults to `hammerdowned.md` and can be changed with `-m`. `-t/--tree` and `--all-formats` may appear before, between, or after positional resources. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
+Tree mode (`--tree`) always writes one combined Markdown target. It collects Gitingest-like text and source-like files without adding Hammerdown's binary document formats by default. `--all-formats` adds supported Hammerdown documents, while unknown binary files remain skipped. The tree target defaults to `hammerdowned.md` and can be changed with `-m`. `--tree` and `--all-formats` may appear before, between, or after positional resources. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
 
 `.log` is not default-excluded and is processed unless an ignore rule or filter excludes it.
 
@@ -129,7 +129,7 @@ Option names are case-insensitive, but values, paths, and filter patterns preser
 `-i` / `--include` and `-e` / `--exclude` accept Gitingest-compatible GitWildMatch/pathspec patterns matched against paths relative to the resource context. Each option may be repeated, and the options form one ordered queue in command-line order. A path starts included when no include option is present, or excluded when an include option is present; each matching `-e` excludes it and each later matching `-i` includes it again. The last matching operation decides, so a later include can restore a path excluded earlier. Pattern values accept comma- or whitespace-separated patterns. Use single or double quotes to group an argument. Apostrophes or quote characters inside a file name are not supported by the CLI quote parser; backticks are not quoting syntax.
 
 ### Merged Output (`-m / --merge`)
-The merge option treats the next argument as the output Markdown target and then expects one or more source resources. If no target argument is supplied, the default is `hammerdowned.md`. Because the next positional after `-m` is always the target, `hammerdown -m anything.ext` has no source and is invalid; `hammerdown -m output.md source.pdf` supplies both the target and a resource. The target is written incrementally as the batch runs, so a partial document remains usable if the run is interrupted. Its contents are:
+The merge option treats the next argument as the output Markdown target and then expects one or more source resources. If no target argument is supplied, the default is `hammerdowned.md`. Because the next positional after `-m` is always the target, `hammerdown -m anything.ext` has no source and is invalid; `hammerdown -m output.md source.pdf` supplies both the target and a resource. The target is assembled in a hidden staging directory and committed atomically once every source is appended, so an interrupted run leaves the previous target untouched instead of a partial document. Its contents are:
 
 - a `Directory structure:` tree listing every source relative to their common root
 - one block per document, introduced by a separator line of 48 `=` characters, a line such as `FILE: notes/draft.md`, and the separator again, followed by the converted Markdown
@@ -156,11 +156,11 @@ A successful rerun replaces the merge target and its complete merge asset direct
 
 To deliver maximum speed when processing large documents and batch conversions, `hammerdown` employs multi-level parallelism and lazy loading:
 
-1. batch conversion is sequential: `run_batch` walks the resolved file list in a single loop and converts one document at a time, so the only thread pool in the conversion path is the PDF page-chunk pool described below
+1. ordinary batch conversion is concurrent and bounded: `run_batch` schedules resolved files through `core/scheduler.py` -- a `BatchScheduler` with an in-flight window of two jobs for PDF-free batches, or a `WorkUnitScheduler` (32-page PDF work units, two concurrent PDF chunks by default, worker count from `calculate_optimal_workers()`) when the batch contains a real PDF; `HAMMERDOWN_FORCE_SEQUENTIAL=1`, `--dir-struct`, and `--stdout` use a single-loop sequential path instead, and the PDF parser's own four-worker chunk pool is reached only on those sequential and stdout paths
 2. golden test conversions run concurrently across available CPU threads (`ThreadPoolExecutor`), cutting execution time roughly in half
 3. PDF documents with more than one page are split into contiguous page chunks that are converted concurrently in background threads before the results are assembled into final Markdown
 4. text extraction disables OCR (`use_ocr=False`), so pages are parsed from their embedded text layer instead of being rasterized and recognized
-5. heavy third-party libraries (`pymupdf`, `python-docx`, `openpyxl`, `python-pptx`) are loaded lazily on demand inside converter routines, letting quick commands (`--version`, `--install`, `--help`) and plain text files run instantly (<0.04s startup)
+5. heavy third-party libraries (`pymupdf`, `python-docx`, `openpyxl`, `python-pptx`) are loaded lazily on demand inside converter routines, so quick commands (`--version`, `--install`, `--help`) and plain-text batches never load the heavy parsers at all
 6. each parser writes its extracted assets to disk as it walks the document, so no separate image post-processing pass is required
 
 ### Benchmarks
