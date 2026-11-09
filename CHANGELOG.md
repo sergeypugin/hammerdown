@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ordered page-chunk work-unit scheduling for merge and tree batch modes
 - Coordinator busy-rejection for delegates that arrive after batch assembly closes, with local-conversion fallback
 - Cross-process advisory locking on merge target files
-- Benchmark overrides `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, and `HAMMERDOWN_FORCE_SEQUENTIAL`
+- Benchmark overrides `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, `HAMMERDOWN_FORCE_SEQUENTIAL`, and `HAMMERDOWN_PDF_LIMIT`
 
 ### Fixed
 - Output target safety, failed-merge rollback, stdout/stderr separation, and coordinator option propagation
@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generated image numbering starts at one; CLI option names are case-insensitive while preserving path/value case
 - Documentation and integration behavior updated for filters, outputs, tree workflows, and platform launchers
 - PDF work-unit chunking defaults to measured 32-page chunks instead of the unmeasured 100-page value
+- Performance documentation now records the 812-page PDF matrix, an outer-concurrency micro-benchmark, and the many-small-files batch results
 
 ---
 
