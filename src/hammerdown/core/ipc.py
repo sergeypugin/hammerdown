@@ -33,6 +33,8 @@ class DelegatedOptions(TypedDict):
     exclude: list[str]
     overwrite: bool
     skip_existing: bool
+    yes: bool
+    no: bool
     output: str | None
     stdout: bool
     confirm: bool
@@ -57,6 +59,8 @@ _OPTION_DEFAULTS: DelegatedOptions = {
     "exclude": [],
     "overwrite": False,
     "skip_existing": False,
+    "yes": False,
+    "no": False,
     "output": None,
     "stdout": False,
     "confirm": False,

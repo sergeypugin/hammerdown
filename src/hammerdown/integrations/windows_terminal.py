@@ -37,6 +37,8 @@ def build_context_worker_command(
     filter_queue: Sequence[tuple[str, str]] | None = None,
     overwrite: bool = False,
     skip_existing: bool = False,
+    yes: bool = False,
+    no: bool = False,
     output_dir: str | None = None,
 ) -> list[str]:
     """Build a command that runs the selected files outside the IPC coordinator."""
@@ -64,6 +66,10 @@ def build_context_worker_command(
         command.append("--overwrite")
     if skip_existing:
         command.append("--skip-existing")
+    if yes:
+        command.append("--yes")
+    if no:
+        command.append("--no")
     if output_dir:
         command.extend(("--output-dir", output_dir))
     if merge:
@@ -85,6 +91,8 @@ def build_windows_terminal_command(
     filter_queue: Sequence[tuple[str, str]] | None = None,
     overwrite: bool = False,
     skip_existing: bool = False,
+    yes: bool = False,
+    no: bool = False,
     output_dir: str | None = None,
     tab_color: str | None = None,
 ) -> list[str]:
@@ -100,6 +108,8 @@ def build_windows_terminal_command(
         filter_queue=filter_queue,
         overwrite=overwrite,
         skip_existing=skip_existing,
+        yes=yes,
+        no=no,
         output_dir=output_dir,
     )
     command = [terminal, "-w", "new", "new-tab", "--title", WINDOWS_TERMINAL_TITLE]
@@ -120,6 +130,8 @@ def launch_context_worker(
     filter_queue: Sequence[tuple[str, str]] | None = None,
     overwrite: bool = False,
     skip_existing: bool = False,
+    yes: bool = False,
+    no: bool = False,
     output_dir: str | None = None,
     tab_color: str | None = None,
 ) -> bool:
@@ -140,6 +152,8 @@ def launch_context_worker(
         filter_queue=filter_queue,
         overwrite=overwrite,
         skip_existing=skip_existing,
+        yes=yes,
+        no=no,
         output_dir=output_dir,
         tab_color=tab_color,
     )

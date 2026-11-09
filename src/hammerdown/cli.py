@@ -254,6 +254,18 @@ def _main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Skip conversion if the target Markdown file already exists",
     )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Overwrite an existing --merge/--tree target without asking",
+    )
+    parser.add_argument(
+        "-n",
+        "--no",
+        action="store_true",
+        help="Skip the run when a --merge/--tree target already exists",
+    )
     parser.add_argument("-o", "--output-dir", action="append", metavar="DIR", help="Save Markdown and extracted images under DIR")
     parser.add_argument(
         "--include-gitignored",
@@ -351,6 +363,10 @@ def _main(argv: Sequence[str] | None = None) -> int:
         parser.error("-w/--overwrite cannot be combined with -o/--output-dir")
     if args.overwrite and args.skip_existing:
         parser.error("-w/--overwrite cannot be combined with -s/--skip-existing")
+    if args.yes and args.no:
+        parser.error("--yes cannot be combined with --no")
+    if args.yes and args.skip_existing:
+        parser.error("--yes cannot be combined with --skip-existing")
     if args.output_dir and coordinator_mode:
         parser.error("-o/--output-dir cannot be used in coordinator mode")
     if args.confirm and not args.stdout:

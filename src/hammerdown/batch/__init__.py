@@ -75,6 +75,28 @@ def _ensure_console_window() -> None:
         user32.SetForegroundWindow(hwnd)
 
 
+def confirm_merge_overwrite(target: Path) -> bool:
+    """Ask before reusing an existing merge/tree target; True overwrites, False skips the run."""
+    print(f"merge target {target.name} already exists.", file=sys.stderr)
+    while True:
+        try:
+            print(f"Overwrite {target.name}? [y/n] ", end="", file=sys.stderr, flush=True)
+            line = sys.stdin.readline()
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled.", file=sys.stderr)
+            return False
+        if not line:
+            print("\nCancelled.", file=sys.stderr)
+            return False
+        answer = line.strip().lower()
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            print("Cancelled.", file=sys.stderr)
+            return False
+        print('Please answer "y" or "n".', file=sys.stderr)
+
+
 def hand_off_to_windows_terminal(
     files: Sequence[str],
     args: argparse.Namespace,
@@ -108,6 +130,8 @@ def hand_off_to_windows_terminal(
         "exclude": getattr(args, "exclude", []),
         "overwrite": getattr(args, "overwrite", False),
         "skip_existing": getattr(args, "skip_existing", False),
+        "yes": getattr(args, "yes", False),
+        "no": getattr(args, "no", False),
         "output_dir": getattr(args, "output_dir", None),
     }
     if filter_queue is not None:
@@ -361,6 +385,8 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         "exclude": list(getattr(args, "exclude", [])),
         "overwrite": getattr(args, "overwrite", False),
         "skip_existing": getattr(args, "skip_existing", False),
+        "yes": getattr(args, "yes", False),
+        "no": getattr(args, "no", False),
         "output": getattr(args, "output_dir", None),
         "stdout": getattr(args, "stdout", False),
         "confirm": getattr(args, "confirm", False),
@@ -426,6 +452,8 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 args.exclude.filter_queue = list(delegated["filter_queue"])
             args.overwrite = delegated["overwrite"]
             args.skip_existing = delegated["skip_existing"]
+            args.yes = delegated["yes"]
+            args.no = delegated["no"]
             args.output_dir = delegated["output"]
             args.stdout = delegated["stdout"]
             args.confirm = delegated["confirm"]
@@ -538,6 +566,21 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         if coordinator:
             coordinator.stop()
         return 1
+
+    if merge_target is not None and not merge_skipped and merge_target.exists() and not getattr(args, "yes", False):
+        if getattr(args, "no", False):
+            merge_skipped = True
+        elif sys.stdin.isatty():
+            if not confirm_merge_overwrite(merge_target):
+                merge_skipped = True
+        else:
+            logger.error(
+                "merge target %s already exists; re-run with --skip-existing to keep it, --yes to overwrite it, or -m <path> for a different file",
+                merge_target.name,
+            )
+            if coordinator:
+                coordinator.stop()
+            return 1
 
     results: list[bool] = []
     merged_count = 0
@@ -1092,6 +1135,8 @@ def convert_files(
     exclude: Sequence[str] = (),
     overwrite: bool = False,
     skip_existing: bool = False,
+    yes: bool = False,
+    no: bool = False,
     output_dir: str | os.PathLike[str] | None = None,
     merge: str | os.PathLike[str] | None = None,
     stdout: bool = False,
@@ -1111,6 +1156,10 @@ def convert_files(
         raise ValueError("overwrite cannot be combined with skip_existing")
     if overwrite and output_dir is not None:
         raise ValueError("overwrite cannot be combined with output_dir")
+    if yes and no:
+        raise ValueError("yes cannot be combined with no")
+    if yes and skip_existing:
+        raise ValueError("yes cannot be combined with skip_existing")
     include_patterns = _validated_patterns(include, "include")
     exclude_patterns = _validated_patterns(exclude, "exclude")
     namespace = argparse.Namespace(
@@ -1119,6 +1168,8 @@ def convert_files(
         exclude=exclude_patterns,
         overwrite=overwrite,
         skip_existing=skip_existing,
+        yes=yes,
+        no=no,
         output_dir=os.fspath(output_dir) if output_dir is not None else None,
         merge=os.fspath(merge) if merge is not None else None,
         stdout=stdout,
