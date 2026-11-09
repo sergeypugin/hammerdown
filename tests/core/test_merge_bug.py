@@ -23,7 +23,7 @@ def test_merge_existing_output_file_is_used_as_output(tmp_path: Path):
     original_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)
-        assert hammerdown.cli.main(["--merge", "existing_output.md", str(file1)]) == 0
+        assert hammerdown.cli.main(["--merge", "existing_output.md", "--yes", str(file1)]) == 0
     finally:
         os.chdir(original_cwd)
 

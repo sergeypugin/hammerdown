@@ -101,7 +101,7 @@ def test_tree_custom_merge_target_is_excluded_from_directory_reruns(
     assert "FILE: source.txt" in first_content
     assert "FILE: custom.md" not in first_content
 
-    assert hammerdown.cli.main(["--tree", "--merge", str(target), str(project)]) == 0
+    assert hammerdown.cli.main(["--tree", "--merge", str(target), "--yes", str(project)]) == 0
 
     content = target.read_text(encoding="utf-8")
     assert "FILE: source.txt" in content

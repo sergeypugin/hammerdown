@@ -58,6 +58,8 @@ def test_handoff_forwards_conversion_modes(monkeypatch, mode, merge, merge_auto,
         "exclude": ["draft/**"],
         "overwrite": True,
         "skip_existing": True,
+        "yes": False,
+        "no": False,
         "output_dir": "out",
     }, mode
 

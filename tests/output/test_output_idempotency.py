@@ -35,11 +35,14 @@ def _run(
     monkeypatch: pytest.MonkeyPatch,
     *,
     skip_existing: bool = False,
+    yes: bool = False,
 ) -> int:
     monkeypatch.chdir(tmp_path)
     arguments: list[str] = []
     if skip_existing:
         arguments.append("--skip-existing")
+    if yes:
+        arguments.append("--yes")
     if mode == "merge":
         arguments.extend(["--merge", str(tmp_path / "merged.md")])
     elif mode == "tree":
@@ -98,7 +101,7 @@ def test_successful_rerun_removes_stale_assets(
     assert len(list(assets.rglob("*.png"))) == 3
 
     source.write_text(_markdown_with_images(1), encoding="utf-8")
-    assert _run(source, tmp_path, mode, monkeypatch) == 0
+    assert _run(source, tmp_path, mode, monkeypatch, yes=True) == 0
     assert [path.name for path in assets.rglob("*.png")] == ["embedded_img_1.png"]
     markdown_text = markdown.read_text(encoding="utf-8")
     assert "embedded_img_2.png" not in markdown_text
@@ -106,7 +109,7 @@ def test_successful_rerun_removes_stale_assets(
         assert markdown_text.count("FILE: source.md") == 1
 
     source.write_text(_markdown_with_images(0), encoding="utf-8")
-    assert _run(source, tmp_path, mode, monkeypatch) == 0
+    assert _run(source, tmp_path, mode, monkeypatch, yes=True) == 0
     assert not list(assets.rglob("*.png"))
     assert not assets.exists()
     if mode != "direct":
@@ -241,9 +244,8 @@ def test_failed_rerun_preserves_previous_valid_markdown_and_assets(
         raise RuntimeError("intentional conversion failure")
 
     monkeypatch.setitem(core.CONVERTERS, ".md", fail_conversion)
-    source.write_text(_markdown_with_images(1), encoding="utf-8")
 
-    assert _run(source, tmp_path, mode, monkeypatch) == 1
+    assert _run(source, tmp_path, mode, monkeypatch, yes=True) == 1
     assert _combined_snapshot(markdown, assets) == before
 
 
@@ -286,7 +288,7 @@ def test_none_markdown_preserves_previous_merge_result(
         return None, 1
 
     monkeypatch.setitem(core.CONVERTERS, ".md", return_no_markdown)
-    assert _run(source, tmp_path, "merge", monkeypatch) == 1
+    assert _run(source, tmp_path, "merge", monkeypatch, yes=True) == 1
     assert _combined_snapshot(markdown, assets) == before
     assert not list(tmp_path.glob(".hammerdown-merge-*"))
     assert not list(tmp_path.glob(".hammerdown-*"))
@@ -319,7 +321,7 @@ def test_replace_failure_restores_previous_markdown_and_assets(
         real_replace(source_path, target_path)
 
     monkeypatch.setattr(output.os, "replace", fail_asset_install)
-    assert _run(source, tmp_path, mode, monkeypatch) == 1
+    assert _run(source, tmp_path, mode, monkeypatch, yes=True) == 1
     assert _combined_snapshot(markdown, assets) == before
     assert not list(tmp_path.glob("*.hammerdown-backup-*"))
     assert not list(tmp_path.glob(".hammerdown-*"))
@@ -344,7 +346,7 @@ def test_batch_conversion_exception_aborts_merge_session(
     monkeypatch.setattr(batch, "convert_file", raise_conversion)
     monkeypatch.chdir(tmp_path)
     with pytest.raises(RuntimeError, match="intentional conversion exception"):
-        main(["--merge", str(target), str(source)])
+        main(["--yes", "--merge", str(target), str(source)])
 
     assert not list(tmp_path.glob(".hammerdown-merge-*"))
     assert target.read_text(encoding="utf-8") == "previous merge\n"

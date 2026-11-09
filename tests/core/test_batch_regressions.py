@@ -70,6 +70,8 @@ def test_coordinator_worker_restores_ordered_filter_queue(tmp_path: Path, monkey
             "filter_queue": queue,
             "overwrite": False,
             "skip_existing": False,
+            "yes": False,
+            "no": False,
             "output": None,
             "stdout": False,
             "confirm": False,
