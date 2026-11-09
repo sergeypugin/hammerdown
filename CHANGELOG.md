@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation and integration behavior updated for filters, outputs, tree workflows, and platform launchers
 - PDF work-unit chunking defaults to measured 32-page chunks instead of the unmeasured 100-page value
 - Performance documentation now records the 812-page PDF matrix, an outer-concurrency micro-benchmark, and the many-small-files batch results
+- Documentation audit corrections: the tree mode flag list, merge staging and atomic commit behavior, plain-text overwrite scope, GitWildMatch filter semantics, and scheduler descriptions now match the implementation
+- Added a `docs/CLI.md` CLI reference and a root `llms.txt` agent index
 
 ---
 
