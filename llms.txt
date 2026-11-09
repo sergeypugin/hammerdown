@@ -1,0 +1,29 @@
+# hammerdown
+
+> Convert documents -- PDF, Office files, e-books, images, and plain text -- into clean Markdown for LLM pipelines. Python CLI, library, and file-manager integration for Windows, Linux, and macOS.
+
+hammerdown turns a folder of documents into Markdown files, one merged document, or a stdout stream, keeping tables, formulas, and images readable by language models.
+
+## Quick start
+
+- [PyPI](https://pypi.org/project/hammerdown/): install with `pip install hammerdown`; upgrade later with `hammerdown --update`
+- `hammerdown --help`: the full option list; option names are case-insensitive
+- [README.md](README.md): supported formats, worked examples, and platform integration
+
+## Usage guides
+
+- [docs/CLI.md](docs/CLI.md): full CLI reference -- options, conflicts, modes, exit codes, env overrides
+- [README.md](README.md): supported formats, worked examples, and platform integration
+- [docs/PYTHON.md](docs/PYTHON.md): Python API -- `convert_file`, `to_markdown`, `convert_files`, per-format converters
+- [docs/TECHNICAL.md](docs/TECHNICAL.md): conversion internals, the estimation model, and platform integration details
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): pipeline, scheduler, and coordinator design
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md): measured benchmarks and tuning guidance for large PDFs and large batches
+- [CHANGELOG.md](CHANGELOG.md): release history
+
+## Notes for agents
+
+- Use `hammerdown --stdout <file>` to pipe one document straight into a prompt; multi-file `--stdout` emits one merged Markdown document with assets inlined as base64
+- `--merge` and `--tree` write a single target file, `hammerdowned.md` by default, and overwrite it on re-run; for durable per-file output use ordinary conversion instead
+- `--skip-existing` keeps an existing output; `-w/--overwrite` rewrites plain-text sources (`.txt`, `.md`, `.log`, `.csv`) in place
+- Scheduler tuning for large jobs is available through `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, `HAMMERDOWN_PDF_LIMIT`, and `HAMMERDOWN_FORCE_SEQUENTIAL`; the defaults are benchmark-measured and rarely need changing
+- Exit codes: `0` on success, `1` on conversion failure, `2` on CLI usage error; the Python API raises `ValueError` for unsupported option combinations
