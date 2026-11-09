@@ -246,12 +246,54 @@ The warm-up probe measured cold interpreter startup separately: importing `hamme
 
 A follow-up worker sweep at 32-page chunks was started but discarded: concurrent maintenance work on the same laptop polluted its attempts (all attempts hit the 300 s cap), which is exactly the measurement hygiene the earlier sections warn about. Benchmarks must run with the machine otherwise idle.
 
-### Why Python Multi-threading is Real Parallelism Here
+#### Work-Unit Scheduler Matrix (812-page PDF)
 
-Python's **Global Interpreter Lock (GIL)** limits parallel execution of Python bytecode within a process. `hammerdown` processes PDF page chunks in worker threads, while PyMuPDF and PyMuPDF4LLM perform much of the expensive parsing in compiled native code:
+The retained Harris sample (812 pages, 30.8 MB) ran through the production CLI with the work-unit scheduler, one subprocess per attempt and no other load on the host. The PDF-concurrency limit was injected through `HAMMERDOWN_PDF_LIMIT`; the chunk size through `HAMMERDOWN_PDF_CHUNK_PAGES`.
 
-- calls into those extensions can release the **GIL** during native operations such as layout parsing, font rasterization, and vector path decoding
-- separate page chunks are dispatched to worker threads by the PDF converter, allowing native parsing work to use multiple CPU cores
+| Configuration | Attempts | Median | Peak RSS | Note |
+| :--- | ---: | ---: | ---: | :--- |
+| chunk 16, pdf limit 2 | 1 | 732.3s | 681 MB | single run |
+| chunk 32, pdf limit 2 | 2 | 663.5s | 676 MB | fastest median |
+| chunk 64, pdf limit 2 | 2 | 689.7s | 679 MB | 4% behind 32 |
+| chunk 32, pdf limit 4 | 2 | 758.0s | 701 MB | 14% behind limit 2 |
+| chunk 32, pdf limit 6 | 1 | 691.4s | 724 MB | single run |
+
+Chunk 32 with a PDF limit of 2 is the best repeated configuration, matching the 180-page result. Raising the PDF limit to 4 or 6 is slower despite more in-flight chunks, and peak RSS is nearly flat across chunk sizes at about 680 MB, so memory pressure is set by the document, not by the chunk policy.
+
+#### Outer Concurrency Does Not Add PDF Throughput
+
+A controlled micro-benchmark isolated the question by converting identical 16-page chunks of the 812-page sample with one Python thread, two Python threads, and 2- or 4-process pools, sampling process-tree CPU time and RSS every 50 ms.
+
+| Configuration | Wall | CPU | CPU/wall | Peak RSS |
+| :--- | ---: | ---: | ---: | ---: |
+| one 16-page chunk, 1 thread | 13.9s | 151.6s | 10.9 | 391 MB |
+| two chunks back-to-back, 1 thread | 28.7s | 293.9s | 10.2 | 391 MB |
+| two chunks, 2 threads | 29.9s | 302.2s | 10.1 | 391 MB |
+| 64 pages, 1 thread, 3 reps | 56.9-76.1s | 598.6-691.4s | 9.1-10.5 | 395-489 MB |
+| 64 pages, 2 threads, 2 reps | 63.5-123.9s | 555.5-875.2s | 7.1-8.8 | 402-454 MB |
+| 64 pages, 4 threads, 2 reps | 101.8-111.3s | 777.2-818.0s | 7.4-7.6 | 424-476 MB |
+| 64 pages, 2 processes, 2 reps | 51.7-68.7s | 607.7-667.3s | 11.7-11.8 | 856.7-863.6 MB |
+| 64 pages, 4 processes, 2 reps | 57.4-60.5s | 680.3-714.0s | 11.8 | 1.34-1.35 GB |
+
+Two threads converted two 16-page chunks in 29.9s against 28.7s back-to-back on one thread, a 0.96x ratio, so outer thread parallelism contributes nothing here. The decisive number is CPU/wall: a single-threaded `pymupdf4llm.to_markdown` call already consumes about 10 CPU-seconds per wall-second, which means the native layer saturates roughly ten of the twelve hardware threads inside one call. Extra Python threads only oversubscribe those cores, and process pools add 0.4-1.0 GB of RSS without a repeatable wall-time win.
+
+This is why the measured matrix above prefers a PDF limit of 2 and why raising it hurts. The remaining lever for very large PDFs is per-page cost inside PyMuPDF, not hammerdown's dispatch width.
+
+#### Many-Small-Files Batch
+
+A 120-file batch (100 tiny `.txt`, 15 `.doc`, 5 `.docx`) converts in 4.8s end to end on the same laptop, and every Word output is real content: 16,298-16,299 bytes, 2,357 words and one image each, with no warning stubs. `.doc` goes through Microsoft Office COM with LibreOffice as fallback.
+
+| Subset | Files | Wall, rc 0 | Per file |
+| :--- | ---: | ---: | ---: |
+| `.txt` only | 100 | 1.3s | 13 ms |
+| `.doc` only | 15 | 2.3s | 153 ms |
+| full batch | 120 | 4.8s | 40 ms |
+
+The CLI imports in 0.43s and does not load PyMuPDF at all when the batch has no PDF, so the 2.1s import cost measured for PDF runs does not apply to this workload. Each `.doc` currently pays for its own PowerShell process and Word COM instance, about 0.1s of the 153 ms; sharing one Word instance across the batch is the only visible further saving and is worth under a second on 15 files.
+
+### Why Outer Python Threading Is Not the Parallelism Here
+
+Python's **Global Interpreter Lock (GIL)** limits parallel execution of Python bytecode within one process, but the measured constraint on this host is not the GIL alone. A single-threaded `pymupdf4llm.to_markdown` call consumes about 10 CPU-seconds per wall-second, so the native layer already runs on many cores inside one call. Adding a second Python thread to convert a second chunk yields 0.96x the throughput of running the same chunks back-to-back, and a 2- or 4-process pool adds 0.4-1.0 GB of RSS without a repeatable wall-time win. `hammerdown` therefore keeps outer PDF dispatch bounded at two concurrent chunks and lets PyMuPDF's internal threading supply the core utilization.
 
 For legacy binary office formats (`.doc`, `.xls`, `.ppt`), conversion timing depends on external application initialization times. The baseline ETA estimation uses a 10.0s baseline:
 
