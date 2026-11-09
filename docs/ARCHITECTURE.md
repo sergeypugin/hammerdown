@@ -16,14 +16,14 @@ flowchart TD
     E -->|ordinary per-file| F[Bounded batch scheduler]
     E -->|merge or tree| G[Ordered merge assembly]
     E -->|stdout| H[Sequential stdout stream]
-    F --> I[In-flight window of two jobs]
+    F --> I["In-flight window: two jobs, or calculate_optimal_workers when a PDF is in the batch"]
     I --> J[Resource permits]
     J -->|heavy| K[Heavy conversion job]
     J -->|PDF| L[PDF conversion job]
     J -->|legacy| M[Legacy conversion job]
     K --> N[Staged result]
     L --> O[Contiguous 32-page chunks]
-    O --> P[PDF pool with at most four workers]
+    O --> P["PDF chunks converted under a PDF permit (default two concurrent)"]
     P --> Q[Page-order reassembly]
     Q --> N
     M --> N
@@ -42,8 +42,8 @@ The conversion pipeline consists of three corresponding stages:
 
 ### 1. Input Handling
 
-- **Input sources**: paths from the command line, a Python call, a file-manager launch, or public Google Docs and Drive links
-- **CLI and Python API**: parses flags (`-i/--include`, `-e/--exclude`, `-t/--tree`, `--all-formats`, `--include-gitignored`, `-w/--overwrite`, `-s/--skip-existing`, `-o/--output-dir`, `-m/--merge`, `--stdout`, `--confirm`, `-v/--version`) and hands the run to `run_batch`; option names are case-insensitive, while option values, paths, and filter patterns retain their supplied case. An empty CLI invocation prints the tool description, supported formats, and help hint; a conversion invocation without resources is an error
+- **Input sources**: paths from the command line, a Python call, a file-manager launch, public Google Docs and Drive links, or GitHub locators and repository roots (`core/github.py`, staged by `core/acquisition.py`)
+- **CLI and Python API**: parses flags (`-i/--include`, `-e/--exclude`, `--tree`, `--all-formats`, `--include-gitignored`, `-w/--overwrite`, `-s/--skip-existing`, `-o/--output-dir`, `-m/--merge`, `--stdout`, `--confirm`, `--tokens`, `--time`, `--dir-struct`, `--install`, `--uninstall`, `--update`, `-v/--version`) and hands the run to `run_batch`; option names are case-insensitive, while option values, paths, and filter patterns retain their supplied case. An empty CLI invocation prints the tool description, supported formats, and help hint; a conversion invocation without resources is an error
 - **Path normalization and generated-output rules**: resolves Windows and WSL paths, handles arguments grouped with single or double quotes, and verifies that each path exists; quote characters inside a file name are not supported by this parser. Recursive discovery excludes `hm_*.md` and `hammerdowned.md` as generated outputs, but explicitly selecting one is an error; a directory containing only generated outputs is also an error because no input resources remain
 
 ### 2. Content Parsing & Extraction
@@ -75,16 +75,16 @@ Normal per-file output writes one deterministic Markdown document plus its asset
 - the target opens with a `Directory structure:` tree listing every source relative to that root
 - each document is appended as a block introduced by a 48-character `=` separator, a line such as `FILE: notes/draft.md`, and the separator again, followed by the converted Markdown
 - assets are redirected into a folder named after the merge target: `summary.md` uses `hm_merged_into_summary_images/`, mirroring each document's relative path, and image links are rewritten to match
-- the file is written incrementally as the batch runs, so an interrupted run still leaves a usable partial document
+- the merged document is assembled in a hidden `.hammerdown-merge-` staging directory next to the target and committed atomically once every source has been appended; an interrupted run aborts the staging and leaves the previous target untouched, and a rerun whose sources produced errors also preserves an existing target
 - a successful rerun replaces the merge target and its complete merge asset directory; with `-s/--skip-existing`, an existing merge target causes the whole merge to be skipped and leaves both the target and its assets untouched, even if stale
 - when a custom merge target is inside a recursively selected directory, discovery excludes that target on reruns so it is not merged into itself; explicitly passing the target as a source remains an error
 - `--merge` rejects `--overwrite` and `--output-dir`
 
-### Tree Output (`-t / --tree`)
+### Tree Output (`--tree`)
 
 Tree mode replaces ordinary per-file discovery with a Gitingest-like tree selection and always writes one combined Markdown target. Without `--all-formats`, it selects text and source-like files without adding Hammerdown's binary document formats. `--all-formats` adds supported Hammerdown documents; unknown binary files remain skipped. The target defaults to `hammerdowned.md`, can be set with `-m`, and uses the same directory header, per-file sections, and asset redirection as merged output.
 
-`-t/--tree` and `--all-formats` are parsed intermixed with resources, so they may appear before, between, or after positional paths. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
+`--tree` and `--all-formats` are parsed intermixed with resources, so they may appear before, between, or after positional paths. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
 
 ### Streaming to stdout (`--stdout`)
 
@@ -130,13 +130,13 @@ In non-TTY runs (pipes, CI, redirected logs) no live view is drawn. Each file is
 - orchestration: `batch/__init__.py` (`run_batch`, the optional coordinator hand-off, and the public `convert_files`; ordinary per-file conversions use a bounded in-process scheduler, while merge, tree, and stdout use specialized output paths)
 - conversion core: `core/__init__.py` (`to_markdown`, `convert_file`, `ConversionResult`, `SUPPORTED_EXTENSIONS`, and re-exports of parsers and helpers)
 - batch pipeline: `core/job.py` (`ConversionJob`, `prepare_conversion`, staged commit and abort), `core/scheduler.py` (bounded permit-based scheduler), `core/preflight.py` (ordered validation and reporting), `core/acquisition.py` (remote input staging)
-- input resolution: `core/discovery.py` (`expand_paths` for recursive resolution, dedup, include/exclude filters, and ignored-directory pruning; `output_paths` for the `-o` layout, which raises on filename collisions), `core/google_drive.py` (link detection, download, and title extraction)
+- input resolution: `core/discovery.py` (`expand_paths` for recursive resolution, dedup, include/exclude filters, and ignored-directory pruning; `output_paths` for the `-o` layout, which raises on filename collisions), `core/google_drive.py` (link detection, download, and title extraction), `core/github.py` (GitHub locator parsing and repository acquisition), `core/ignore.py` (`.gitignore`/`.gitingestignore` discovery and matching), `core/filters.py` (ordered include/exclude queue compilation)
 - alternate pipelines: `core/merge.py` (`merge_root_for_inputs`, `render_merge_header`, `merge_asset_paths`, `render_merged_document`, `render_merged_markdown`, `initialize_merge_file`, `append_merged_document`), `core/stdout_mode.py` (`approximate_tokens`, `confirm_stdout`, `run_stdout_conversion`)
 - estimates: `core/estimates.py` (single source of truth for the ETA via `describe`, `get_conversion_estimate_seconds`, and `get_conversion_estimate`, plus `PDF_EXTENSIONS`, `LEGACY_EXTENSIONS`, and `FAST_TEXT_EXTENSIONS`)
 - support: `core/resources.py` (`embed_temporary_resources`, `token_count`), `core/path_utils.py` (`normalize_path`, `get_images_dir_name`, `enable_vt_mode`), `core/platform_utils.py` (`is_windows`, `is_macos`, `is_linux`), `core/formatting.py` (`format_duration`, `format_progress_bar`), `utils.py` (thin facade re-exporting the UI and formatting helpers for tests)
 - platform integration: `core/ipc.py` (`IPCCoordinator`, `try_delegate_to_coordinator`), `core/file_selection.py` (PowerShell picker on Windows, tkinter elsewhere), `core/windows_console.py` (binds a windowed Windows process to its parent console), `core/updater.py` (`update()`, bounded release/checksum/binary downloads verified by a mandatory SHA-256 checksum or digest plus an executable magic-byte check, and a staged binary swap with Windows recovery), `integrations/` (`install`/`uninstall`, shared helpers in `_common`, per-platform `windows`, `windows_terminal`, `macos`, `linux`)
 - progress UI: `ui/batch_ui.py` (state and terminal control), `ui/batch_ui_render.py` (Rich panels and tables), `ui/ui_constants.py` (colors, widths, and layout constants)
-- parsers: `parsers/__init__.py` holds the merged `CONVERTERS` registry, alongside `text`, `pdf`, `tables`, `markdown_render` (shared `render_markdown_table` and `is_math_glue`), `math/` (OMML and MathML conversion with `symbols.json`), `charts`, `odt`, `html`, `archive`, and an `office/` subpackage (`word`, `spreadsheet`, `presentation`, `legacy`)
+- parsers: `parsers/format_registry.py` defines the merged `CONVERTERS` registry (re-exported by `parsers/__init__.py`), alongside `text`, `pdf`, `tables`, `markdown_render` (shared `render_markdown_table` and `is_math_glue`), `math/` (OMML and MathML conversion with `symbols.json`), `charts`, `odt`, `html`, `archive`, and an `office/` subpackage (`word`, `spreadsheet`, `presentation`, `legacy`)
 
 ## Cascade Parser Pipeline for Legacy Formats
 
