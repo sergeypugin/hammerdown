@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Coordinator busy-rejection for delegates that arrive after batch assembly closes, with local-conversion fallback
 - Cross-process advisory locking on merge target files
 - Benchmark overrides `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, `HAMMERDOWN_FORCE_SEQUENTIAL`, and `HAMMERDOWN_PDF_LIMIT`
+- Overwrite prompt for existing merge and tree targets, with non-interactive `-y/--yes` and `-n/--no` overrides
 
 ### Fixed
 - Output target safety, failed-merge rollback, stdout/stderr separation, and coordinator option propagation
@@ -37,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PDF work-unit chunking defaults to measured 32-page chunks instead of the unmeasured 100-page value
 - Performance documentation now records the 812-page PDF matrix, an outer-concurrency micro-benchmark, and the many-small-files batch results
 - Documentation audit corrections: the tree mode flag list, merge staging and atomic commit behavior, plain-text overwrite scope, GitWildMatch filter semantics, and scheduler descriptions now match the implementation
-- Added a `docs/CLI.md` CLI reference and a root `llms.txt` agent index
+- Added a `docs/CLI.md` CLI reference, a `docs/DESKTOP.md` desktop guide with the file-manager action icons, and a root `llms.txt` agent index
 
 ---
 

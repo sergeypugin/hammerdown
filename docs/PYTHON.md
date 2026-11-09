@@ -107,6 +107,8 @@ convert_files(
     exclude=(),
     overwrite=False,
     skip_existing=False,
+    yes=False,
+    no=False,
     output_dir=None,
     merge=None,
     stdout=False,
@@ -118,7 +120,7 @@ convert_files(
 - `files` (`Sequence[str | Path]`): files or directories to convert
 - `include` / `exclude` (`Sequence[str]`, optional): GitWildMatch (gitignore-style) patterns; each value accepts comma- or whitespace-separated patterns and is matched against each path relative to the resource context
 - `include_gitignored` (`bool`, default `False`): mirrors the CLI `--include-gitignored` flag
-- `overwrite`, `skip_existing`, `output_dir`, `merge`, `stdout`, `confirm`: mirror the CLI flags of the same names
+- `overwrite`, `skip_existing`, `yes`, `no`, `output_dir`, `merge`, `stdout`, `confirm`: mirror the CLI flags of the same names
 
 ```python
 import hammerdown
@@ -135,6 +137,7 @@ The function raises `ValueError` for unsupported option combinations:
 - `stdout` with `merge`, `output_dir`, `overwrite`, or `skip_existing`
 - `merge` with `overwrite` or `output_dir`
 - `overwrite` with `skip_existing` or `output_dir`
+- `yes` with `no` or `skip_existing`
 - a malformed filter value in `include` or `exclude` (for example, an unterminated quote)
 
 ## Format-Specific Converters

@@ -14,6 +14,7 @@ hammerdown turns a folder of documents into Markdown files, one merged document,
 
 - [docs/CLI.md](docs/CLI.md): full CLI reference -- options, conflicts, modes, exit codes, env overrides
 - [README.md](README.md): supported formats, worked examples, and platform integration
+- [docs/DESKTOP.md](docs/DESKTOP.md): file-manager integration -- the four context-menu actions behind `hammerdown --install`
 - [docs/PYTHON.md](docs/PYTHON.md): Python API -- `convert_file`, `to_markdown`, `convert_files`, per-format converters
 - [docs/TECHNICAL.md](docs/TECHNICAL.md): conversion internals, the estimation model, and platform integration details
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): pipeline, scheduler, and coordinator design
@@ -23,7 +24,7 @@ hammerdown turns a folder of documents into Markdown files, one merged document,
 ## Notes for agents
 
 - Use `hammerdown --stdout <file>` to pipe one document straight into a prompt; multi-file `--stdout` emits one merged Markdown document with assets inlined as base64
-- `--merge` and `--tree` write a single target file, `hammerdowned.md` by default, and overwrite it on re-run; for durable per-file output use ordinary conversion instead
+- `--merge` and `--tree` write one target file, `hammerdowned.md` by default, overwriting on re-run; scripts must pass `--yes`, `--no`, or `--skip-existing` when the target exists, or a non-interactive run exits `1`; for durable per-file output use ordinary conversion instead
 - `--skip-existing` keeps an existing output; `-w/--overwrite` rewrites plain-text sources (`.txt`, `.md`, `.log`, `.csv`) in place
 - Scheduler tuning for large jobs is available through `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, `HAMMERDOWN_PDF_LIMIT`, and `HAMMERDOWN_FORCE_SEQUENTIAL`; the defaults are benchmark-measured and rarely need changing
 - Exit codes: `0` on success, `1` on conversion failure, `2` on CLI usage error; the Python API raises `ValueError` for unsupported option combinations

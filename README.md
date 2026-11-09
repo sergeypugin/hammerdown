@@ -281,6 +281,8 @@ Options:
 - `-s`, `--skip-existing` -- skip conversion when the target Markdown file already exists; without it, existing `hm_*.md` outputs are overwritten and their complete asset directories are replaced
 - `-o`, `--output-dir DIR` -- save Markdown output and extracted images under DIR, preserving the relative layout of the input tree
 - `-m [OUTPUT_MD]`, `--merge [OUTPUT_MD]` -- merge converted documents into the target Markdown file; the next argument is the output, and an omitted target defaults to `hammerdowned.md`
+- `-y`, `--yes` -- overwrite an existing merge or tree target without asking
+- `-n`, `--no` -- keep an existing merge or tree target and exit `0` without converting
 - `--stdout` -- write the merged Markdown document to stdout; errors go to stderr
 - `--confirm` -- with `--stdout`, print a preflight estimate and ask for confirmation before writing anything
 - `--tokens` -- report source and estimated token counts without converting
@@ -380,6 +382,7 @@ Key properties:
 - extracted assets are not mixed with the originals: for the target `summary.md`, images, charts, and decoded pictures are written into `hm_merged_into_summary_images/` next to the target, in subfolders that mirror each document's relative path, and their links are rewritten accordingly
 - `--merge` is rejected together with `--overwrite` and with `--output-dir`, so plain-text sources are never modified during a merge
 - combined with `-s` / `--skip-existing`, the whole merge is skipped when the target file already exists; the target and its merge asset directory are left untouched, even if stale
+- when the target file already exists and `-s` is not set, a terminal session asks `Overwrite <name>? [y/n]` before overwriting it; `-y`/`--yes` overwrites without asking, `-n`/`--no` keeps the existing target and exits `0`, and a non-interactive run without either flag exits `1` with guidance instead of hanging
 - when a custom merge target is inside a recursively selected directory, discovery excludes that target so a rerun does not merge the previous output into itself; explicitly passing the target as a source remains an error
 
 After the run the sources stay where they were, and the merged file sits next to its assets:

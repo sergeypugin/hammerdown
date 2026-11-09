@@ -1,5 +1,11 @@
 # CLI Reference
 
+| ![Convert to Markdown](assets/action_convert.png) | ![Merge](assets/action_merge.png) | ![Tree](assets/action_tree.png) | ![Tree with all formats](assets/action_tree_all.png) |
+| :---: | :---: | :---: | :---: |
+| Convert to Markdown | Merge | Tree | Tree with all formats |
+
+The four file-manager actions installed by `hammerdown --install` map to the modes documented below: a plain run, `-m`/`--merge`, `--tree`, and `--tree --all-formats`.
+
 `hammerdown` has one command-line entry point that turns documents into Markdown. A single invocation can convert files one by one into `hm_*.md` outputs, merge many documents into one Markdown target (`-m`/`--merge`), gather a whole source tree into one document (`--tree`), stream a merged document to stdout (`--stdout`), or print a report without converting (`--tokens`, `--time`, `--dir-struct`). Separate management options install, remove, and update the file-manager integration (`--install`, `--uninstall`, `--update`/`--upgrade`). Every option below is verified against the parser in `src/hammerdown/cli.py`, including defaults, conflicts, and exit codes.
 
 ## Quick start
@@ -47,6 +53,8 @@ Running `hammerdown` with no arguments prints the version, the tool description,
 | `--time` | report conversion time estimates without converting | off | `--merge`, `--stdout`, `-o`, `-w`, `-s` |
 | `--dir-struct` | report the selected directory structure without converting | off | `--merge`, `--stdout`, `-o`, `-w`, `-s`, `--tree` |
 | `--confirm` | show a preflight estimate and ask for confirmation before `--stdout` | off | requires `--stdout` |
+| `-y`, `--yes` | overwrite an existing merge/tree target without asking | off | `-n`, `-s` |
+| `-n`, `--no` | keep an existing merge/tree target and exit `0` without converting | off | `-y` |
 | `files` | input resources: files, directories, Google Docs/Drive links, GitHub references | required for conversion runs | |
 
 Behavior notes verified against the parser:
@@ -55,7 +63,8 @@ Behavior notes verified against the parser:
 - long options require exactly two dashes: single-dash long forms (`-include`) and abbreviated long forms (`--tre`) are rejected with a suggestion, even when the abbreviation is unambiguous
 - there is no `-t` short option for tree mode: `-t` is rejected with `unrecognized option '-t'; did you mean '--tree'?`
 - `-i`/`-e` may be repeated; each repetition appends to one ordered filter queue (see [Filters and ignore rules](#filters-and-ignore-rules))
-- `-o/--output-dir` may be repeated only with the same directory; two different directories are rejected
+- `-o`/`--output-dir` may be repeated only with the same directory; two different directories are rejected
+- a merge or tree run whose target file already exists asks `Overwrite <name>? [y/n]` in a terminal; `-y` answers it in advance, `-n` keeps the existing target and exits `0`, and a non-interactive run without either flag fails with exit code `1` instead of waiting for input
 - use `--` to end option parsing when an input path starts with `-`
 - conflicts are validated before any discovery starts, so a conflicting command fails with exit code `2` without converting anything
 
