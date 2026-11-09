@@ -27,6 +27,7 @@ The PDF pipeline is built on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyM
 - **Web pages**: `.html`, `.htm`
 - **Google Drive exports**: `.zip` (Google Docs "Web page" export, containing an `.html` file and an optional `images/` folder)
 - **Google Docs/Drive links**: public `docs.google.com` (document, spreadsheets, presentation) and `drive.google.com/file` URLs are downloaded automatically; **Drive folders are not supported**
+- **Google Drive downloads**: `.gdoc`, `.gsheets`, `.gslides`, `.gfile` payloads (the HTML files produced when a Google Docs/Drive link is downloaded) convert like web pages
 
 > [!important]
 > Legacy binary formats (`.doc`, `.xls`, `.ppt`) require a compatible desktop office suite installed on the same computer as `hammerdown`. These applications are not bundled with `hammerdown`.
@@ -273,15 +274,18 @@ Options:
 
 - `-i`, `--include PATTERN` -- include paths matching a GitWildMatch/pathspec pattern; may be repeated
 - `-e`, `--exclude PATTERN` -- exclude paths matching a GitWildMatch/pathspec pattern; may be repeated
-- `-t`, `--tree` -- gather a project tree into one Markdown output, using Gitingest-like text and code collection
+- `--tree` -- gather a project tree into one Markdown output, using Gitingest-like text and code collection
 - `--all-formats` -- in tree mode, also include supported Hammerdown document formats
 - `--include-gitignored` -- do not apply repository `.gitignore` and `.gitingestignore` rules
-- `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`) in-place instead of creating a copy
+- `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`, `.log`, `.csv`) in-place instead of creating a copy
 - `-s`, `--skip-existing` -- skip conversion when the target Markdown file already exists; without it, existing `hm_*.md` outputs are overwritten and their complete asset directories are replaced
 - `-o`, `--output-dir DIR` -- save Markdown output and extracted images under DIR, preserving the relative layout of the input tree
 - `-m [OUTPUT_MD]`, `--merge [OUTPUT_MD]` -- merge converted documents into the target Markdown file; the next argument is the output, and an omitted target defaults to `hammerdowned.md`
 - `--stdout` -- write the merged Markdown document to stdout; errors go to stderr
 - `--confirm` -- with `--stdout`, print a preflight estimate and ask for confirmation before writing anything
+- `--tokens` -- report source and estimated token counts without converting
+- `--time` -- report conversion time estimates without converting
+- `--dir-struct` -- report the selected directory structure without converting
 - `-v`, `--version` -- display version information
 
 Option names are case-insensitive, including short and long forms, but option values, paths, and include/exclude filter patterns preserve the case supplied by the caller. Long options must use their exact two-dash names: single-dash long forms and abbreviated long forms remain errors, even when the abbreviation is unambiguous; Hammerdown prints a suggestion or the possible matches.
@@ -290,20 +294,23 @@ Option names are case-insensitive, including short and long forms, but option va
 
 A tree run without `--all-formats` gathers Gitingest-like text and code-like files. It does not add Hammerdown's binary document formats to the tree. With `--all-formats`, supported Hammerdown documents are included too; unknown binary files are skipped. Tree mode always produces one combined Markdown document: `hammerdowned.md` by default, or the file passed with `-m`. It is not a per-file conversion mode.
 
+> [!important]
+> tree mode always writes the same target file (`hammerdowned.md` unless `-m` sets one) and replaces it on every run. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead
+
 ```sh
-hammerdown -t project/
+hammerdown --tree project/
 hammerdown project/ --tree --all-formats
 ```
 
-`-t` / `--tree` and `--all-formats` may appear before, between, or after resource arguments. These forms are equivalent:
+`--tree` and `--all-formats` may appear before, between, or after resource arguments. These forms are equivalent:
 
 ```sh
-hammerdown -t --all-formats project/
-hammerdown -t project/ --all-formats
-hammerdown project/ -t --all-formats
+hammerdown --tree --all-formats project/
+hammerdown --tree project/ --all-formats
+hammerdown project/ --tree --all-formats
 ```
 
-`--all-formats` without `-t` / `--tree` is rejected. `.log` files are not excluded automatically in any conversion mode; a log is processed unless an ignore rule or filter excludes it.
+`--all-formats` without `--tree` or `--dir-struct` is rejected. `.log` files are not excluded automatically in any conversion mode; a log is processed unless an ignore rule or filter excludes it.
 
 #### Resource filters and ignore files
 
@@ -332,7 +339,10 @@ hammerdown project/report.pdf project/notes.docx project/drafts/ -m
 
 The first command writes `summary.md`; the second writes the default `hammerdowned.md`. An argument immediately after `-m` is never an input resource. For example, `hammerdown -m report.pdf` treats `report.pdf` as the output target and then fails because no input remains, while `hammerdown -m output.md report.pdf` is valid.
 
-The target file is built incrementally and has two parts.
+> [!important]
+> merge and tree always write the same target file (`hammerdowned.md` unless `-m` sets one) and replace it on every run, so a later run with different arguments overwrites the previous merged output. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead: it writes `hm_<stem>_<ext>.md` next to each source and keeps different runs separate
+
+The merged document has two parts. It is assembled in a hidden staging directory and committed atomically once every source has been converted.
 
 First, a directory tree of every source document, relative to their common root:
 
@@ -366,7 +376,7 @@ FILE: drafts/plan.md
 
 Key properties:
 
-- output is written as the batch runs, so a partially converted file is still usable if the run is interrupted
+- the merged document is assembled in a hidden `.hammerdown-merge-` staging directory next to the target and committed atomically once every source has been appended; an interrupted run leaves the previous target untouched, and a rerun whose sources produced errors also preserves an existing target
 - extracted assets are not mixed with the originals: for the target `summary.md`, images, charts, and decoded pictures are written into `hm_merged_into_summary_images/` next to the target, in subfolders that mirror each document's relative path, and their links are rewritten accordingly
 - `--merge` is rejected together with `--overwrite` and with `--output-dir`, so plain-text sources are never modified during a merge
 - combined with `-s` / `--skip-existing`, the whole merge is skipped when the target file already exists; the target and its merge asset directory are left untouched, even if stale
