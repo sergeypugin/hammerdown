@@ -130,19 +130,20 @@ Field semantics:
 - `source`: resolved common root directory of all inputs (forward slashes); the per-file directory tree in the body is relative to it
 - `inputs`: raw command-line arguments exactly as passed, one YAML list item each; written as `inputs: []` when empty
 - `files`: number of discovered sources
-- `tokens_estimate`: approximate output token count, plain integer, computed with the same rules as `--tokens` (exact counts for text sources, size//4 estimate for known binary formats); the metadata block itself is not counted in it
+- `tokens_estimate`: approximate output token count, plain integer; it is recounted from the generated document body right before the target is committed, and falls back to the source-based estimate (exact counts for text sources, size//4 estimate for known binary formats) when the generated output cannot be counted; the metadata block itself is not counted in it
 
 Extracted assets are not mixed with the originals: for the target `summary.md`, images are written into `hm_merged_into_summary_images/` next to the target, in subfolders that mirror each document's relative path, and links are rewritten accordingly. The target is assembled in a staging file during the run and committed atomically when the batch finishes; if the run is interrupted, the previous target is left untouched, never a partial file. An advisory lock file prevents two processes from merging into one target at the same time.
 
 Additional merge behavior:
 
 - `--merge` is rejected together with `--overwrite` and with `-o/--output-dir`, so plain-text sources are never modified during a merge
+- text files containing NUL bytes are refused as binary content instead of converting into mojibake: discovery skips them, and naming one explicitly is an unsupported-format error; a CSV with NUL bytes fails at conversion time with the same error treatment
 - with `-s`/`--skip-existing`, the whole run is skipped when the target already exists; the target and its asset directory are left untouched even if stale
 - a custom target inside a recursively selected directory is excluded from discovery, so a rerun does not merge the previous output into itself; explicitly passing the target as a source is an error
 
 ### Tree mode (`--tree`, `--all-formats`)
 
-`--tree` gathers the selection into one combined Markdown document using Gitingest-like text and code collection: text and source-code files are included, while Hammerdown's binary document formats are not. `--all-formats` extends tree discovery with the supported document formats; unknown binary files remain skipped. Tree mode always writes one target: `hammerdowned.md` in the working directory by default, or the file passed with `-m`. It is not a per-file conversion mode. The target starts with the YAML frontmatter metadata block described in the merge mode section, with `mode` set to `tree` or `tree --all-formats`.
+`--tree` gathers the selection into one combined Markdown document using Gitingest-like text and code collection: text and source-code files are included, while Hammerdown's binary document formats are not. `--all-formats` extends tree discovery with the supported document formats; unknown binary files remain skipped, and text files containing NUL bytes count as binary too. Tree mode always writes one target: `hammerdowned.md` in the working directory by default, or the file passed with `-m`. It is not a per-file conversion mode. The target starts with the YAML frontmatter metadata block described in the merge mode section, with `mode` set to `tree` or `tree --all-formats`.
 
 ```sh
 hammerdown --tree project/
@@ -193,7 +194,7 @@ Without flags, an existing `hm_*.md` output is overwritten on a rerun together w
 
 `-s/--skip-existing` checks only the Markdown target: when it exists, conversion of that file is skipped and both the target and its asset directory stay untouched, even if stale. In merge mode, an existing target skips the whole run.
 
-For merge and tree targets without `-s`, an interactive terminal asks before overwriting: it first prints `Existing output was generated with:` followed by the existing file's frontmatter block, then asks `Overwrite <name>? [y/n]`. `-y`/`--yes` overwrites without asking, and `-n`/`--no` keeps the existing target and exits `0`. A non-interactive run without `--yes`, `--no`, or `--skip-existing` still fails fast with exit `1` and the same error text, plus a `(hammerdown <version>, converted <date>, mode <mode>)` suffix when the existing target has frontmatter.
+For merge and tree targets without `-s`, an interactive terminal asks before overwriting: it first prints `Existing output was generated with:` followed by the existing file's frontmatter block, then asks `Overwrite <name>? [y/n]`. `-y`/`--yes` overwrites without asking, and `-n`/`--no` keeps the existing target and exits `0`. A non-interactive run without `--yes`, `--no`, or `--skip-existing` still fails fast with exit `1` and the same error text, plus a `(hammerdown <version>, converted <date>, mode <mode>)` suffix when the existing target has frontmatter. A prompt cut short by end of input (Ctrl+D, Ctrl+Z on Windows) or Ctrl+C fails fast the same way instead of hanging.
 
 > [!warning]
 > merge and tree modes always write the same target file (`hammerdowned.md` unless `-m` sets one) and replace it on every run, frontmatter included, so the metadata always reflects the latest run and the target is a generated snapshot rather than durable storage. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead

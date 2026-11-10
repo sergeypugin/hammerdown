@@ -37,6 +37,9 @@ def log_progress(current: int, total: int, unit: str):
 text, images = to_markdown("data/report.docx", target_dir="output", progress_callback=log_progress)
 ```
 
+> [!note]
+> `to_markdown` raises `ValueError` (`binary content in text file` or `binary content in CSV file`) when a text or CSV source contains NUL (binary) bytes, instead of returning garbled Markdown
+
 ### `convert_file(...)`
 
 Converts the document and writes the output file to disk. For example, `report.docx` produces `hm_report_docx.md` next to the source.
@@ -155,7 +158,7 @@ Each converter has the same signature and returns `tuple[str | None, int]` -- th
 - `convert_docx(docx_path, out_dir)` -- converts modern Word (.docx) files, parses tables, turns Word formulas into LaTeX, and renders embedded charts as SVG; additionally accepts `images_dir_name=None` and `progress_callback=None` as keyword arguments
 - `convert_doc(doc_path, out_dir)` -- converts legacy Word (.doc) files using LibreOffice or Microsoft Word automation
 - `convert_odt(odt_path, out_dir)` -- converts OpenDocument Text (.odt) files with native formula and image extraction
-- `convert_txt_or_md(file_path, out_dir)` -- reads plain text, log, or Markdown files with automatic encoding detection; extracts any embedded base64 image strings into files whose extension follows the MIME subtype (`embedded_img_1.png`, `embedded_img_2.jpeg`, and so on) inside the source's asset folder, for example `hm_images_LMS_md/`
+- `convert_txt_or_md(file_path, out_dir)` -- reads plain text, log, or Markdown files with automatic encoding detection; extracts any embedded base64 image strings into files whose extension follows the MIME subtype (`embedded_img_1.png`, `embedded_img_2.jpeg`, and so on) inside the source's asset folder, for example `hm_images_LMS_md/`; raises `ValueError` when the file contains NUL (binary) bytes
 
 ```python
 from hammerdown import convert_docx, convert_odt
@@ -168,7 +171,7 @@ odt_text, images = convert_odt("paper.odt", "out")
 
 - `convert_xlsx(xlsx_path, out_dir)` -- converts Excel (.xlsx) workbooks to Markdown tables, supporting formulas and multi-table sheets
 - `convert_xls(xls_path, out_dir)` -- converts legacy Excel (.xls) files
-- `convert_csv(csv_path, out_dir)` -- automatically detects delimiter and converts CSV into clean Markdown tables
+- `convert_csv(csv_path, out_dir)` -- automatically detects delimiter and converts CSV into clean Markdown tables; raises `ValueError` on NUL (binary) content
 
 ```python
 from hammerdown import convert_xlsx, convert_csv

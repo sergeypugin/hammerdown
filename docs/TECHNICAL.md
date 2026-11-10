@@ -52,10 +52,12 @@ Key naming rules:
 - cell boundaries are detected automatically, trimming blank margins and turning separate tables on the same sheet into individual Markdown tables
 - evaluated values take precedence over raw formulas when available
 - character encodings (UTF-8, CP1251, CP1252, Latin-1) and tabular delimiters (comma, semicolon, tab, pipe) are detected automatically for CSV files
+- a CSV file containing NUL bytes is rejected as binary content (`ValueError: binary content in CSV file` from the Python API) instead of being parsed into a broken table
 
 ### Plain Text and Markdown (.txt, .md, .log)
 
 - text is decoded with automatic fallback across UTF-8, CP1251, CP1252, and Latin-1 encodings
+- a text file containing NUL bytes is treated as binary and refused (`ValueError: binary content in text file` from the Python API) instead of being decoded into mojibake
 - if a Markdown file contains embedded base64 image strings (like `data:image/png;base64,...`), `hammerdown` decodes them, saves them as `embedded_img_1.png`, `embedded_img_2.jpeg`, and so on inside the source's asset folder, and replaces the inline base64 string with a clean relative link. For `LMS.md`, the folder is `hm_images_LMS_md/`
 
 ### PowerPoint Presentations (.pptx, .ppt)
