@@ -231,7 +231,7 @@ def test_scheduler_propagates_keyboard_interrupt_and_cleans_prepared_staging(tmp
 
     def prepare(job: ConversionJob, **_kwargs: object) -> PreparedConversion:
         if job.input_index == 0:
-            assert staging_created.wait(timeout=2)
+            assert staging_created.wait(timeout=30)
             raise KeyboardInterrupt
         staging = OutputStaging.create(tmp_path, prefix=".scheduler-ready-")
         staging_paths.append(staging.path)

@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Binary markers appear in merge and tree output only for failed conversions, never after a successful one
 - Merge and tree token estimates are recounted from the generated output before commit, falling back to the source-based estimate when counting is unavailable
 - The merge and tree overwrite prompt fails fast with exit code 1 on end-of-input or interrupt instead of hanging
+- The coordinator shutdown no longer waits indefinitely when its wake-up handshake stalls against a server thread that is already exiting
 - Text and CSV files containing NUL bytes are refused as binary content: skipped during discovery, an unsupported-format error when named explicitly, and a `ValueError` from the Python API
 
 ### Changed
