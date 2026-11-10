@@ -67,7 +67,7 @@ convert_file(
 - `stdout` (`bool`, default `False`): returns the Markdown in `result.markdown` without writing files, inlining assets as base64; cannot be combined with `overwrite`, `skip_existing`, `target_dir`, or `asset_dir`
 - `asset_dir` (`str | Path | None`, optional): directory where extracted assets go; defaults to the output directory
 - `write_markdown` (`bool`, default `True`): when `False`, the Markdown is returned in `result.markdown` but not written to disk, unless `overwrite=True` rewrites a plain-text source in place; this is how merge mode collects text
-- `merge_session` (`MergeSession | None`, default `None`): internal merge plumbing that appends into a caller-provided merge session; requires `asset_dir` when set
+- `merge_session` (`MergeSession | None`, default `None`): internal merge plumbing that appends into a caller-provided merge session; requires `asset_dir` when set. `MergeSession(target)` without `metadata` keeps the old headerless output, while `MergeSession(target, metadata=OutputMetadata(mode=..., inputs=(...)))` records provenance in a YAML frontmatter metadata block; `OutputMetadata` is a frozen dataclass (`mode: str`, `inputs: tuple[str, ...]`) exported from `hammerdown.core`
 - Returns: `ConversionResult`
 
 `ConversionResult` is a frozen dataclass with these fields:

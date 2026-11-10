@@ -24,7 +24,7 @@ hammerdown turns a folder of documents into Markdown files, one merged document,
 ## Notes for agents
 
 - Use `hammerdown --stdout <file>` to pipe one document straight into a prompt; multi-file `--stdout` emits one merged Markdown document with assets inlined as base64
-- `--merge` and `--tree` write one target file, `hammerdowned.md` by default, overwriting on re-run; scripts must pass `--yes`, `--no`, or `--skip-existing` when the target exists, or a non-interactive run exits `1`; for durable per-file output use ordinary conversion instead
+- `--merge` and `--tree` write one target file, `hammerdowned.md` by default, overwriting on re-run; the target starts with a YAML frontmatter metadata block (tool, version, date, mode, source, inputs, files, tokens_estimate) that lets you tell stale outputs from fresh ones; scripts must pass `--yes`, `--no`, or `--skip-existing` when the target exists, or a non-interactive run exits `1`; for durable per-file output use ordinary conversion instead
 - `--skip-existing` keeps an existing output; `-w/--overwrite` rewrites plain-text sources (`.txt`, `.md`, `.log`, `.csv`) in place
 - Scheduler tuning for large jobs is available through `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, `HAMMERDOWN_PDF_LIMIT`, and `HAMMERDOWN_FORCE_SEQUENTIAL`; the defaults are benchmark-measured and rarely need changing
 - Exit codes: `0` on success, `1` on conversion failure, `2` on CLI usage error; the Python API raises `ValueError` for unsupported option combinations

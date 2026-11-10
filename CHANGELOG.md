@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows Hammerdown submenu with Convert to Markdown, Merge, Tree, and Tree with all formats actions
 - matching file-manager actions and documentation for KDE, Nautilus, Nemo, Caja, and macOS
 - provenance-safe PDF chunk benchmark harness and regression coverage for page-boundary behavior
+- YAML frontmatter metadata block (tool, version, date, mode, source, inputs, files, tokens_estimate) for merge and tree outputs, so stale targets are easy to tell from fresh ones
 
 ### Fixed
 - output target collisions, failed merge rollback, coordinator lifecycle races, updater verification, and stale integration assets
@@ -57,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - PDF chunk results remain assembled in page order and fall back to per-page conversion when a chunk fails
+- the overwrite prompt for existing merge and tree targets now prints the existing output's frontmatter metadata before asking
 - installation documentation now explains the actions and platform-specific presentation after `hammerdown --install`
 - release CI now validates tests, type checks, release metadata, platform artifacts, checksums, and PyPI publishing
 

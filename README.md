@@ -294,10 +294,10 @@ Option names are case-insensitive, including short and long forms, but option va
 
 #### Tree Mode
 
-A tree run without `--all-formats` gathers Gitingest-like text and code-like files. It does not add Hammerdown's binary document formats to the tree. With `--all-formats`, supported Hammerdown documents are included too; unknown binary files are skipped. Tree mode always produces one combined Markdown document: `hammerdowned.md` by default, or the file passed with `-m`. It is not a per-file conversion mode.
+A tree run without `--all-formats` gathers Gitingest-like text and code-like files. It does not add Hammerdown's binary document formats to the tree. With `--all-formats`, supported Hammerdown documents are included too; unknown binary files are skipped. Tree mode always produces one combined Markdown document: `hammerdowned.md` by default, or the file passed with `-m`. It is not a per-file conversion mode. The output starts with a YAML frontmatter metadata block -- the same one merge mode writes, described below -- recording the tool, version, date, mode, source, inputs, file count, and token estimate, so you can tell a stale target from a fresh one.
 
 > [!important]
-> tree mode always writes the same target file (`hammerdowned.md` unless `-m` sets one) and replaces it on every run. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead
+> tree mode always writes the same target file (`hammerdowned.md` unless `-m` sets one) and replaces it on every run, frontmatter included, so the metadata always reflects the latest run. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead
 
 ```sh
 hammerdown --tree project/
@@ -342,9 +342,38 @@ hammerdown project/report.pdf project/notes.docx project/drafts/ -m
 The first command writes `summary.md`; the second writes the default `hammerdowned.md`. An argument immediately after `-m` is never an input resource. For example, `hammerdown -m report.pdf` treats `report.pdf` as the output target and then fails because no input remains, while `hammerdown -m output.md report.pdf` is valid.
 
 > [!important]
-> merge and tree always write the same target file (`hammerdowned.md` unless `-m` sets one) and replace it on every run, so a later run with different arguments overwrites the previous merged output. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead: it writes `hm_<stem>_<ext>.md` next to each source and keeps different runs separate
+> merge and tree always write the same target file (`hammerdowned.md` unless `-m` sets one) and replace it on every run, frontmatter included, so a later run with different arguments overwrites the previous merged output and its metadata. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead: it writes `hm_<stem>_<ext>.md` next to each source and keeps different runs separate
 
-The merged document has two parts. It is assembled in a hidden staging directory and committed atomically once every source has been converted.
+The merged document starts with a YAML frontmatter metadata block, followed by two parts. It is assembled in a hidden staging directory and committed atomically once every source has been converted.
+
+The frontmatter records the provenance of the run, so a stale target is easy to tell from a fresh one:
+
+```markdown
+---
+tool: 'hammerdown'
+version: '4.0.0'
+date: '2026-11-10T21:34:05+03:00'
+mode: 'merge'
+source: 'C:/Users/serge/project'
+inputs:
+  - 'folder1'
+  - 'folder1/folder2'
+  - 'folder3'
+files: 42
+tokens_estimate: 15200
+---
+```
+
+Field semantics:
+
+- `tool`: always `hammerdown`
+- `version`: hammerdown version that produced the file
+- `date`: conversion date and time, local ISO 8601 with timezone offset
+- `mode`: operation flags only -- `merge`, `tree`, or `tree --all-formats`
+- `source`: resolved common root directory of all inputs (forward slashes); the per-file directory tree in the body is relative to it
+- `inputs`: raw command-line arguments exactly as passed, one YAML list item each; written as `inputs: []` when empty
+- `files`: number of discovered sources
+- `tokens_estimate`: approximate output token count, plain integer, computed with the same rules as `--tokens` (exact counts for text sources, size//4 estimate for known binary formats); the metadata block itself is not counted in it
 
 First, a directory tree of every source document, relative to their common root:
 
@@ -382,7 +411,7 @@ Key properties:
 - extracted assets are not mixed with the originals: for the target `summary.md`, images, charts, and decoded pictures are written into `hm_merged_into_summary_images/` next to the target, in subfolders that mirror each document's relative path, and their links are rewritten accordingly
 - `--merge` is rejected together with `--overwrite` and with `--output-dir`, so plain-text sources are never modified during a merge
 - combined with `-s` / `--skip-existing`, the whole merge is skipped when the target file already exists; the target and its merge asset directory are left untouched, even if stale
-- when the target file already exists and `-s` is not set, a terminal session asks `Overwrite <name>? [y/n]` before overwriting it; `-y`/`--yes` overwrites without asking, `-n`/`--no` keeps the existing target and exits `0`, and a non-interactive run without either flag exits `1` with guidance instead of hanging
+- when the target file already exists and `-s` is not set, a terminal session prints the existing file's frontmatter metadata (`Existing output was generated with:` followed by the block) and then asks `Overwrite <name>? [y/n]` before overwriting it; `-y`/`--yes` overwrites without asking, `-n`/`--no` keeps the existing target and exits `0`, and a non-interactive run without either flag exits `1` with guidance instead of hanging
 - when a custom merge target is inside a recursively selected directory, discovery excludes that target so a rerun does not merge the previous output into itself; explicitly passing the target as a source remains an error
 
 After the run the sources stay where they were, and the merged file sits next to its assets:
@@ -408,6 +437,7 @@ project/
 
 - with **a single file**, `--stdout` emits just that file's raw Markdown (no merge header, no separator lines) — ideal for clean piping
 - with **multiple files**, it emits the merged document with directory tree and per-file separators
+- in both cases the stream stays headerless: the YAML frontmatter metadata block is written only to merge and tree file targets, never to stdout
 
 ```sh
 hammerdown --stdout project/ > summary.md

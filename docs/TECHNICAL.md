@@ -131,12 +131,13 @@ Option names are case-insensitive, but values, paths, and filter patterns preser
 ### Merged Output (`-m / --merge`)
 The merge option treats the next argument as the output Markdown target and then expects one or more source resources. If no target argument is supplied, the default is `hammerdowned.md`. Because the next positional after `-m` is always the target, `hammerdown -m anything.ext` has no source and is invalid; `hammerdown -m output.md source.pdf` supplies both the target and a resource. The target is assembled in a hidden staging directory and committed atomically once every source is appended, so an interrupted run leaves the previous target untouched instead of a partial document. Its contents are:
 
+- a YAML frontmatter metadata block recording provenance -- `tool`, `version`, `date`, `mode`, `source`, `inputs`, `files`, and `tokens_estimate` -- so a stale target is easy to tell from a fresh one
 - a `Directory structure:` tree listing every source relative to their common root
 - one block per document, introduced by a separator line of 48 `=` characters, a line such as `FILE: notes/draft.md`, and the separator again, followed by the converted Markdown
 
 Extracted assets are kept apart from the originals: images, charts, and decoded pictures are written into `hm_merged_into_summary_images/` next to the merge target, inside subfolders that mirror each document's relative path, and their links are rewritten to match.
 
-A successful rerun replaces the merge target and its complete merge asset directory. With `-s` / `--skip-existing`, an existing merge target skips the entire merge and leaves both the target and its assets untouched, even if stale. If a custom merge target is inside a recursively selected directory, discovery excludes it so a rerun does not merge the previous output into itself; explicitly passing that target as a source remains an error.
+A successful rerun replaces the merge target and its complete merge asset directory, frontmatter included, so the metadata always reflects the latest run. With `-s` / `--skip-existing`, an existing merge target skips the entire merge and leaves both the target and its assets untouched, even if stale. If a custom merge target is inside a recursively selected directory, discovery excludes it so a rerun does not merge the previous output into itself; explicitly passing that target as a source remains an error.
 
 `--merge` is rejected together with `--overwrite` and with `--output-dir`.
 
@@ -145,7 +146,7 @@ A successful rerun replaces the merge target and its complete merge asset direct
 
 - each conversion runs against a temporary output directory, so no `hm_*.md` files or asset folders are created
 - `resources.embed_temporary_resources` inlines every temporary asset as a base64 data URI, keeping the stream self-contained
-- the merged document goes to stdout while progress output is suppressed and errors go to stderr, and the exit code is non-zero when any document failed
+- the merged document goes to stdout while progress output is suppressed and errors go to stderr, and the exit code is non-zero when any document failed; the stream stays headerless, so the frontmatter metadata block is never printed to stdout
 - `--stdout` is rejected together with `--merge`, `--output-dir`, `--overwrite`, and `--skip-existing`
 - `--confirm` adds a preflight estimate and an interactive `[y/n]` prompt. `y` and `yes` proceed, `n` and `no` cancel, other answers re-ask, and a missing TTY cancels immediately. The token part of the estimate covers only plain-text sources
 

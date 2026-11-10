@@ -64,7 +64,7 @@ Behavior notes verified against the parser:
 - there is no `-t` short option for tree mode: `-t` is rejected with `unrecognized option '-t'; did you mean '--tree'?`
 - `-i`/`-e` may be repeated; each repetition appends to one ordered filter queue (see [Filters and ignore rules](#filters-and-ignore-rules))
 - `-o`/`--output-dir` may be repeated only with the same directory; two different directories are rejected
-- a merge or tree run whose target file already exists asks `Overwrite <name>? [y/n]` in a terminal; `-y` answers it in advance, `-n` keeps the existing target and exits `0`, and a non-interactive run without either flag fails with exit code `1` instead of waiting for input
+- a merge or tree run whose target file already exists prints the existing output's frontmatter metadata and then asks `Overwrite <name>? [y/n]` in a terminal; `-y` answers it in advance, `-n` keeps the existing target and exits `0`, and a non-interactive run without either flag fails with exit code `1` instead of waiting for input
 - use `--` to end option parsing when an input path starts with `-`
 - conflicts are validated before any discovery starts, so a conflicting command fails with exit code `2` without converting anything
 
@@ -93,7 +93,7 @@ hammerdown -m summary.md project/report.pdf project/drafts/
 hammerdown project/report.pdf project/drafts/ -m
 ```
 
-`hammerdown -m report.pdf` therefore treats `report.pdf` as the output and fails with `no input resources were provided`. The target has two parts: a `Directory structure:` tree of every source relative to their common root, then one block per document, each introduced by a line of 48 `=` characters, a `FILE:` line with the relative path, and the separator again:
+`hammerdown -m report.pdf` therefore treats `report.pdf` as the output and fails with `no input resources were provided`. The target starts with a YAML frontmatter metadata block, followed by two parts: a `Directory structure:` tree of every source relative to their common root, then one block per document, each introduced by a line of 48 `=` characters, a `FILE:` line with the relative path, and the separator again:
 
 ```text
 Directory structure:
@@ -102,6 +102,35 @@ FILE: notes.txt
 ================================================
 alpha meeting notes
 ```
+
+The frontmatter records the provenance of the run, so a stale target is easy to tell from a fresh one:
+
+```markdown
+---
+tool: 'hammerdown'
+version: '4.0.0'
+date: '2026-11-10T21:34:05+03:00'
+mode: 'merge'
+source: 'C:/Users/serge/project'
+inputs:
+  - 'folder1'
+  - 'folder1/folder2'
+  - 'folder3'
+files: 42
+tokens_estimate: 15200
+---
+```
+
+Field semantics:
+
+- `tool`: always `hammerdown`
+- `version`: hammerdown version that produced the file
+- `date`: conversion date and time, local ISO 8601 with timezone offset
+- `mode`: operation flags only -- `merge`, `tree`, or `tree --all-formats`
+- `source`: resolved common root directory of all inputs (forward slashes); the per-file directory tree in the body is relative to it
+- `inputs`: raw command-line arguments exactly as passed, one YAML list item each; written as `inputs: []` when empty
+- `files`: number of discovered sources
+- `tokens_estimate`: approximate output token count, plain integer, computed with the same rules as `--tokens` (exact counts for text sources, size//4 estimate for known binary formats); the metadata block itself is not counted in it
 
 Extracted assets are not mixed with the originals: for the target `summary.md`, images are written into `hm_merged_into_summary_images/` next to the target, in subfolders that mirror each document's relative path, and links are rewritten accordingly. The target is assembled in a staging file during the run and committed atomically when the batch finishes; if the run is interrupted, the previous target is left untouched, never a partial file. An advisory lock file prevents two processes from merging into one target at the same time.
 
@@ -113,7 +142,7 @@ Additional merge behavior:
 
 ### Tree mode (`--tree`, `--all-formats`)
 
-`--tree` gathers the selection into one combined Markdown document using Gitingest-like text and code collection: text and source-code files are included, while Hammerdown's binary document formats are not. `--all-formats` extends tree discovery with the supported document formats; unknown binary files remain skipped. Tree mode always writes one target: `hammerdowned.md` in the working directory by default, or the file passed with `-m`. It is not a per-file conversion mode.
+`--tree` gathers the selection into one combined Markdown document using Gitingest-like text and code collection: text and source-code files are included, while Hammerdown's binary document formats are not. `--all-formats` extends tree discovery with the supported document formats; unknown binary files remain skipped. Tree mode always writes one target: `hammerdowned.md` in the working directory by default, or the file passed with `-m`. It is not a per-file conversion mode. The target starts with the YAML frontmatter metadata block described in the merge mode section, with `mode` set to `tree` or `tree --all-formats`.
 
 ```sh
 hammerdown --tree project/
@@ -164,8 +193,10 @@ Without flags, an existing `hm_*.md` output is overwritten on a rerun together w
 
 `-s/--skip-existing` checks only the Markdown target: when it exists, conversion of that file is skipped and both the target and its asset directory stay untouched, even if stale. In merge mode, an existing target skips the whole run.
 
+For merge and tree targets without `-s`, an interactive terminal asks before overwriting: it first prints `Existing output was generated with:` followed by the existing file's frontmatter block, then asks `Overwrite <name>? [y/n]`. `-y`/`--yes` overwrites without asking, and `-n`/`--no` keeps the existing target and exits `0`. A non-interactive run without `--yes`, `--no`, or `--skip-existing` still fails fast with exit `1` and the same error text, plus a `(hammerdown <version>, converted <date>, mode <mode>)` suffix when the existing target has frontmatter.
+
 > [!warning]
-> merge and tree modes always write the same target file (`hammerdowned.md` unless `-m` sets one) and replace it on every run, so the target is a generated snapshot rather than durable storage. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead
+> merge and tree modes always write the same target file (`hammerdowned.md` unless `-m` sets one) and replace it on every run, frontmatter included, so the metadata always reflects the latest run and the target is a generated snapshot rather than durable storage. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead
 
 ## Filters and ignore rules
 

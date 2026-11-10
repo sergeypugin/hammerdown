@@ -72,17 +72,18 @@ Normal per-file output writes one deterministic Markdown document plus its asset
 `--merge summary.md` concatenates every successful conversion into one Markdown file. The argument after `-m` is the output target, not an input resource; when no target argument is supplied, the default is `hammerdowned.md`.
 
 - sources are resolved and deduplicated first, then a common root is computed across all inputs
-- the target opens with a `Directory structure:` tree listing every source relative to that root
+- when the caller passes `OutputMetadata` (`mode` and `inputs`) to `MergeSession`, the target opens with a YAML frontmatter metadata block -- `tool`, `version`, `date`, `mode`, `source`, `inputs`, `files`, `tokens_estimate` -- rendered by `render_output_frontmatter`; `MergeSession(target)` without `metadata` keeps the old headerless output
+- the target then opens with a `Directory structure:` tree listing every source relative to that root
 - each document is appended as a block introduced by a 48-character `=` separator, a line such as `FILE: notes/draft.md`, and the separator again, followed by the converted Markdown
 - assets are redirected into a folder named after the merge target: `summary.md` uses `hm_merged_into_summary_images/`, mirroring each document's relative path, and image links are rewritten to match
 - the merged document is assembled in a hidden `.hammerdown-merge-` staging directory next to the target and committed atomically once every source has been appended; an interrupted run aborts the staging and leaves the previous target untouched, and a rerun whose sources produced errors also preserves an existing target
-- a successful rerun replaces the merge target and its complete merge asset directory; with `-s/--skip-existing`, an existing merge target causes the whole merge to be skipped and leaves both the target and its assets untouched, even if stale
+- a successful rerun replaces the merge target and its complete merge asset directory, frontmatter included, so the metadata always reflects the latest run; with `-s/--skip-existing`, an existing merge target causes the whole merge to be skipped and leaves both the target and its assets untouched, even if stale
 - when a custom merge target is inside a recursively selected directory, discovery excludes that target on reruns so it is not merged into itself; explicitly passing the target as a source remains an error
 - `--merge` rejects `--overwrite` and `--output-dir`
 
 ### Tree Output (`--tree`)
 
-Tree mode replaces ordinary per-file discovery with a Gitingest-like tree selection and always writes one combined Markdown target. Without `--all-formats`, it selects text and source-like files without adding Hammerdown's binary document formats. `--all-formats` adds supported Hammerdown documents; unknown binary files remain skipped. The target defaults to `hammerdowned.md`, can be set with `-m`, and uses the same directory header, per-file sections, and asset redirection as merged output.
+Tree mode replaces ordinary per-file discovery with a Gitingest-like tree selection and always writes one combined Markdown target. Without `--all-formats`, it selects text and source-like files without adding Hammerdown's binary document formats. `--all-formats` adds supported Hammerdown documents; unknown binary files remain skipped. The target defaults to `hammerdowned.md`, can be set with `-m`, and uses the same frontmatter metadata block, directory header, per-file sections, and asset redirection as merged output.
 
 `--tree` and `--all-formats` are parsed intermixed with resources, so they may appear before, between, or after positional paths. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
 
@@ -92,7 +93,7 @@ Tree mode replaces ordinary per-file discovery with a Gitingest-like tree select
 
 - each conversion runs against a temporary output directory, so no `hm_*.md` files or asset folders are left behind
 - `resources.embed_temporary_resources` inlines every temporary asset as a base64 data URI, keeping the stream self-contained
-- the merged document is written to stdout while progress output is suppressed and errors go to stderr
+- the merged document is written to stdout while progress output is suppressed and errors go to stderr; the stream stays headerless, so the frontmatter metadata block is never printed to stdout
 - `--confirm` prints a preflight line with the file count, a token estimate for text sources, and the duration estimate, then asks `[y/n]`; `y` and `yes` proceed, `n` and `no` cancel, and any other answer re-asks
 - without an interactive stdin, `--confirm` cancels instead of waiting
 
@@ -131,7 +132,7 @@ In non-TTY runs (pipes, CI, redirected logs) no live view is drawn. Each file is
 - conversion core: `core/__init__.py` (`to_markdown`, `convert_file`, `ConversionResult`, `SUPPORTED_EXTENSIONS`, and re-exports of parsers and helpers)
 - batch pipeline: `core/job.py` (`ConversionJob`, `prepare_conversion`, staged commit and abort), `core/scheduler.py` (bounded permit-based scheduler), `core/preflight.py` (ordered validation and reporting), `core/acquisition.py` (remote input staging)
 - input resolution: `core/discovery.py` (`expand_paths` for recursive resolution, dedup, include/exclude filters, and ignored-directory pruning; `output_paths` for the `-o` layout, which raises on filename collisions), `core/google_drive.py` (link detection, download, and title extraction), `core/github.py` (GitHub locator parsing and repository acquisition), `core/ignore.py` (`.gitignore`/`.gitingestignore` discovery and matching), `core/filters.py` (ordered include/exclude queue compilation)
-- alternate pipelines: `core/merge.py` (`merge_root_for_inputs`, `render_merge_header`, `merge_asset_paths`, `render_merged_document`, `render_merged_markdown`, `initialize_merge_file`, `append_merged_document`), `core/stdout_mode.py` (`approximate_tokens`, `confirm_stdout`, `run_stdout_conversion`)
+- alternate pipelines: `core/merge.py` (`merge_root_for_inputs`, `OutputMetadata`, `render_output_frontmatter`, `render_merge_header`, `merge_asset_paths`, `render_merged_document`, `render_merged_markdown`, `initialize_merge_file`, `append_merged_document`), `core/stdout_mode.py` (`approximate_tokens`, `confirm_stdout`, `run_stdout_conversion`)
 - estimates: `core/estimates.py` (single source of truth for the ETA via `describe`, `get_conversion_estimate_seconds`, and `get_conversion_estimate`, plus `PDF_EXTENSIONS`, `LEGACY_EXTENSIONS`, and `FAST_TEXT_EXTENSIONS`)
 - support: `core/resources.py` (`embed_temporary_resources`, `token_count`), `core/path_utils.py` (`normalize_path`, `get_images_dir_name`, `enable_vt_mode`), `core/platform_utils.py` (`is_windows`, `is_macos`, `is_linux`), `core/formatting.py` (`format_duration`, `format_progress_bar`), `utils.py` (thin facade re-exporting the UI and formatting helpers for tests)
 - platform integration: `core/ipc.py` (`IPCCoordinator`, `try_delegate_to_coordinator`), `core/file_selection.py` (PowerShell picker on Windows, tkinter elsewhere), `core/windows_console.py` (binds a windowed Windows process to its parent console), `core/updater.py` (`update()`, bounded release/checksum/binary downloads verified by a mandatory SHA-256 checksum or digest plus an executable magic-byte check, and a staged binary swap with Windows recovery), `integrations/` (`install`/`uninstall`, shared helpers in `_common`, per-platform `windows`, `windows_terminal`, `macos`, `linux`)
