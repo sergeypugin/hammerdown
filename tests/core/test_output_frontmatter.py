@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 import sys
 from pathlib import Path
@@ -182,3 +183,62 @@ def test_estimate_source_tokens_matches_report_rules(tmp_path: Path) -> None:
 
     missing = tmp_path / "missing.pdf"
     assert estimate_source_tokens([text_file, missing]) == token_count("word " * 100)
+
+
+def test_finish_recounts_tokens_from_generated_output(tmp_path: Path) -> None:
+    payload = base64.b64encode(b"x" * 6000).decode("ascii")
+    source = tmp_path / "doc.md"
+    source.write_text(f"# Title\n\n![img](data:image/png;base64,{payload})\n", encoding="utf-8")
+    target = tmp_path / "merged.md"
+    owner = MergeSession(target, metadata=OutputMetadata(mode="merge"))
+    initialize_merge_file(target, [source], tmp_path, owner)
+    _, asset_prefix = merge_asset_paths(source, tmp_path, target, owner)
+    append_merged_document(
+        target,
+        source,
+        "# Title\n\n![img](hm_images_doc/embedded_img_1.png)\n",
+        tmp_path,
+        asset_prefix,
+        session=owner,
+    )
+    owner.finish()
+
+    text = target.read_text(encoding="utf-8")
+    block = _frontmatter(text)
+    value = int(next(line.split(": ", 1)[1] for line in block if line.startswith("tokens_estimate:")))
+    assert value != estimate_source_tokens([source])
+    body = text.split("\n---\n", 1)[1]
+    assert value == token_count(body)
+
+
+def test_finish_keeps_source_estimate_when_counting_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    target = tmp_path / "merged.md"
+    owner = MergeSession(target, metadata=OutputMetadata(mode="merge"))
+    initialize_merge_file(target, [source], tmp_path, owner)
+    _, asset_prefix = merge_asset_paths(source, tmp_path, target, owner)
+    append_merged_document(target, source, "content", tmp_path, asset_prefix, session=owner)
+    expected = estimate_source_tokens([source])
+
+    monkeypatch.setattr("hammerdown.core.resources.token_count", lambda _text: 0)
+    owner.finish()
+
+    assert f"tokens_estimate: {expected}" in _frontmatter(target.read_text(encoding="utf-8"))
+
+
+def test_finish_discards_staging_when_errors_and_target_existed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    fake_pdf = tmp_path / "broken.pdf"
+    fake_pdf.write_bytes(b"not a pdf")
+    target = tmp_path / "hammerdowned.md"
+    target.write_text("previous merge\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", FakeStdin())
+
+    assert convert_files([source, fake_pdf], merge=target, yes=True) == 1
+
+    assert target.read_text(encoding="utf-8") == "previous merge\n"

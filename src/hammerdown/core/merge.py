@@ -265,6 +265,7 @@ class MergeSession:
                 if state.had_error and state.target_existed:
                     state.staging.cleanup()
                     return
+                _recount_staged_tokens(state)
                 _commit_merge_session(state)
             else:
                 state.staging.cleanup()
@@ -389,6 +390,42 @@ def _require_session(merge_target: Path, session: MergeSession | None) -> _Merge
     if state.target != Path(merge_target).resolve():
         raise ValueError("merge session target does not match merge target")
     return state
+
+
+def _recount_staged_tokens(state: _MergeState) -> None:
+    """Replace the frontmatter source estimate with the token count of the body.
+
+    The frontmatter block itself stays out of the count, and when token
+counting is unavailable the source-based estimate is kept.
+    """
+    if state.metadata is None:
+        return
+    from .resources import token_count
+
+    try:
+        text = state.staged_target.read_text(encoding="utf-8")
+    except OSError:
+        return
+    lines = text.split("\n")
+    if not lines or lines[0] != "---":
+        return
+    try:
+        end = lines.index("---", 1)
+    except ValueError:
+        return
+    tokens = token_count("\n".join(lines[end + 1 :]))
+    if tokens <= 0:
+        return
+    for index in range(1, end):
+        if lines[index].startswith("tokens_estimate:"):
+            lines[index] = f"tokens_estimate: {tokens}"
+            break
+    else:
+        return
+    try:
+        state.staged_target.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    except OSError:
+        pass
 
 
 def _commit_merge_session(state: _MergeState) -> None:
