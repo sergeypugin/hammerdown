@@ -30,6 +30,8 @@ def convert_txt_or_md(
     progress_callback: ProgressCallback | None = None,
 ) -> tuple[str | None, int]:
     raw = Path(file_path).read_bytes()
+    if b"\x00" in raw:
+        raise ValueError(f"binary content in text file: {Path(file_path).name}")
     text = _decode_bytes(raw)
 
     # Extract base64 images from Markdown/text
@@ -80,6 +82,8 @@ def convert_csv(
             pass
 
     raw = Path(csv_path).read_bytes()
+    if b"\x00" in raw:
+        raise ValueError(f"binary content in CSV file: {Path(csv_path).name}")
     text = _decode_bytes(raw)
 
     sample = text[:2048]

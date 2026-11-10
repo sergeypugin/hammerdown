@@ -123,6 +123,23 @@ def _passes_cli_filters(
     return True, None
 
 
+# Text formats converted verbatim in every mode; NUL bytes mark binary junk.
+NUL_SNIFF_EXTENSIONS: frozenset[str] = frozenset({".txt", ".md", ".log"})
+
+
+def _contains_nul_bytes(path: Path) -> bool:
+    try:
+        with path.open("rb") as stream:
+            sample = stream.read(8192)
+            while sample:
+                if b"\x00" in sample:
+                    return True
+                sample = stream.read(65536)
+    except OSError:
+        return False
+    return False
+
+
 def _is_text_file(path: Path) -> bool:
     try:
         with path.open("rb") as stream:
@@ -311,6 +328,7 @@ def _discover(
             add_skip(canonical, reason or "cli filter")
             return
 
+        skip_reason: str | None = None
         category: str | None = None
         if tree_mode:
             category = _tree_category(canonical, all_formats)
@@ -318,9 +336,13 @@ def _discover(
                 add_skip(canonical, "unsupported format")
                 return
         elif canonical.suffix.lower() not in SUPPORTED_EXTENSIONS:
-            add_skip(canonical, "unsupported format")
+            skip_reason = "unsupported format"
+        elif canonical.suffix.lower() in NUL_SNIFF_EXTENSIONS and _contains_nul_bytes(canonical):
+            skip_reason = "unsupported format"
+        if skip_reason is not None:
+            add_skip(canonical, skip_reason)
             if explicitly_selected:
-                result._legacy_items.append((str(canonical), "unsupported format"))
+                result._legacy_items.append((str(canonical), skip_reason))
             return
 
         seen_targets.add(canonical)
