@@ -500,6 +500,17 @@ class IPCCoordinator:
                 pass
             self._lock_file = None
 
+    def _wake_listener(self) -> None:
+        conn = None
+        try:
+            authkey = self._authkey
+            if authkey is not None:
+                conn = Client(self.address, authkey=authkey)
+        except Exception:
+            pass
+        finally:
+            _close_quietly(conn)
+
     def stop(self) -> None:
         with self._delivery_condition:
             self._running = False
@@ -510,23 +521,17 @@ class IPCCoordinator:
         listener = self.listener
         thread = self._thread
 
-        # A local connection wakes accept() consistently on sockets and named pipes.
+        # A local connection wakes accept() consistently on sockets and named
+        # pipes. The challenge handshake can stall when the server thread is
+        # already shutting down, so the waker runs bounded and the listener
+        # close below aborts both the pending accept and a half-open challenge.
         if listener is not None and thread is not threading.current_thread() and thread is not None:
             with self._delivery_condition:
                 has_active_connections = bool(self._active_connections)
             if not has_active_connections:
-                conn = None
-                try:
-                    authkey = self._authkey
-                    if authkey is not None:
-                        conn = Client(self.address, authkey=authkey)
-                except Exception:
-                    pass
-                finally:
-                    _close_quietly(conn)
-
-        if thread is not None and thread is not threading.current_thread():
-            thread.join()
+                waker = threading.Thread(target=self._wake_listener, daemon=True)
+                waker.start()
+                waker.join(timeout=2.0)
 
         if listener is not None:
             try:
@@ -534,6 +539,12 @@ class IPCCoordinator:
             except Exception:
                 pass
             self.listener = None
+
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                logger.warning("coordinator server thread did not stop cleanly")
+
         _remove_session_secret(self._authkey)
         self._authkey = None
         self._release_lock()

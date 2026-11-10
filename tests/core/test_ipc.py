@@ -1,4 +1,5 @@
 import os
+import time
 import uuid
 from pathlib import Path
 
@@ -211,6 +212,25 @@ def test_delegate_rejected_after_assembly_closed() -> None:
         coordinator.close_assembly()
         assert not try_delegate_to_coordinator(["late.pdf"], {}, pipe_name=pipe_address)
     finally:
+        coordinator.stop()
+
+
+def test_stop_does_not_hang_when_wake_handshake_stalls(monkeypatch) -> None:
+    pipe_address = _unique_test_pipe()
+    coordinator = IPCCoordinator(pipe_name=pipe_address)
+    assert coordinator.start()
+
+    def stalled_client(*_args, **_kwargs):
+        time.sleep(60)
+
+    monkeypatch.setattr(ipc, "Client", stalled_client)
+    started = time.monotonic()
+    try:
+        coordinator.stop()
+        assert time.monotonic() - started < 10
+        assert coordinator.listener is None
+    finally:
+        monkeypatch.undo()
         coordinator.stop()
 
 
