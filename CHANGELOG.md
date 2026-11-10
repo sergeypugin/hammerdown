@@ -13,24 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [4.0.0] - 2026-11-10
 
 ### Added
 - Gitingest-compatible ordered include/exclude filtering, ignore-file discovery, tree mode, and all-format tree conversion
-- File-manager actions for merge, tree, and tree with all formats across Windows, Linux, and macOS
+- Bounded batch scheduler with ordered commits, resource-aware concurrency, ordered page-chunk work units, and clearer preflight reporting
+- File-manager actions for convert, merge, tree, and tree with all formats: the Windows Hammerdown submenu plus KDE, Nautilus, Nemo, Caja, and macOS
+- YAML frontmatter metadata block (tool, version, date, mode, source, inputs, files, tokens_estimate) for merge and tree outputs, so stale targets are easy to tell from fresh ones
 - Idempotent output handling, stale asset cleanup, skip-existing behavior, and clearer batch result accounting
+- Overwrite prompt for existing merge and tree targets, with non-interactive `-y/--yes` and `-n/--no` overrides
 - Bounded Google downloads and ZIP extraction; authenticated and bounded coordinator IPC
-- Ordered page-chunk work-unit scheduling for merge and tree batch modes
 - Coordinator busy-rejection for delegates that arrive after batch assembly closes, with local-conversion fallback
 - Cross-process advisory locking on merge target files
-- Benchmark overrides `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, `HAMMERDOWN_FORCE_SEQUENTIAL`, and `HAMMERDOWN_PDF_LIMIT`
-- Overwrite prompt for existing merge and tree targets, with non-interactive `-y/--yes` and `-n/--no` overrides
+- Provenance-safe PDF chunk benchmark harness with regression coverage for page-boundary behavior and the benchmark overrides `HAMMERDOWN_WORKERS`, `HAMMERDOWN_PDF_CHUNK_PAGES`, `HAMMERDOWN_FORCE_SEQUENTIAL`, and `HAMMERDOWN_PDF_LIMIT`
 
 ### Fixed
-- Output target safety, failed-merge rollback, stdout/stderr separation, and coordinator option propagation
+- Output target collisions and safety, failed-merge rollback, stdout/stderr separation, and coordinator option propagation
 - Platform launcher quoting, coordinator lifecycle/restart races, legacy Office temporary-file cleanup, and text overwrite coverage
 - Updater download limits, SHA-256 verification, and safe Windows update handoff
+- Packaged icon collection for the new context-menu actions and stale integration assets
 - Early merge-mode auto-commit overwriting staged outputs before all sources were appended
+- PDF worker oversubscription by capping the native page pool at four workers
 - Binary markers appear in merge and tree output only for failed conversions, never after a successful one
 - Merge and tree token estimates are recounted from the generated output before commit, falling back to the source-based estimate when counting is unavailable
 - The merge and tree overwrite prompt fails fast with exit code 1 on end-of-input or interrupt instead of hanging
@@ -38,33 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Generated image numbering starts at one; CLI option names are case-insensitive while preserving path/value case
-- Documentation and integration behavior updated for filters, outputs, tree workflows, and platform launchers
-- PDF work-unit chunking defaults to measured 32-page chunks instead of the unmeasured 100-page value
-- Performance documentation now records the 812-page PDF matrix, an outer-concurrency micro-benchmark, and the many-small-files batch results
-- Documentation audit corrections: the tree mode flag list, merge staging and atomic commit behavior, plain-text overwrite scope, GitWildMatch filter semantics, and scheduler descriptions now match the implementation
-- Added a `docs/CLI.md` CLI reference, a `docs/DESKTOP.md` desktop guide with the file-manager action icons, and a root `llms.txt` agent index
-
----
-
-## [4.0.0] - 2026-11-07
-
-### Added
-- bounded batch scheduler with ordered commits, resource-aware concurrency, and clearer preflight reporting
-- Windows Hammerdown submenu with Convert to Markdown, Merge, Tree, and Tree with all formats actions
-- matching file-manager actions and documentation for KDE, Nautilus, Nemo, Caja, and macOS
-- provenance-safe PDF chunk benchmark harness and regression coverage for page-boundary behavior
-- YAML frontmatter metadata block (tool, version, date, mode, source, inputs, files, tokens_estimate) for merge and tree outputs, so stale targets are easy to tell from fresh ones
-
-### Fixed
-- output target collisions, failed merge rollback, coordinator lifecycle races, updater verification, and stale integration assets
-- Windows launcher quoting and packaged icon collection for the new context-menu actions
-- PDF worker oversubscription by capping the native page pool at four workers
-
-### Changed
-- PDF chunk results remain assembled in page order and fall back to per-page conversion when a chunk fails
-- the overwrite prompt for existing merge and tree targets now prints the existing output's frontmatter metadata before asking
-- installation documentation now explains the actions and platform-specific presentation after `hammerdown --install`
-- release CI now validates tests, type checks, release metadata, platform artifacts, checksums, and PyPI publishing
+- PDF chunk results remain assembled in page order, default to measured 32-page chunks instead of the unmeasured 100-page value, and fall back to per-page conversion when a chunk fails
+- The overwrite prompt for existing merge and tree targets prints the existing output's frontmatter metadata before asking
+- Documentation updated across the board: new `docs/CLI.md` CLI reference, `docs/DESKTOP.md` desktop guide with the file-manager action icons, a root `llms.txt` agent index, performance records for the 812-page PDF matrix, the outer-concurrency micro-benchmark, and the many-small-files batch results, plus audit corrections so filters, outputs, tree workflows, scheduler descriptions, and platform launchers match the implementation
+- Installation documentation explains the actions and platform-specific presentation after `hammerdown --install`
+- Release CI validates tests, type checks, release metadata, platform artifacts, checksums, and PyPI publishing
 
 ## [3.2.2] - 2026-10-29
 
