@@ -13,7 +13,7 @@ from hammerdown.core import ipc
 def _unique_test_pipe() -> str | tuple[str, int]:
     if os.name == "nt":
         return rf"\\.\pipe\hammerdown_race_{uuid.uuid4().hex}"
-    with socket.socket(socket.AF_INET, SOCK_STREAM) as sock:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return ("127.0.0.1", sock.getsockname()[1])
 
