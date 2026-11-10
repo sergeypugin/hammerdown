@@ -102,6 +102,59 @@ def test_existing_merge_target_interactive_no_answer_skips(
     assert "merge target hammerdowned.md already exists." in capsys.readouterr().err
 
 
+def test_existing_merge_target_prompt_eof_fails_fast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    source = _source(tmp_path)
+    target = tmp_path / "hammerdowned.md"
+    target.write_text("previous merge\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    stdin = FakeStdin(tty=True)
+    monkeypatch.setattr(sys, "stdin", stdin)
+
+    with caplog.at_level(logging.ERROR, logger="hammerdown"):
+        assert convert_files([source], merge=target) == 1
+
+    assert "re-run with --skip-existing to keep it, --yes to overwrite it" in caplog.text
+    assert target.read_text(encoding="utf-8") == "previous merge\n"
+    assert stdin.prompts == 1
+
+
+def test_existing_merge_target_prompt_interrupt_fails_fast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    source = _source(tmp_path)
+    target = tmp_path / "hammerdowned.md"
+    target.write_text("previous merge\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    def raise_interrupt() -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", raise_interrupt)
+
+    with caplog.at_level(logging.ERROR, logger="hammerdown"):
+        assert convert_files([source], merge=target) == 1
+
+    assert "re-run with --skip-existing to keep it, --yes to overwrite it" in caplog.text
+    assert target.read_text(encoding="utf-8") == "previous merge\n"
+
+
+def test_existing_merge_target_interactive_empty_answer_skips(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    target = tmp_path / "hammerdowned.md"
+    target.write_text("previous merge\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    stdin = FakeStdin(tty=True, answers=["\n"])
+    monkeypatch.setattr(sys, "stdin", stdin)
+
+    assert convert_files([source], merge=target) == 0
+    assert target.read_text(encoding="utf-8") == "previous merge\n"
+    assert stdin.prompts == 1
+
+
 def test_existing_merge_target_interactive_yes_answer_overwrites(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = _source(tmp_path)
     target = tmp_path / "hammerdowned.md"

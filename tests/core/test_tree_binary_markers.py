@@ -191,3 +191,65 @@ def test_tree_binary_markers_section_format(tmp_path: Path, monkeypatch):
 
     # Binary marker should appear in the file.pdf section
     assert "[Binary file] Can be converted with hammerdown: YES" in content
+
+
+def _write_real_pdf(path: Path) -> None:
+    import pymupdf
+
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "hello hammerdown regression")
+    document.save(str(path))
+    document.close()
+
+
+def test_tree_all_formats_successful_pdf_has_no_marker(tmp_path: Path, monkeypatch):
+    """A successfully converted PDF section must not carry the binary marker."""
+    monkeypatch.chdir(tmp_path)
+    pdf_file = tmp_path / "real.pdf"
+    _write_real_pdf(pdf_file)
+
+    result = hammerdown.cli.main(["--tree", "--all-formats", str(pdf_file)])
+
+    output = tmp_path / "hammerdowned.md"
+    content = output.read_text(encoding="utf-8")
+    assert result == 0
+    assert "FILE: real.pdf" in content
+    assert "hammerdown regression" in content
+    assert "[Binary file]" not in content
+
+
+def test_tree_all_formats_successful_pdf_has_no_marker_sequential(tmp_path: Path, monkeypatch):
+    """Same as above through the sequential append path."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HAMMERDOWN_FORCE_SEQUENTIAL", "1")
+    pdf_file = tmp_path / "real.pdf"
+    _write_real_pdf(pdf_file)
+
+    result = hammerdown.cli.main(["--tree", "--all-formats", str(pdf_file)])
+
+    output = tmp_path / "hammerdowned.md"
+    content = output.read_text(encoding="utf-8")
+    assert result == 0
+    assert "FILE: real.pdf" in content
+    assert "hammerdown regression" in content
+    assert "[Binary file]" not in content
+
+
+def test_tree_all_formats_sequential_failure_aborts_merge(tmp_path: Path, monkeypatch):
+    """Sequential mode rolls the merge back entirely when a conversion fails.
+
+    Unlike the parallel path, which appends error blocks, no output file is
+    published at all.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HAMMERDOWN_FORCE_SEQUENTIAL", "1")
+    text_file = tmp_path / "doc.txt"
+    text_file.write_text("Text content\n", encoding="utf-8")
+    binary_file = tmp_path / "file.docx"
+    binary_file.write_bytes(b"fake binary content")
+
+    result = hammerdown.cli.main(["--tree", "--all-formats", str(text_file), str(binary_file)])
+
+    assert result == 1
+    assert not (tmp_path / "hammerdowned.md").exists()

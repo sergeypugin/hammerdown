@@ -36,3 +36,23 @@ def test_single_file_success_writes_raw_markdown_to_stdout(tmp_path: Path, monke
     captured = capsys.readouterr()
     assert captured.out == markdown
     assert captured.err == ""
+
+
+def test_multi_file_stdout_has_sections_and_no_binary_markers(tmp_path, monkeypatch, capsys) -> None:
+    first = tmp_path / "a.txt"
+    second = tmp_path / "b.txt"
+    first.write_text("Alpha\n", encoding="utf-8")
+    second.write_text("Beta\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        stdout_mode,
+        "convert_file",
+        lambda path, **kwargs: ConversionResult(True, markdown=f"Content of {Path(path).name}\n"),
+    )
+
+    assert stdout_mode.run_stdout_conversion([str(first), str(second)], [str(first), str(second)]) == 0
+
+    captured = capsys.readouterr()
+    assert "FILE: a.txt" in captured.out
+    assert "FILE: b.txt" in captured.out
+    assert "[Binary file]" not in captured.out

@@ -8,7 +8,7 @@ import time
 import tempfile
 import urllib.error
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from ..core import (
     ConversionResult,
@@ -113,8 +113,12 @@ def _frontmatter_summary_line(target: Path) -> str | None:
     return summary or None
 
 
-def confirm_merge_overwrite(target: Path) -> bool:
-    """Ask before reusing an existing merge/tree target; True overwrites, False skips the run."""
+def confirm_merge_overwrite(target: Path) -> bool | None:
+    """Ask before reusing an existing merge/tree target.
+
+    True overwrites, False skips the run, and None means the prompt ended
+    without an answer (EOF or interrupt), so the caller must fail fast.
+    """
     print(f"merge target {target.name} already exists.", file=sys.stderr)
     frontmatter = _read_existing_frontmatter(target)
     if frontmatter:
@@ -122,22 +126,31 @@ def confirm_merge_overwrite(target: Path) -> bool:
         for line in frontmatter:
             print(f"  {line}", file=sys.stderr)
     while True:
+        print(f"Overwrite {target.name}? [y/n] ", end="", file=sys.stderr, flush=True)
         try:
-            print(f"Overwrite {target.name}? [y/n] ", end="", file=sys.stderr, flush=True)
-            line = sys.stdin.readline()
+            answer = input().strip().lower()
         except (EOFError, KeyboardInterrupt):
-            print("\nCancelled.", file=sys.stderr)
-            return False
-        if not line:
-            print("\nCancelled.", file=sys.stderr)
-            return False
-        answer = line.strip().lower()
+            print(file=sys.stderr)
+            return None
         if answer in {"y", "yes"}:
             return True
-        if answer in {"n", "no"}:
+        if answer in {"n", "no", ""}:
             print("Cancelled.", file=sys.stderr)
             return False
         print('Please answer "y" or "n".', file=sys.stderr)
+
+
+def _reject_existing_merge_target(target: Path, coordinator: Any) -> int:
+    """Fail fast when an existing merge target cannot be confirmed for reuse."""
+    summary = _frontmatter_summary_line(target)
+    logger.error(
+        "merge target %s already exists; re-run with --skip-existing to keep it, --yes to overwrite it, or -m <path> for a different file%s",
+        target.name,
+        f" ({summary})" if summary else "",
+    )
+    if coordinator:
+        coordinator.stop()
+    return 1
 
 
 def hand_off_to_windows_terminal(
@@ -614,18 +627,13 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         if getattr(args, "no", False):
             merge_skipped = True
         elif sys.stdin.isatty():
-            if not confirm_merge_overwrite(merge_target):
+            decision = confirm_merge_overwrite(merge_target)
+            if decision is None:
+                return _reject_existing_merge_target(merge_target, coordinator)
+            if not decision:
                 merge_skipped = True
         else:
-            summary = _frontmatter_summary_line(merge_target)
-            logger.error(
-                "merge target %s already exists; re-run with --skip-existing to keep it, --yes to overwrite it, or -m <path> for a different file%s",
-                merge_target.name,
-                f" ({summary})" if summary else "",
-            )
-            if coordinator:
-                coordinator.stop()
-            return 1
+            return _reject_existing_merge_target(merge_target, coordinator)
 
     results: list[bool] = []
     merged_count = 0
@@ -868,7 +876,6 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                                 asset_dir, asset_prefix = merge_asset_paths(
                                     f_path, merge_root, merge_target, merge_session
                                 )
-                                is_binary = _is_binary_file(f_path)
 
                                 # Work-unit PDF assembly leaves assets in job-local
                                 # staging; relocate them under the session asset prefix.
@@ -900,7 +907,6 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                                     content,
                                     merge_root,
                                     asset_prefix,
-                                    is_binary=is_binary,
                                     session=merge_session,
                                 )
                                 merged_count += 1
@@ -1099,14 +1105,12 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                                 initialize_merge_file(merge_target, resolved_merge_sources, merge_root, merge_session)
                                 merge_initialized = True
                             _, asset_prefix = merge_asset_paths(f_path, merge_root, merge_target, merge_session)
-                            is_binary = _is_binary_file(f_path)
                             append_merged_document(
                                 merge_target,
                                 f_path,
                                 res.markdown,
                                 merge_root,
                                 asset_prefix,
-                                is_binary=is_binary,
                                 session=merge_session,
                             )
                             merged_count += 1

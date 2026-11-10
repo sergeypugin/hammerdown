@@ -74,7 +74,7 @@ def test_tree_writes_default_output_path_and_exact_content(tmp_path: Path, monke
     )
 
 
-def test_tree_success_checks_archive_conversion_and_exact_binary_marker(
+def test_tree_success_checks_archive_conversion_without_binary_marker(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -87,8 +87,8 @@ def test_tree_success_checks_archive_conversion_and_exact_binary_marker(
 
     assert result == 0
     content = (tmp_path / "hammerdowned.md").read_text(encoding="utf-8")
-    marker = "[Binary file] Can be converted with hammerdown: NO"
-    assert content.count(marker) == 1
+    marker = "[Binary file] Can be converted with hammerdown:"
+    assert content.count(marker) == 0
     assert "FILE: archive.zip" in content
     assert "archive content" in content
 
