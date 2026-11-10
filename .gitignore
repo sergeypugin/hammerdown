@@ -1,11 +1,24 @@
-_ignore
+# build and tooling artifacts
+_ignore/
 __pycache__/
 .pytest_cache/
+.venv/
 venv/
 build/
 dist/
+*.egg-info/
 *.spec
 !hammerdown.spec
-*.egg-info/
+
+# generated outputs in the repository root
+/hammerdowned.md
+/hm_*.md
+/hm_images_*/
+/hm_merged_into_*_images/
+
+# local fixtures
 tests/inputs/MD_*
 ~$*
+
+# windows reserved device name; cannot be deleted once created
+/nul
