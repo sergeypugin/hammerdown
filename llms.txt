@@ -13,7 +13,6 @@ hammerdown turns a folder of documents into Markdown files, one merged document,
 ## Usage guides
 
 - [docs/CLI.md](docs/CLI.md): full CLI reference -- options, conflicts, modes, exit codes, env overrides
-- [README.md](README.md): supported formats, worked examples, and platform integration
 - [docs/DESKTOP.md](docs/DESKTOP.md): file-manager integration -- the four context-menu actions behind `hammerdown --install`
 - [docs/PYTHON.md](docs/PYTHON.md): Python API -- `convert_file`, `to_markdown`, `convert_files`, per-format converters
 - [docs/TECHNICAL.md](docs/TECHNICAL.md): conversion internals, the estimation model, and platform integration details
