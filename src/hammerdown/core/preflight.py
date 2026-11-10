@@ -112,6 +112,22 @@ def _build_tokens(entries: Sequence[PreflightEntry]) -> TokenSummary:
     return TokenSummary(exact, estimated, unknown, unsupported, errors)
 
 
+def estimate_source_tokens(paths: Sequence[str | Path]) -> int:
+    """Approximate the output token count for source files with --tokens rules."""
+    total = 0
+    for raw in paths:
+        path = Path(raw)
+        count = _text_tokens(path)
+        if count is not None:
+            total += count
+        elif _known_format(path):
+            try:
+                total += max(1, path.stat().st_size // 4)
+            except OSError:
+                continue
+    return total
+
+
 def _build_time(entries: Sequence[PreflightEntry]) -> TimeSummary:
     lower = 0.0
     unknown = 0

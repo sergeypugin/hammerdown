@@ -7,6 +7,13 @@ import hammerdown.core
 import hammerdown.utils
 import os
 
+
+def _merge_body(content: str) -> str:
+    lines = content.split("\n")
+    if lines[0] != "---":
+        return content
+    return "\n".join(lines[lines.index("---", 1) + 1:])
+
 def test_keyboard_interrupt_is_reported_as_cancellation(monkeypatch, capsys):
     def interrupt(_argv):
         raise KeyboardInterrupt
@@ -810,7 +817,7 @@ def test_merge_with_short_flag_and_skipped_failure(tmp_path: Path):
     assert hammerdown.cli.main(["-m", str(merged_file), str(file1), str(bad_file)]) == 1
 
     assert merged_file.is_file()
-    content = merged_file.read_text(encoding="utf-8")
+    content = _merge_body(merged_file.read_text(encoding="utf-8"))
     assert "FILE: doc1.txt" in content
     assert "missing.docx" not in content
 
@@ -833,7 +840,7 @@ def test_merge_multi_file_selection_with_failure(tmp_path: Path):
     
     # But the merge file should still contain the successful file
     assert merged_file.is_file()
-    content = merged_file.read_text(encoding="utf-8")
+    content = _merge_body(merged_file.read_text(encoding="utf-8"))
     assert "FILE: doc1.txt" in content
     assert "missing.docx" not in content
     
@@ -850,7 +857,7 @@ def test_merge_multi_file_selection_with_failure(tmp_path: Path):
     
     # Merge should still have the successful file and the failure placeholder
     assert merged_file2.is_file()
-    content2 = merged_file2.read_text(encoding="utf-8")
+    content2 = _merge_body(merged_file2.read_text(encoding="utf-8"))
     assert "FILE: doc1.txt" in content2
     assert "FILE: fake.pdf" in content2
     assert "[!] File conversion failed:" in content2

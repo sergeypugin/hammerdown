@@ -48,7 +48,15 @@ def test_tree_writes_default_output_path_and_exact_content(tmp_path: Path, monke
     output = tmp_path / "hammerdowned.md"
     assert output.is_file()
     assert not (tmp_path / "hammerdounded.md").exists()
-    assert output.read_text(encoding="utf-8") == (
+    lines = output.read_text(encoding="utf-8").split("\n")
+    assert lines[0] == "---"
+    end = lines.index("---", 1)
+    frontmatter = lines[1:end]
+    assert "mode: 'tree'" in frontmatter
+    assert "files: 2" in frontmatter
+    assert f"source: '{project.resolve().as_posix()}'" in frontmatter
+    assert lines[end + 1] == ""
+    assert "\n".join(lines[end + 2:]) == (
         "Directory structure:\n"
         "\u2514\u2500\u2500 project/\n"
         "    \u251c\u2500\u2500 a.txt\n"

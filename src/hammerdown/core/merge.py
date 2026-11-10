@@ -5,6 +5,7 @@ import os
 import threading
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -146,9 +147,62 @@ def _relative_paths(sources: Sequence[str | Path], root: Path) -> list[Path]:
     return [relative_path_for_source(source, root) for source in sources]
 
 
-def render_merge_header(sources: Sequence[str | Path], merge_root: Path) -> str:
+@dataclass(frozen=True)
+class OutputMetadata:
+    """Provenance recorded in the YAML frontmatter of merge and tree outputs."""
+
+    mode: str
+    inputs: tuple[str, ...] = ()
+
+
+def _yaml_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _package_version() -> str:
+    # Imported lazily: the package sets __version__ after importing this module.
+    from .. import __version__
+
+    return __version__
+
+
+def render_output_frontmatter(
+    metadata: OutputMetadata,
+    sources: Sequence[str | Path],
+    merge_root: Path,
+) -> str:
+    from . import APP_NAME
+    from .preflight import estimate_source_tokens
+
+    lines = [
+        "---",
+        f"tool: {_yaml_string(APP_NAME)}",
+        f"version: {_yaml_string(_package_version())}",
+        f"date: {_yaml_string(datetime.now().astimezone().isoformat(timespec='seconds'))}",
+        f"mode: {_yaml_string(metadata.mode)}",
+        f"source: {_yaml_string(merge_root.resolve().as_posix())}",
+    ]
+    if metadata.inputs:
+        lines.append("inputs:")
+        lines.extend(f"  - {_yaml_string(str(raw_input))}" for raw_input in metadata.inputs)
+    else:
+        lines.append("inputs: []")
+    lines.append(f"files: {len(sources)}")
+    lines.append(f"tokens_estimate: {estimate_source_tokens(sources)}")
+    lines.append("---")
+    return "\n".join(lines)
+
+
+def render_merge_header(
+    sources: Sequence[str | Path],
+    merge_root: Path,
+    metadata: OutputMetadata | None = None,
+) -> str:
     relative_paths = _relative_paths(sources, merge_root.resolve())
-    return _render_directory_structure(merge_root.name or "root", relative_paths)
+    structure = _render_directory_structure(merge_root.name or "root", relative_paths)
+    if metadata is None:
+        return structure
+    return render_output_frontmatter(metadata, sources, merge_root) + "\n\n" + structure
 
 
 
@@ -163,6 +217,7 @@ class _MergeState:
     appended: int = 0
     had_error: bool = False
     pending_source: Path | None = None
+    metadata: OutputMetadata | None = None
 
     @property
     def staged_target(self) -> Path:
@@ -180,7 +235,7 @@ class _MergeState:
 class MergeSession:
     """Owns the staging and commit lifecycle for one batch merge."""
 
-    def __init__(self, target: str | Path) -> None:
+    def __init__(self, target: str | Path, metadata: OutputMetadata | None = None) -> None:
         resolved_target = Path(target).resolve()
         self._lock_handle, self._lock_path, self._lock_key = _acquire_target_lock(resolved_target)
         asset_root_name = f"hm_merged_into_{resolved_target.stem}_images"
@@ -190,6 +245,7 @@ class MergeSession:
                 staging=OutputStaging.create(resolved_target.parent, prefix=".hammerdown-merge-"),
                 asset_root_name=asset_root_name,
                 target_existed=resolved_target.exists(),
+                metadata=metadata,
             )
         except Exception:
             _release_target_lock(self._lock_handle, self._lock_path, self._lock_key)
@@ -429,7 +485,7 @@ def initialize_merge_file(
     state.sources = expected_sources
     state.staged_target.parent.mkdir(parents=True, exist_ok=True)
     state.staged_target.write_text(
-        render_merge_header(expected_sources, merge_root) + "\n",
+        render_merge_header(expected_sources, merge_root, state.metadata) + "\n",
         encoding="utf-8",
         newline="\n",
     )

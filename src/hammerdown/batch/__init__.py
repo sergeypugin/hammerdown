@@ -25,6 +25,7 @@ from ..core.acquisition import acquire_inputs, validate_local_inputs
 from ..core.ipc import IPCCoordinator, try_delegate_to_coordinator
 from ..core.merge import (
     MergeSession,
+    OutputMetadata,
     append_merged_document,
     convert_source_text,
     initialize_merge_file,
@@ -75,9 +76,51 @@ def _ensure_console_window() -> None:
         user32.SetForegroundWindow(hwnd)
 
 
+def _read_existing_frontmatter(target: Path, limit: int = 24) -> list[str] | None:
+    try:
+        with target.open("r", encoding="utf-8", errors="replace") as stream:
+            if stream.readline().strip() != "---":
+                return None
+            lines: list[str] = []
+            for line in stream:
+                stripped = line.rstrip()
+                if stripped.strip() == "---":
+                    return lines
+                if stripped:
+                    lines.append(stripped)
+                    if len(lines) >= limit:
+                        return lines
+    except OSError:
+        return None
+    return None
+
+
+def _frontmatter_summary_line(target: Path) -> str | None:
+    values: dict[str, str] = {}
+    for line in _read_existing_frontmatter(target) or []:
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            continue
+        key, separator, value = stripped.partition(":")
+        if separator:
+            values[key.strip()] = value.strip().strip("'")
+    parts = [
+        f"hammerdown {values['version']}" if "version" in values else None,
+        f"converted {values['date']}" if "date" in values else None,
+        f"mode {values['mode']}" if "mode" in values else None,
+    ]
+    summary = ", ".join(part for part in parts if part)
+    return summary or None
+
+
 def confirm_merge_overwrite(target: Path) -> bool:
     """Ask before reusing an existing merge/tree target; True overwrites, False skips the run."""
     print(f"merge target {target.name} already exists.", file=sys.stderr)
+    frontmatter = _read_existing_frontmatter(target)
+    if frontmatter:
+        print("Existing output was generated with:", file=sys.stderr)
+        for line in frontmatter:
+            print(f"  {line}", file=sys.stderr)
     while True:
         try:
             print(f"Overwrite {target.name}? [y/n] ", end="", file=sys.stderr, flush=True)
@@ -574,9 +617,11 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             if not confirm_merge_overwrite(merge_target):
                 merge_skipped = True
         else:
+            summary = _frontmatter_summary_line(merge_target)
             logger.error(
-                "merge target %s already exists; re-run with --skip-existing to keep it, --yes to overwrite it, or -m <path> for a different file",
+                "merge target %s already exists; re-run with --skip-existing to keep it, --yes to overwrite it, or -m <path> for a different file%s",
                 merge_target.name,
+                f" ({summary})" if summary else "",
             )
             if coordinator:
                 coordinator.stop()
@@ -610,7 +655,13 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
     scheduler: BatchScheduler | None = None
     try:
         if merge_target is not None and not merge_skipped:
-            merge_session = MergeSession(merge_target)
+            merge_session = MergeSession(
+                merge_target,
+                metadata=OutputMetadata(
+                    mode="tree --all-formats" if tree_mode and all_formats else "tree" if tree_mode else "merge",
+                    inputs=tuple(initial_input_paths) if initial_input_paths else tuple(output_path_inputs),
+                ),
+            )
         use_concurrent = should_use_concurrent_scheduler(
             merge=merge_target is not None,
             tree=tree_mode,

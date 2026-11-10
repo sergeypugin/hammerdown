@@ -40,7 +40,7 @@ from .google_drive import (
     get_google_file_info,
 )
 from .ipc import IPCCoordinator, try_delegate_to_coordinator
-from .merge import MergeSession
+from .merge import MergeSession, OutputMetadata
 from .scheduler import BatchScheduler, classify_format, create_scheduler, should_use_concurrent_scheduler
 
 logger = logging.getLogger("hammerdown")
@@ -388,6 +388,7 @@ __all__ = [
     "CompletionCallback",
     "ConversionResult",
     "MergeSession",
+    "OutputMetadata",
     "ProgressCallback",
     "get_output_path",
     "is_generated_output",
