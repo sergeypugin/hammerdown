@@ -7,7 +7,8 @@ import shutil
 from pathlib import Path
 from typing import Callable, cast
 
-from bs4 import BeautifulSoup, NavigableString, Tag, PageElement
+from bs4 import BeautifulSoup, Tag
+from bs4.element import NavigableString, PageElement
 
 from hammerdown.core.path_utils import get_images_dir_name
 
