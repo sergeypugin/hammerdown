@@ -11,4 +11,4 @@ lxml
 pathspec
 pytest-xdist
 pytest
-pyright
+pyright==1.1.414
