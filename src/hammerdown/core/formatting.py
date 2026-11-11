@@ -17,6 +17,6 @@ def format_progress_bar(current: int, total: int, unit: str = "pages", bar_lengt
     if total <= 0:
         return f"{current} {unit}"
     percent = min(100.0, max(0.0, (current / total) * 100))
-    filled_len = int(round(bar_length * current / float(total)))
+    filled_len = min(bar_length, max(0, int(round(bar_length * current / float(total)))))
     bar = "█" * filled_len + "░" * (bar_length - filled_len)
     return f"[{bar}] {percent:.0f}% ({current}/{total} {unit})"
