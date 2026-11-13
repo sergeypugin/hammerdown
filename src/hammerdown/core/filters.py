@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import Iterable, Sequence
+
+import os
+from typing import Any, Collection, Iterable, Sequence
 
 from pathspec import GitIgnoreSpec, PathSpec
 
@@ -16,18 +18,22 @@ class OrderedFilterValues(list[str]):
 
 
 class _OrderedFilterSpec(PathSpec):
+    patterns: Sequence[Any]
+
     def __init__(self, operations: Sequence[tuple[str, str]]) -> None:
         self.operations = tuple((kind, GitIgnoreSpec.from_lines([pattern])) for kind, pattern in operations)
         self.has_include = any(kind == "include" for kind, _ in operations)
+        # Discovery treats any PathSpec with truthy .patterns as having active filters.
+        self.patterns = list(self.operations)
 
-    @property
-    def patterns(self):
-        return self.operations
-
-    def match_file(self, filename: str) -> bool:
+    def match_file(
+        self,
+        file: str | os.PathLike[str],
+        separators: Collection[str] | None = None,
+    ) -> bool:
         allowed = not self.has_include
         for kind, spec in self.operations:
-            if spec.match_file(filename):
+            if spec.match_file(file, separators=separators):
                 allowed = kind == "include"
         return allowed
 

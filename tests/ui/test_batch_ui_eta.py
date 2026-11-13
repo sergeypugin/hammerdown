@@ -342,7 +342,7 @@ def test_run_batch_merges_success_after_conversion_errors(tmp_path: Path, monkey
         def print_summary(self):
             events.append(("print_summary",))
 
-        def print_error_list(self):
+        def print_error_list(self, *, file=None):
             events.append(("print_errors",))
 
         def print_results(self):
