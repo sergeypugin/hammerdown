@@ -3,5 +3,14 @@
   "venv": "venv",
   "pythonVersion": "3.14",
   "pythonPlatform": "Windows",
-  "typeCheckingMode": "basic"
+  "typeCheckingMode": "standard",
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "venv",
+    "_ignore",
+    "build",
+    "dist"
+  ]
 }
