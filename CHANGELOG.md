@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.1.0] - 2026-11-14
+
+### Added
+- PEP 561 `py.typed` marker shipped in the wheel, so type checkers and IDEs now see the public API annotations of the installed package
+
+### Changed
+- Repository type checks run in pyright "standard" mode (upgraded from "basic"), with explicit excludes for virtual environments and local artifacts
+
+### Fixed
+- `_OrderedFilterSpec.match_file` now accepts the full `PathSpec` signature (`file`, `separators`) and forwards separators to the inner specs; the batch UI test double matches the real method signature
+
 ## [4.0.0] - 2026-11-10
 
 ### Added
