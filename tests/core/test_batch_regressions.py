@@ -186,3 +186,36 @@ def test_coordinator_rescan_replaces_missing_file_error(tmp_path: Path, monkeypa
 
     assert batch.run_batch(_batch_args(str(source), coordinator=True)) == 0
     assert (tmp_path / "hm_appeared_txt.md").read_text(encoding="utf-8") == "appeared during collection\n"
+
+
+def test_github_url_per_file_writes_output_outside_staging(tmp_path: Path, monkeypatch):
+    """GitHub acquisition lives in a temporary staging folder that is removed after
+    the run; per-file outputs must be written to the user's directory, not staging."""
+    from hammerdown.core.acquisition import AcquisitionResult, AcquiredInput
+
+    url = "https://github.com/owner/repository/tree/main/docs"
+    staging = tmp_path / "staging"
+    docs = staging / "extracted" / "repo-main" / "docs"
+    docs.mkdir(parents=True)
+    (docs / "notes.txt").write_text("hello from github\n", encoding="utf-8")
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+    monkeypatch.delenv("HAMMERDOWN_COORDINATOR", raising=False)
+
+    acquired = AcquiredInput(
+        url,
+        docs.resolve(),
+        {"kind": "github", "original": url, "subpath": "docs"},
+    )
+    monkeypatch.setattr(
+        batch,
+        "acquire_inputs",
+        lambda *args, **kwargs: AcquisitionResult((acquired,), (str(docs.resolve()),), ()),
+    )
+
+    assert batch._run_batch(_batch_args(url), staging) == 0
+    assert (workdir / "hm_notes_txt.md").read_text(encoding="utf-8") == "hello from github\n"
+    assert (docs / "notes.txt").exists()
+    assert not (docs / "hm_notes_txt.md").exists()

@@ -280,6 +280,13 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         for item in acquired.inputs
         if item.provenance.get("kind") == "github" and item.local_path is not None
     }
+    github_roots = [Path(item) for item in github_downloaded]
+
+    def is_remote_staged(path: Path) -> bool:
+        resolved = path.resolve()
+        if str(resolved) in google_downloaded:
+            return True
+        return any(resolved.is_relative_to(root) for root in github_roots)
     acquisition_failed = [
         (item.original, item.error or "input acquisition failed", item.provenance.get("kind"))
         for item in acquired.inputs
@@ -555,7 +562,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
         merge_parent = Path.cwd()
         for path in files:
             source = Path(path)
-            if str(source.resolve()) not in google_downloaded:
+            if not is_remote_staged(source):
                 merge_parent = source.parent
                 break
         merge_requested = str(merge_parent / "hammerdowned.md")
@@ -568,9 +575,10 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             or getattr(args, "coordinator", False)
             or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
         )
+        merge_root_inputs = [p for p in output_path_inputs if not is_remote_staged(Path(p))]
         merge_parent = (
-            merge_root_for_inputs(output_path_inputs, [Path(path) for path in merge_sources])
-            if coordinator_tree
+            merge_root_for_inputs(merge_root_inputs, [Path(path) for path in merge_sources])
+            if coordinator_tree and merge_root_inputs
             else Path.cwd()
         )
         merge_requested = str(merge_parent / "hammerdowned.md")
@@ -582,11 +590,14 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             coordinator.stop()
         return 1
 
-    merge_root = (
-        merge_root_for_inputs(output_path_inputs, [Path(path) for path in merge_sources]).resolve()
-        if merge_target is not None
-        else None
-    )
+    if merge_target is not None:
+        merge_root_inputs = [p for p in output_path_inputs if not is_remote_staged(Path(p))]
+        if merge_root_inputs:
+            merge_root = merge_root_for_inputs(merge_root_inputs, [Path(path) for path in merge_sources]).resolve()
+        else:
+            merge_root = Path.cwd().resolve()
+    else:
+        merge_root = None
     merge_skipped = bool(merge_target is not None and args.skip_existing and merge_target.exists())
 
     try:
@@ -600,15 +611,21 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             )
         else:
             target_paths = []
-            for path, _, _ in targets:
-                p = Path(path)
-                # Google-downloaded HTML lives in a temporary staging folder; write
-                # its Markdown output next to the user (cwd) or in -o/--output-dir.
-                if str(p.resolve()) in google_downloaded:
-                    base = output_root if output_root is not None else Path.cwd()
-                    target_paths.append(get_output_path(p, base))
-                else:
-                    target_paths.append(get_output_path(p))
+            remote_targets = [(path, error) for path, error, _ in targets if is_remote_staged(Path(path))]
+            remote_inputs = [p for p in output_path_inputs if is_remote_staged(Path(p))]
+            if remote_targets and remote_inputs and all(is_remote_staged(Path(p)) for p in output_path_inputs):
+                # Remote-acquired sources (Google Drive, GitHub archives) live in a
+                # temporary staging folder removed after the run, so their outputs
+                # must go under cwd, mirroring the downloaded layout.
+                target_paths = compute_output_paths(remote_inputs, remote_targets, Path.cwd())
+            else:
+                for path, _, _ in targets:
+                    p = Path(path)
+                    if is_remote_staged(p):
+                        base = output_root if output_root is not None else Path.cwd()
+                        target_paths.append(get_output_path(p, base))
+                    else:
+                        target_paths.append(get_output_path(p))
     except ValueError as exc:
         logger.error("%s", exc)
         if coordinator:
@@ -789,17 +806,17 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                         continue
                     f_path = Path(f)
                     output_path = target_paths[idx]
-                    is_google_cache = str(f_path.resolve()) in google_downloaded or str(f_path.resolve()) in github_downloaded
+                    is_remote_cache = is_remote_staged(f_path)
                     output_dir_for_job = (
                         output_path.parent
-                        if output_root is not None or is_google_cache
+                        if output_root is not None or is_remote_cache
                         else f_path.parent
                     )
                     job = ConversionJob(
                         source=f_path,
                         output_path=(
                             f_path
-                            if args.overwrite and f_path.suffix.lower() in TEXT_EXTENSIONS and not is_google_cache
+                            if args.overwrite and f_path.suffix.lower() in TEXT_EXTENSIONS and not is_remote_cache
                             else output_path
                         ),
                         resource_dir=output_dir_for_job,
@@ -845,11 +862,11 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                             raise pending_error
                     output_path = target_paths[idx]
                     extension = f_path.suffix.lower()
-                    is_google_cache = str(f_path) in google_downloaded or str(f_path) in github_downloaded
+                    is_remote_cache = is_remote_staged(f_path)
                     status_info = ""
                     if res.status == "skipped":
                         status_info = f"skipped, existing output: {output_path.name}"
-                    elif args.overwrite and extension in TEXT_EXTENSIONS and not is_google_cache:
+                    elif args.overwrite and extension in TEXT_EXTENSIONS and not is_remote_cache:
                         status_info = "overwritten"
                     elif args.overwrite:
                         status_info = "overwrite ignored (binary file)"
@@ -1029,7 +1046,7 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                 error_count_before = len(batch_ui.errors)
                 logger_was_disabled = logger.disabled
                 logger.disabled = True
-                is_google_cache = str(f_path.resolve()) in google_downloaded
+                is_remote_cache = is_remote_staged(f_path)
                 started_at = time.monotonic()
                 try:
                     if category == "source_code":
@@ -1040,14 +1057,14 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
                     else:
                         res_raw = convert_file(
                             f_path,
-                            overwrite=args.overwrite and not is_google_cache,
+                            overwrite=args.overwrite and not is_remote_cache,
                             skip_existing=args.skip_existing if merge_target is None else False,
                             progress_callback=on_progress,
                             completion_callback=on_complete,
                             batch_mode=True,
                             target_dir=(
                                 output_path.parent
-                                if merge_target is None and (output_root is not None or is_google_cache)
+                                if merge_target is None and (output_root is not None or is_remote_cache)
                                 else None
                             ),
                             asset_dir=(
