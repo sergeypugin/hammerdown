@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.1.1] - 2026-11-15
+
+### Added
+- Offline fuzz suites for the remote-input layer: GitHub URL parsing, archive extraction sandbox, Google Drive URL parsers and filename sanitization, and the GitHub HTTP layer (deterministic, seeded, network-free)
+
+### Fixed
+- Markdown outputs for remote sources (GitHub repositories and Google Drive files) are no longer lost: per-file, merge, and tree results are now written next to the user (working directory or `--output-dir`) instead of inside the temporary staging folder that is removed after the run
+- Conflicting entries inside an acquired GitHub archive (duplicate names, file-versus-directory collisions) now surface as clean errors instead of raw `PermissionError`/`FileExistsError` tracebacks
+
 ## [4.1.0] - 2026-11-14
 
 ### Added
