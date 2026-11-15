@@ -133,13 +133,13 @@ def test_extract_archive_fuzz_hostile_names(tmp_path: Path) -> None:
     escaped_all: set[Path] = set()
     for iteration in range(120):
         destination.mkdir(parents=True)
-        before = _paths_under(tmp_path)
+        before = _paths_under(destination)
         archive = _archive_file(tmp_path, _fuzz_zip_bytes(rng, rng.randint(1, 12)), f"a{iteration}.zip")
         try:
             _extract_archive(archive, destination)
         except ValueError:
             pass
-        new_paths = _paths_under(tmp_path) - before
+        new_paths = _paths_under(destination) - before
         allowed_root = (destination / ".github-extracted").resolve()
         escaped = {
             path for path in new_paths
@@ -157,10 +157,10 @@ def test_extract_archive_fuzz_benign_success(tmp_path: Path) -> None:
     escaped_all: set[Path] = set()
     for iteration in range(20):
         destination.mkdir(parents=True)
-        before = _paths_under(tmp_path)
+        before = _paths_under(destination)
         archive = _archive_file(tmp_path, _fuzz_zip_bytes(rng, rng.randint(1, 8), benign=True), f"b{iteration}.zip")
         result_root = _extract_archive(archive, destination)
-        after = _paths_under(tmp_path) - before
+        after = _paths_under(destination) - before
         allowed_root = (destination / ".github-extracted").resolve()
         escaped = {
             path for path in after
