@@ -211,12 +211,15 @@ def _extract_archive(archive: Path, destination: Path) -> Path:
                     target.mkdir(parents=True, exist_ok=True)
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
-                with source.open(member, "r") as input_stream, target.open("xb") as output_stream:
-                    while chunk := input_stream.read(64 * 1024):
-                        written += len(chunk)
-                        if written > MAX_EXTRACTED_BYTES:
-                            raise ValueError("GitHub archive exceeds extracted byte limit")
-                        output_stream.write(chunk)
+                try:
+                    with source.open(member, "r") as input_stream, target.open("xb") as output_stream:
+                        while chunk := input_stream.read(64 * 1024):
+                            written += len(chunk)
+                            if written > MAX_EXTRACTED_BYTES:
+                                raise ValueError("GitHub archive exceeds extracted byte limit")
+                            output_stream.write(chunk)
+                except OSError as exc:
+                    raise ValueError("GitHub archive contains conflicting entries") from exc
         return extraction / next(iter(roots))
     except Exception:
         shutil.rmtree(extraction, ignore_errors=True)
