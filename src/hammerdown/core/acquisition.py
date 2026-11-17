@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Sequence
 import urllib.error
 
-from .github import GitHubAcquired, acquire_github, parse_github_locator
+from .github import GitHubAcquired, acquire_github, github_url_rejection_reason, parse_github_locator
 from .path_utils import normalize_path
 from .google_drive import download_google_url, is_google_drive_url
 
@@ -46,6 +46,10 @@ def validate_local_inputs(
     errors: list[tuple[str, str]] = []
     for raw in raw_inputs:
         if google_url_checker(raw) or is_github_locator(raw, allow_repository_root=allow_github_repository_root):
+            continue
+        reason = github_url_rejection_reason(raw, allow_repository_root=allow_github_repository_root)
+        if reason is not None:
+            errors.append((raw, reason))
             continue
         if _existing_local_path(raw) is None:
             errors.append((raw, "file or directory not found"))
@@ -92,11 +96,12 @@ def acquire_inputs(
                 )
                 item = AcquiredInput(raw, acquired.root.resolve(), {"kind": kind, **acquired.provenance})
             else:
+                reason = github_url_rejection_reason(raw, allow_repository_root=allow_github_repository_root)
                 item = AcquiredInput(
                     raw,
                     None,
                     {"kind": kind, "original": raw},
-                    "file or directory not found",
+                    reason or "file or directory not found",
                 )
         except Exception as exc:
             if kind == "google" and isinstance(exc, urllib.error.HTTPError):

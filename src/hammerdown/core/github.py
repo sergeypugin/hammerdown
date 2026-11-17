@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import tempfile
 import time
 from urllib.parse import quote, unquote, urlparse
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -16,7 +18,13 @@ MAX_ARCHIVE_MEMBERS = 100_000
 MAX_PATH_DEPTH = 32
 DEFAULT_DEADLINE_SECONDS = 120.0
 _ALLOWED_HOSTS = {"github.com", "api.github.com", "codeload.github.com"}
+_GITHUB_URL_HOSTS = {"github.com", "www.github.com", "raw.githubusercontent.com"}
+_FULL_COMMIT_SHA = re.compile(r"[0-9a-fA-F]{40}")
 _USER_AGENT = "Hammerdown/4"
+GITHUB_USAGE_HINT = (
+    "use https://github.com/OWNER/REPO, https://github.com/OWNER/REPO/tree/REF[/SUBPATH], "
+    "or https://github.com/OWNER/REPO/blob/REF/PATH/TO/FILE"
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +33,7 @@ class GitHubLocator:
     repository: str
     ref: str | None = None
     subpath: str = ""
+    kind: str = "tree"
 
     @property
     def repository_slug(self) -> str:
@@ -40,8 +49,11 @@ class GitHubAcquired:
 
     @property
     def provenance(self) -> dict[str, str]:
+        location = f"https://github.com/{self.locator.repository_slug}/{self.locator.kind}/{self.locator.ref or self.resolved_commit}"
+        if self.locator.subpath:
+            location = f"{location}/{self.locator.subpath}"
         return {
-            "locator": f"https://github.com/{self.locator.repository_slug}/tree/{self.locator.ref or self.resolved_commit}",
+            "locator": location,
             "ref": self.locator.ref or self.resolved_commit,
             "commit": self.resolved_commit,
             "subpath": self.locator.subpath,
@@ -78,18 +90,57 @@ def parse_github_locator(value: str, *, allow_repository_root: bool = False) -> 
         port = parsed.port
     except ValueError:
         return None
-    if parsed.scheme != "https" or parsed.hostname != "github.com" or parsed.username is not None or parsed.password is not None or port is not None or parsed.query or parsed.fragment:
+    hostname = parsed.hostname
+    if hostname is not None and hostname.startswith("www."):
+        hostname = hostname[4:]
+    if parsed.scheme != "https" or hostname != "github.com" or parsed.username is not None or parsed.password is not None or port is not None:
         return None
-    parts = _decode_segments(parsed.path)
+    # fragments (#L142) and query strings (?plain=1) are browser navigation noise
+    path = parsed.path
+    while path.endswith("/"):
+        path = path[:-1]
+    parts = _decode_segments(path)
     if parts is None:
         return None
     if len(parts) == 2 and allow_repository_root:
         return GitHubLocator(parts[0], parts[1])
-    if len(parts) < 4 or parts[2] != "tree":
+    if len(parts) < 4 or parts[2] not in ("tree", "blob"):
         return None
     if not all(_safe_component(part) for part in parts[:4]):
         return None
-    return GitHubLocator(parts[0], parts[1], parts[3], "/".join(parts[4:]))
+    subpath = "/".join(parts[4:])
+    if parts[2] == "blob" and not subpath:
+        return None
+    return GitHubLocator(parts[0], parts[1], parts[3], subpath, parts[2])
+
+
+def looks_like_github_url(value: str) -> bool:
+    candidate = value.strip()
+    if not candidate or "\x00" in candidate:
+        return False
+    if "://" in candidate:
+        parsed = urlparse(candidate)
+        try:
+            parsed.port
+        except ValueError:
+            return True
+        return parsed.hostname in _GITHUB_URL_HOSTS
+    lower = candidate.lower()
+    return lower.startswith("github.com/") or lower.startswith("www.github.com/")
+
+
+def github_url_rejection_reason(value: str, *, allow_repository_root: bool = False) -> str | None:
+    candidate = value.strip()
+    lower = candidate.lower()
+    if "://" not in candidate and not lower.startswith(("github.com/", "www.github.com/")):
+        # bare "owner/repo" is a valid local relative path, so a failed local
+        # lookup keeps its plain "file or directory not found" message
+        return None
+    if parse_github_locator(candidate, allow_repository_root=True) is not None:
+        return None if allow_repository_root else "GitHub repository root link requires tree mode"
+    if looks_like_github_url(candidate):
+        return f"unsupported GitHub URL ({GITHUB_USAGE_HINT})"
+    return None
 
 
 def _validate_url(url: str, *, final: bool = False) -> None:
@@ -121,22 +172,63 @@ def _open(url: str, deadline: float):
     return response
 
 
-def _resolve_commit(locator: GitHubLocator, deadline: float) -> str:
-    if locator.ref is None:
-        endpoint = f"https://api.github.com/repos/{quote(locator.repository_slug, safe='/')}"
-    else:
-        endpoint = f"https://api.github.com/repos/{quote(locator.repository_slug, safe='/')}/commits/{quote(locator.ref, safe='')}"
+def _fetch_commit_sha(owner: str, repository: str, ref: str, deadline: float) -> str:
+    slug = quote(f"{owner}/{repository}", safe="/")
+    endpoint = f"https://api.github.com/repos/{slug}/commits/{quote(ref, safe='')}"
     with _open(endpoint, deadline) as response:
         data = json.load(response)
-    if locator.ref is None:
-        branch = data.get("default_branch")
-        if not isinstance(branch, str) or not _safe_component(branch):
-            raise ValueError("GitHub repository has no usable default branch")
-        return _resolve_commit(GitHubLocator(locator.owner, locator.repository, branch, locator.subpath), deadline)
     sha = data.get("sha")
     if not isinstance(sha, str) or not sha:
         raise ValueError("GitHub response did not contain a commit SHA")
     return sha
+
+
+def _ref_candidates(locator: GitHubLocator) -> list[tuple[str, str]]:
+    # parse splits the URL remainder provisionally into ref + subpath, but a
+    # branch name may itself contain slashes (tree/release/1.0/doc). GitHub and
+    # git resolve the ambiguity longest-match-first, so try the full remainder
+    # as a ref first and shorten it step by step. A 40-hex commit SHA can never
+    # be the prefix of a longer ref worth trying, so permalinks skip the walk.
+    segments = [locator.ref] if locator.ref else []
+    if locator.subpath:
+        segments.extend(locator.subpath.split("/"))
+    if len(segments) <= 1:
+        return [("/".join(segments), "")]
+    if _FULL_COMMIT_SHA.fullmatch(segments[0]):
+        return [(segments[0], "/".join(segments[1:]))]
+    return [
+        ("/".join(segments[:count]), "/".join(segments[count:]))
+        for count in range(len(segments), 0, -1)
+    ]
+
+
+def _resolve_commit_with_split(locator: GitHubLocator, deadline: float) -> tuple[str, GitHubLocator]:
+    if locator.ref is None:
+        endpoint = f"https://api.github.com/repos/{quote(locator.repository_slug, safe='/')}"
+        with _open(endpoint, deadline) as response:
+            data = json.load(response)
+        branch = data.get("default_branch")
+        if not isinstance(branch, str) or not _safe_component(branch):
+            raise ValueError("GitHub repository has no usable default branch")
+        return _resolve_commit_with_split(
+            GitHubLocator(locator.owner, locator.repository, branch, "", locator.kind), deadline
+        )
+    last_error: Exception | None = None
+    for candidate_ref, candidate_subpath in _ref_candidates(locator):
+        try:
+            sha = _fetch_commit_sha(locator.owner, locator.repository, candidate_ref, deadline)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (400, 404, 422):
+                last_error = exc
+                continue
+            raise
+        return sha, GitHubLocator(locator.owner, locator.repository, candidate_ref, candidate_subpath, locator.kind)
+    remainder = "/".join([locator.ref, *locator.subpath.split("/")]) if locator.subpath else locator.ref
+    raise ValueError(f"GitHub ref does not exist: {remainder}") from last_error
+
+
+def _resolve_commit(locator: GitHubLocator, deadline: float) -> str:
+    return _resolve_commit_with_split(locator, deadline)[0]
 
 
 def _download_archive(url: str, destination: Path, deadline: float) -> Path:
@@ -229,19 +321,26 @@ def _extract_archive(archive: Path, destination: Path) -> Path:
 def acquire_github(value: str, destination: Path, *, allow_repository_root: bool = False, deadline_seconds: float = DEFAULT_DEADLINE_SECONDS) -> GitHubAcquired:
     locator = parse_github_locator(value, allow_repository_root=allow_repository_root)
     if locator is None:
-        raise ValueError("unsupported GitHub locator; use https://github.com/OWNER/REPO/tree/REF[/SUBPATH]")
+        raise ValueError(f"unsupported GitHub locator ({GITHUB_USAGE_HINT})")
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + deadline_seconds
-    resolved_commit = _resolve_commit(locator, deadline)
-    archive_url = f"https://codeload.github.com/{quote(locator.repository_slug, safe='/')}/zip/{quote(resolved_commit, safe='')}"
+    resolved_commit, resolved_locator = _resolve_commit_with_split(locator, deadline)
+    archive_url = f"https://codeload.github.com/{quote(resolved_locator.repository_slug, safe='/')}/zip/{quote(resolved_commit, safe='')}"
     archive = _download_archive(archive_url, destination, deadline)
     try:
         root = _extract_archive(archive, destination)
     finally:
         archive.unlink(missing_ok=True)
-    selected = root / locator.subpath if locator.subpath else root
-    if not selected.exists():
+    selected = root / resolved_locator.subpath if resolved_locator.subpath else root
+    if resolved_locator.kind == "blob":
+        if selected.is_dir():
+            shutil.rmtree(root.parent, ignore_errors=True)
+            raise ValueError(f"GitHub blob path is a directory; use a /tree/ link: {resolved_locator.subpath}")
+        if not selected.is_file():
+            shutil.rmtree(root.parent, ignore_errors=True)
+            raise ValueError(f"GitHub file does not exist in the repository: {resolved_locator.subpath}")
+    elif not selected.exists():
         shutil.rmtree(root.parent, ignore_errors=True)
-        raise ValueError(f"GitHub subpath does not exist: {locator.subpath}")
-    return GitHubAcquired(selected, locator, resolved_commit, archive_url)
+        raise ValueError(f"GitHub subpath does not exist: {resolved_locator.subpath}")
+    return GitHubAcquired(selected, resolved_locator, resolved_commit, archive_url)
