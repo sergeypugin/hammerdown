@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.2.0] - 2026-11-17
+
+### Added
+- Tree mode now selects files by content: any file with an unknown or missing extension is kept when its leading bytes decode as UTF-8 text without NUL bytes, so extension-less text files such as `Dockerfile` or `httpd.conf` are included without a curated extension list
+- `-o/--output-dir` now works with `--tree`; the merged tree document is written into the given directory
+- GitHub single-file links: `https://github.com/OWNER/REPO/blob/REF/PATH/TO/FILE` downloads the repository archive and converts that one file; a directory path under `/blob/` and a missing file are clean errors
+- Branch names with slashes in GitHub links resolve longest-match-first through the commits API (`tree/feature/login/docs` selects the `feature/login` branch with the `docs` subfolder, matching GitHub); 40-hex permalink SHAs skip the lookup and keep a single API call
+- Browser link noise is now tolerated on GitHub URLs: `#fragment` (`#L42`) and `?query` suffixes are stripped, trailing slashes are ignored, and `www.github.com` is normalized
+- Clear GitHub errors instead of a misleading local-path failure: anything GitHub-shaped that is not supported (`issues`, `wiki`, `pull`, `raw.githubusercontent.com`, non-HTTPS) reports `unsupported GitHub URL` with the accepted forms, and a repository root link without `--tree` reports that tree mode is required
+- Unit tests for merge-root resolution and tree content sniffing, plus locator, ref-walk, and blob acquisition tests (network-free)
+
+### Changed
+- Folder conversion targets no longer land inside the selection: coordinator and file-manager merge/tree runs write the target beside the selected folder (the common parent of the inputs), `FILE:` section prefixes and the frontmatter `source` field are expressed relative to that common parent, and plain CLI tree runs keep writing `hammerdowned.md` into the working directory
+
+### Removed
+- The tree-mode extension whitelist (`TEXT_FILE_EXTENSIONS`/`TEXT_FILE_NAMES`) and the internal `tree_policy` flag; content sniffing replaces both
+
 ## [4.1.1] - 2026-11-15
 
 ### Added
