@@ -349,11 +349,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
 
     tree_mode = getattr(args, "tree", False)
-    if tree_mode:
-        if args.output_dir:
-            parser.error("--tree cannot be combined with -o/--output-dir")
-        if args.overwrite:
-            parser.error("--tree cannot be combined with -w/--overwrite")
+    if tree_mode and args.overwrite:
+        parser.error("--tree cannot be combined with -w/--overwrite")
 
     all_formats = getattr(args, "all_formats", False)
     if all_formats and not tree_mode and not args.dir_struct:

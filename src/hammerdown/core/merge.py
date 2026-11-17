@@ -12,7 +12,7 @@ from typing import Any, Sequence
 
 from .output import OutputStaging, cleanup_staged_path, replace_staged_outputs
 from .path_utils import get_images_dir_name, normalize_path
-from ..parsers import CONVERTERS
+from ..parsers import BINARY_FORMATS, CONVERTERS, CONVERTIBLE_BINARY_FORMATS
 
 TREE_BRANCH = "├── "
 TREE_LAST = "└── "
@@ -47,18 +47,7 @@ def convert_source_text(file_path: str | Path) -> SourceTextConversion:
         return SourceTextConversion(False, error=f"could not read source file {source.name}: {exc}")
 
 
-# Convertible binary formats that hammerdown supports
-CONVERTIBLE_BINARY_FORMATS = {".pdf", ".docx", ".xlsx", ".doc", ".xls", ".pptx", ".ppt", ".odt"}
-
-# All binary formats (convertible and non-convertible)
-BINARY_FORMATS = {
-    ".pdf", ".docx", ".xlsx", ".doc", ".xls", ".pptx", ".ppt", ".odt", ".epub", ".mobi",
-    ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2",
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".ico", ".tiff",
-    ".mp3", ".mp4", ".wav", ".flac", ".m4a", ".aac", ".wma", ".avi", ".mov", ".mkv",
-    ".exe", ".dll", ".so", ".dylib", ".app", ".apk",
-    ".bin", ".dat", ".db", ".sqlite",
-}
+# Binary format knowledge lives in the format registry.
 
 
 def _is_convertible_binary(file_path: str | Path) -> bool:
@@ -80,10 +69,11 @@ def _is_supported_format(file_path: str | Path) -> bool:
 
 
 def merge_root_for_inputs(raw_inputs: Sequence[str], source_files: Sequence[Path]) -> Path:
+    # Parent-rooted, so a merged or tree target lands next to the selection
+    # instead of inside the folder being converted.
     roots: list[Path] = []
     for raw in raw_inputs:
-        path = Path(normalize_path(raw)).resolve()
-        roots.append(path if path.is_dir() else path.parent)
+        roots.append(Path(normalize_path(raw)).resolve().parent)
     if roots:
         try:
             return Path(os.path.commonpath([str(path) for path in roots]))

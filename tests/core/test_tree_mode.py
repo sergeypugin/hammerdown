@@ -61,6 +61,65 @@ def test_tree_source_code_helper_rejects_binary_and_unknown_binary_is_skipped(tm
     }
 
 
+def test_tree_includes_unknown_text_formats_by_content_sniff(tmp_path: Path) -> None:
+    names = (
+        "index.jsp",
+        "header.jspf",
+        "page.tag",
+        "main.tex",
+        "deploy.ps1",
+        "run.bat",
+        "schema.tf",
+        "movie.srt",
+        "fix.patch",
+        "notes.weirdext",
+        "Dockerfile",
+    )
+
+    for name in names:
+        (tmp_path / name).write_text("content\n", encoding="utf-8")
+
+    result = discover_tree([str(tmp_path)], all_formats=False)
+    assert {Path(target.path).name for target in result.targets} == set(names)
+    assert {target.category for target in result.targets} == {"source_code"}
+
+
+def test_tree_skips_known_binary_extensions_even_with_text_content(tmp_path: Path) -> None:
+    (tmp_path / "video.mp4").write_text("plain text in a video extension", encoding="utf-8")
+    (tmp_path / "archive.rar").write_text("plain text in an archive extension", encoding="utf-8")
+
+    result = discover_tree([str(tmp_path)], all_formats=False)
+    assert result.targets == []
+    assert {Path(skip.path).name for skip in result.skipped} == {"video.mp4", "archive.rar"}
+
+
+def test_tree_registry_documents_require_all_formats(tmp_path: Path) -> None:
+    (tmp_path / "report.pdf").write_bytes(b"%PDF-1.4 fake")
+    (tmp_path / "notes.txt").write_text("text\n", encoding="utf-8")
+
+    plain = discover_tree([str(tmp_path)], all_formats=False)
+    assert {Path(target.path).name for target in plain.targets} == {"notes.txt"}
+
+    full = discover_tree([str(tmp_path)], all_formats=True)
+    assert {Path(target.path).name for target in full.targets} == {"notes.txt", "report.pdf"}
+    assert "binary_document" in {target.category for target in full.targets}
+
+
+def test_tree_includes_log_files_as_convertible_text(tmp_path: Path) -> None:
+    (tmp_path / "run.log").write_text("started\nfinished\n", encoding="utf-8")
+
+    result = discover_tree([str(tmp_path)], all_formats=False)
+    assert {Path(target.path).name for target in result.targets} == {"run.log"}
+    assert {target.category for target in result.targets} == {"text_convertible"}
+
+
+def test_tree_skips_non_utf8_text_content(tmp_path: Path) -> None:
+    (tmp_path / "legacy.log").write_bytes(b"caf\xe9\n")
+
+    result = discover_tree([str(tmp_path)], all_formats=False)
+    assert result.targets == []
+
+
 def test_tree_flag_enables_tree_mode(tmp_path: Path, monkeypatch):
     """Test that --tree flag enables tree mode and creates default output"""
     # Change to tmp_path so output goes there
@@ -100,16 +159,32 @@ def test_tree_with_custom_output(tmp_path: Path, monkeypatch):
     assert "Content 1" in content
 
 
-def test_tree_incompatible_with_output_dir(tmp_path: Path):
-    """Test that --tree cannot be combined with --output-dir"""
-    file1 = tmp_path / "doc1.txt"
-    file1.write_text("test\n", encoding="utf-8")
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+def test_tree_with_output_dir_writes_target_into_output_dir(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "main.py").write_text("print('hi')\n", encoding="utf-8")
+    output_dir = tmp_path / "dist"
 
-    with pytest.raises(SystemExit) as exc_info:
-        hammerdown.cli.main(["--tree", "--output-dir", str(output_dir), str(file1)])
-    assert exc_info.value.code == 2  # argparse error
+    assert hammerdown.cli.main(["--tree", "-o", str(output_dir), str(project)]) == 0
+
+    target = output_dir / "hammerdowned.md"
+    assert target.is_file()
+    content = target.read_text(encoding="utf-8")
+    assert "main.py" in content
+
+
+def test_tree_directory_input_prefixes_content_with_folder_name(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "main.py").write_text("print('hi')\n", encoding="utf-8")
+
+    assert hammerdown.cli.main(["--tree", str(project)]) == 0
+
+    content = (tmp_path / "hammerdowned.md").read_text(encoding="utf-8")
+    assert "main.py" in content
+    assert "project" in content
 
 
 def test_tree_incompatible_with_overwrite(tmp_path: Path):

@@ -576,11 +576,12 @@ def _run_batch(args: argparse.Namespace, google_staging_dir: Path) -> int:
             or os.environ.get("HAMMERDOWN_COORDINATOR") == "1"
         )
         merge_root_inputs = [p for p in output_path_inputs if not is_remote_staged(Path(p))]
-        merge_parent = (
-            merge_root_for_inputs(merge_root_inputs, [Path(path) for path in merge_sources])
-            if coordinator_tree and merge_root_inputs
-            else Path.cwd()
-        )
+        if output_root is not None:
+            merge_parent = output_root
+        elif coordinator_tree and merge_root_inputs:
+            merge_parent = merge_root_for_inputs(merge_root_inputs, [Path(path) for path in merge_sources])
+        else:
+            merge_parent = Path.cwd()
         merge_requested = str(merge_parent / "hammerdowned.md")
         merge_target = Path(normalize_path(merge_requested))
 

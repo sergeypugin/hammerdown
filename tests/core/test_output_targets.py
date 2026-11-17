@@ -176,13 +176,13 @@ def test_custom_merge_target_is_excluded_from_directory_reruns(tmp_path: Path) -
 
     assert main(["--merge", str(target), str(project)]) == 0
     first_content = target.read_text(encoding="utf-8")
-    assert "FILE: source.txt" in first_content
+    assert "FILE: project/source.txt" in first_content
     assert "FILE: custom.md" not in first_content
 
     assert main(["--merge", str(target), "--yes", str(project)]) == 0
 
     content = target.read_text(encoding="utf-8")
-    assert "FILE: source.txt" in content
+    assert "FILE: project/source.txt" in content
     assert "FILE: custom.md" not in content
 
 

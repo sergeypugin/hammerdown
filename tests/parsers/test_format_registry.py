@@ -51,10 +51,6 @@ def test_registry_metadata_matches_existing_classifications() -> None:
     assert {ext for ext, spec in specs.items() if spec.kind == "text"} == {
         ".csv", ".txt", ".md", ".log"
     }
-    assert {ext for ext, spec in specs.items() if spec.tree_policy == "text_convertible"} == {
-        ".csv", ".txt", ".md", ".html", ".htm"
-    }
-    assert {ext for ext, spec in specs.items() if spec.tree_policy == "source_code"} == {".log"}
     assert {ext for ext, spec in specs.items() if spec.estimate_kind == "pdf_pages"} == {
         ".pdf", ".epub", ".mobi", ".fb2", ".xps"
     }

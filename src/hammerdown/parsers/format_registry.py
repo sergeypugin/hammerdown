@@ -18,7 +18,6 @@ from .text import convert_csv, convert_txt_or_md
 from .archive import convert_zip
 
 FormatKind = Literal["pdf", "office", "text", "html", "archive"]
-TreePolicy = Literal["all_formats", "text_convertible", "source_code"]
 EstimateKind = Literal[
     "pdf_pages",
     "docx_metadata",
@@ -36,37 +35,49 @@ class FormatSpec:
     extension: str
     converter: Callable[..., Any]
     kind: FormatKind
-    tree_policy: TreePolicy
     estimate_kind: EstimateKind
     overwrite_source: bool
 
 
 FORMAT_SPECS: tuple[FormatSpec, ...] = (
-    FormatSpec(".pdf", convert_pdf_or_ebook, "pdf", "all_formats", "pdf_pages", False),
-    FormatSpec(".epub", convert_pdf_or_ebook, "pdf", "all_formats", "pdf_pages", False),
-    FormatSpec(".mobi", convert_pdf_or_ebook, "pdf", "all_formats", "pdf_pages", False),
-    FormatSpec(".fb2", convert_pdf_or_ebook, "pdf", "all_formats", "pdf_pages", False),
-    FormatSpec(".xps", convert_pdf_or_ebook, "pdf", "all_formats", "pdf_pages", False),
-    FormatSpec(".docx", convert_docx, "office", "all_formats", "docx_metadata", False),
-    FormatSpec(".doc", convert_doc, "office", "all_formats", "legacy_size", False),
-    FormatSpec(".odt", convert_odt, "office", "all_formats", "odt_size", False),
-    FormatSpec(".xlsx", convert_xlsx, "office", "all_formats", "xlsx_sheets", False),
-    FormatSpec(".xls", convert_xls, "office", "all_formats", "legacy_size", False),
-    FormatSpec(".pptx", convert_pptx, "office", "all_formats", "pptx_slides", False),
-    FormatSpec(".ppt", convert_ppt, "office", "all_formats", "legacy_size", False),
-    FormatSpec(".csv", convert_csv, "text", "text_convertible", "fast_text", True),
-    FormatSpec(".txt", convert_txt_or_md, "text", "text_convertible", "fast_text", True),
-    FormatSpec(".md", convert_txt_or_md, "text", "text_convertible", "fast_text", True),
-    FormatSpec(".log", convert_txt_or_md, "text", "source_code", "fast_text", True),
-    FormatSpec(".html", convert_html, "html", "text_convertible", "none", False),
-    FormatSpec(".htm", convert_html, "html", "text_convertible", "none", False),
-    FormatSpec(".gdoc", convert_html, "html", "all_formats", "none", False),
-    FormatSpec(".gsheets", convert_html, "html", "all_formats", "none", False),
-    FormatSpec(".gslides", convert_html, "html", "all_formats", "none", False),
-    FormatSpec(".gfile", convert_html, "html", "all_formats", "none", False),
-    FormatSpec(".zip", convert_zip, "archive", "all_formats", "none", False),
+    FormatSpec(".pdf", convert_pdf_or_ebook, "pdf", "pdf_pages", False),
+    FormatSpec(".epub", convert_pdf_or_ebook, "pdf", "pdf_pages", False),
+    FormatSpec(".mobi", convert_pdf_or_ebook, "pdf", "pdf_pages", False),
+    FormatSpec(".fb2", convert_pdf_or_ebook, "pdf", "pdf_pages", False),
+    FormatSpec(".xps", convert_pdf_or_ebook, "pdf", "pdf_pages", False),
+    FormatSpec(".docx", convert_docx, "office", "docx_metadata", False),
+    FormatSpec(".doc", convert_doc, "office", "legacy_size", False),
+    FormatSpec(".odt", convert_odt, "office", "odt_size", False),
+    FormatSpec(".xlsx", convert_xlsx, "office", "xlsx_sheets", False),
+    FormatSpec(".xls", convert_xls, "office", "legacy_size", False),
+    FormatSpec(".pptx", convert_pptx, "office", "pptx_slides", False),
+    FormatSpec(".ppt", convert_ppt, "office", "legacy_size", False),
+    FormatSpec(".csv", convert_csv, "text", "fast_text", True),
+    FormatSpec(".txt", convert_txt_or_md, "text", "fast_text", True),
+    FormatSpec(".md", convert_txt_or_md, "text", "fast_text", True),
+    FormatSpec(".log", convert_txt_or_md, "text", "fast_text", True),
+    FormatSpec(".html", convert_html, "html", "none", False),
+    FormatSpec(".htm", convert_html, "html", "none", False),
+    FormatSpec(".gdoc", convert_html, "html", "none", False),
+    FormatSpec(".gsheets", convert_html, "html", "none", False),
+    FormatSpec(".gslides", convert_html, "html", "none", False),
+    FormatSpec(".gfile", convert_html, "html", "none", False),
+    FormatSpec(".zip", convert_zip, "archive", "none", False),
 )
 
 CONVERTERS = {spec.extension: spec.converter for spec in FORMAT_SPECS}
 
-__all__ = ["CONVERTERS", "FORMAT_SPECS", "EstimateKind", "FormatKind", "FormatSpec", "TreePolicy"]
+# Binary formats that Hammerdown converts (merge mode marks them as convertible).
+CONVERTIBLE_BINARY_FORMATS = {".pdf", ".docx", ".xlsx", ".doc", ".xls", ".pptx", ".ppt", ".odt"}
+
+# Binary formats that tree mode never includes by content sniff, convertible or not.
+BINARY_FORMATS = {
+    ".pdf", ".docx", ".xlsx", ".doc", ".xls", ".pptx", ".ppt", ".odt", ".epub", ".mobi",
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2",
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".ico", ".tiff",
+    ".mp3", ".mp4", ".wav", ".flac", ".m4a", ".aac", ".wma", ".avi", ".mov", ".mkv",
+    ".exe", ".dll", ".so", ".dylib", ".app", ".apk",
+    ".bin", ".dat", ".db", ".sqlite",
+}
+
+__all__ = ["CONVERTERS", "FORMAT_SPECS", "BINARY_FORMATS", "CONVERTIBLE_BINARY_FORMATS", "EstimateKind", "FormatKind", "FormatSpec"]

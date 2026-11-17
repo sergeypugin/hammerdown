@@ -12,6 +12,7 @@ from pathspec import PathSpec
 from . import SUPPORTED_EXTENSIONS, get_output_path, is_generated_output
 from .ignore import IgnoreFile, ignore_files_for, ignore_scope_for, is_ignored, read_ignore_file
 from .path_utils import normalize_path
+from ..parsers import BINARY_FORMATS
 
 # Directories that never contain user documents worth converting and that can
 # hold a huge number of files (dependency trees, caches, system trash).
@@ -26,22 +27,10 @@ IGNORED_DIRECTORY_NAMES: frozenset[str] = frozenset(
     }
 )
 
-# Text-like formats useful in tree mode, whether or not Hammerdown converts them.
-TEXT_FILE_EXTENSIONS: frozenset[str] = frozenset(
-    {
-        ".txt", ".md", ".rst", ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs",
-        ".ts", ".tsx", ".json", ".jsonc", ".yaml", ".yml", ".toml", ".xml",
-        ".html", ".htm", ".css", ".scss", ".less", ".java", ".kt", ".kts",
-        ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".rs", ".go", ".rb",
-        ".php", ".sh", ".bash", ".zsh", ".sql", ".csv", ".tsv", ".log",
-        ".ini", ".cfg", ".conf", ".properties", ".gradle", ".dockerfile",
-        ".makefile", ".graphql", ".proto", ".swift", ".scala", ".vue", ".svelte",
-    }
-)
-TEXT_CONVERTIBLE_EXTENSIONS: frozenset[str] = frozenset({".txt", ".md", ".csv", ".html", ".htm"})
-TEXT_FILE_NAMES: frozenset[str] = frozenset(
-    {"dockerfile", "makefile", "gnumakefile", "justfile", "license", "readme", "changelog", "gemfile", "rakefile", "procfile"}
-)
+# Tree mode keeps any plain-text file. Extensions with a Hammerdown converter
+# follow the converter rules; every other extension is kept verbatim when its
+# content sniffs as UTF-8 text without NUL bytes.
+TEXT_CONVERTIBLE_EXTENSIONS: frozenset[str] = frozenset({".txt", ".md", ".csv", ".log", ".html", ".htm"})
 
 FilterPattern = Pattern[str] | PathSpec
 FilterPatternInput = FilterPattern | Sequence[FilterPattern]
@@ -167,14 +156,13 @@ def _is_text_file(path: Path) -> bool:
 
 def _tree_category(path: Path, all_formats: bool) -> str | None:
     extension = path.suffix.lower()
-    supported = extension in SUPPORTED_EXTENSIONS
-    if extension in TEXT_CONVERTIBLE_EXTENSIONS and supported:
+    if extension in TEXT_CONVERTIBLE_EXTENSIONS:
         return "text_convertible" if _is_text_file(path) else None
-    if extension in TEXT_FILE_EXTENSIONS or path.name.lower() in TEXT_FILE_NAMES:
-        return "source_code" if _is_text_file(path) else None
-    if all_formats and supported:
-        return "binary_document"
-    return None
+    if extension in SUPPORTED_EXTENSIONS:
+        return "binary_document" if all_formats else None
+    if extension in BINARY_FORMATS:
+        return None
+    return "source_code" if _is_text_file(path) else None
 
 
 def discover_paths(

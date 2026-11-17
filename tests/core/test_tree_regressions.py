@@ -30,7 +30,7 @@ def test_tree_cli_renders_source_code_targets_with_and_without_all_formats(
         assert hammerdown.cli.main([*args, str(project)]) == 0
         rendered = output.read_text(encoding="utf-8")
         for name, content in contents.items():
-            assert f"FILE: {name}" in rendered
+            assert f"FILE: project/{name}" in rendered
             assert content.strip() in rendered
 
 
@@ -54,21 +54,22 @@ def test_tree_writes_default_output_path_and_exact_content(tmp_path: Path, monke
     frontmatter = lines[1:end]
     assert "mode: 'tree'" in frontmatter
     assert "files: 2" in frontmatter
-    assert f"source: '{project.resolve().as_posix()}'" in frontmatter
+    assert f"source: '{tmp_path.resolve().as_posix()}'" in frontmatter
     assert lines[end + 1] == ""
     assert "\n".join(lines[end + 2:]) == (
         "Directory structure:\n"
-        "\u2514\u2500\u2500 project/\n"
-        "    \u251c\u2500\u2500 a.txt\n"
-        "    \u2514\u2500\u2500 b.md\n"
+        f"\u2514\u2500\u2500 {tmp_path.name}/\n"
+        "    \u2514\u2500\u2500 project/\n"
+        "        \u251c\u2500\u2500 a.txt\n"
+        "        \u2514\u2500\u2500 b.md\n"
         "\n"
         f"{SECTION_SEPARATOR}\n"
-        "FILE: a.txt\n"
+        "FILE: project/a.txt\n"
         f"{SECTION_SEPARATOR}\n"
         "alpha\n"
         "\n"
         f"{SECTION_SEPARATOR}\n"
-        "FILE: b.md\n"
+        "FILE: project/b.md\n"
         f"{SECTION_SEPARATOR}\n"
         "# beta\n"
     )
@@ -106,13 +107,13 @@ def test_tree_custom_merge_target_is_excluded_from_directory_reruns(
 
     assert hammerdown.cli.main(["--tree", "--merge", str(target), str(project)]) == 0
     first_content = target.read_text(encoding="utf-8")
-    assert "FILE: source.txt" in first_content
+    assert "FILE: project/source.txt" in first_content
     assert "FILE: custom.md" not in first_content
 
     assert hammerdown.cli.main(["--tree", "--merge", str(target), "--yes", str(project)]) == 0
 
     content = target.read_text(encoding="utf-8")
-    assert "FILE: source.txt" in content
+    assert "FILE: project/source.txt" in content
     assert "FILE: custom.md" not in content
 
 
