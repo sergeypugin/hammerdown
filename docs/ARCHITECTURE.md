@@ -83,9 +83,9 @@ Normal per-file output writes one deterministic Markdown document plus its asset
 
 ### Tree Output (`--tree`)
 
-Tree mode replaces ordinary per-file discovery with a Gitingest-like tree selection and always writes one combined Markdown target. Without `--all-formats`, it selects text and source-like files without adding Hammerdown's binary document formats. `--all-formats` adds supported Hammerdown documents; unknown binary files remain skipped. The target defaults to `hammerdowned.md`, can be set with `-m`, and uses the same frontmatter metadata block, directory header, per-file sections, and asset redirection as merged output.
+Tree mode replaces ordinary per-file discovery with a Gitingest-like tree selection and always writes one combined Markdown target. Selection is content-based: for files outside Hammerdown's known formats, discovery checks the first 8 KiB and keeps the file when it has no NUL bytes and decodes as valid UTF-8, so text files with unknown or missing extensions are included without an extension whitelist. Without `--all-formats`, these text and source-like files form the tree. `--all-formats` adds supported Hammerdown documents; unknown binary files remain skipped. The target is the file passed with `-m`, or `hammerdowned.md` by default, placed in the directory set with `-o/--output-dir`, in the working directory for CLI runs, or beside the selection (the common parent of the inputs) for coordinator and file-manager runs. It uses the same frontmatter metadata block, directory header, per-file sections, and asset redirection as merged output, with `source` recording that common parent.
 
-`--tree` and `--all-formats` are parsed intermixed with resources, so they may appear before, between, or after positional paths. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
+`--tree` and `--all-formats` are parsed intermixed with resources, so they may appear before, between, or after positional paths. Tree mode rejects `-w/--overwrite`.
 
 ### Streaming to stdout (`--stdout`)
 

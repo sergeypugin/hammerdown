@@ -12,7 +12,7 @@ Every action accepts a multi-file selection; folders expand recursively and unsu
 
 - **Convert to Markdown** writes one Markdown file per source: `report.pdf` becomes `hm_report_pdf.md` next to the source, `notes.txt` becomes `hm_notes_txt.md`, and extracted images go into `hm_images_report_pdf/`. Each run creates separate files, so outputs from different runs never collide
 - **Merge** converts the whole selection and concatenates it into one Markdown document, defaulting to `hammerdowned.md` written next to the selected files
-- **Tree** gathers the selection into one Gitingest-like tree document of text and source-code files, also defaulting to `hammerdowned.md` in the common parent folder of the selection; supported binary documents are not included
+- **Tree** gathers the selection into one Gitingest-like tree document of text and source-code files, selected by content rather than extension: any file whose leading bytes decode as UTF-8 text without NUL bytes is included, whatever its extension. The target defaults to `hammerdowned.md` in the common parent folder of the selection; supported binary documents are not included
 - **Tree with all formats** runs the same tree pass but additionally includes Hammerdown's supported document formats (PDF, DOCX, and so on); unknown binary files remain skipped
 
 > [!important]

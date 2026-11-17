@@ -43,9 +43,9 @@ Running `hammerdown` with no arguments prints the version, the tool description,
 | `-e`, `--exclude PATTERN` | exclude paths matching a GitWildMatch pattern; repeatable | nothing excluded | |
 | `-w`, `--overwrite` | rewrite plain-text source files (`.txt`, `.md`, `.log`, `.csv`) in place | off | `-s`, `-o`, `--merge`, `--tree`, `--stdout`, report modes |
 | `-s`, `--skip-existing` | skip conversion when the target Markdown file already exists | off | `-w`, `--stdout`, report modes |
-| `-o`, `--output-dir DIR` | write Markdown and images under `DIR`, preserving the relative layout of the input tree | next to each source | `-w`, `--merge`, `--stdout`, `--tree`, report modes |
+| `-o`, `--output-dir DIR` | write Markdown and images under `DIR`, preserving the relative layout of the input tree; with `--tree`, `DIR` receives the merged tree document | next to each source | `-w`, `--merge`, `--stdout`, report modes |
 | `--include-gitignored` | bypass repository `.gitignore` and `.gitingestignore` rules | off | |
-| `--tree` | gather the selection into one Markdown tree document | off | `-o`, `-w`, `--dir-struct` |
+| `--tree` | gather the selection into one Markdown tree document | off | `-w`, `--dir-struct` |
 | `--all-formats` | include supported binary documents (PDF, DOCX, and so on) in tree discovery | off | requires `--tree` or `--dir-struct` |
 | `-m [OUTPUT_MD]`, `--merge [OUTPUT_MD]` | merge converted documents into `OUTPUT_MD` | `hammerdowned.md` | `-w`, `-o`, `--stdout`, report modes |
 | `--stdout` | write the merged Markdown document to stdout | off | `--merge`, `-o`, `-w`, `-s` |
@@ -83,6 +83,8 @@ hammerdown report.docx workbook.xlsx slides.pptx
 ```
 
 Public Google Docs, Sheets, Slides, and Drive file links are downloaded to a temporary staging folder, converted, and removed; the resulting Markdown is written to the working directory or to `-o/--output-dir`.
+
+GitHub links are downloaded the same way. Supported forms: `https://github.com/OWNER/REPO` (repository root; requires `--tree`), `https://github.com/OWNER/REPO/tree/REF[/SUBPATH]` for branches, tags, commit SHAs, or subfolders, and `https://github.com/OWNER/REPO/blob/REF/PATH/TO/FILE` for a single file. `#fragment` and `?query` suffixes are stripped, trailing slashes are tolerated, and multi-segment refs resolve longest-match-first, so branches with slashes (`tree/feature/login`) select the branch exactly like on GitHub; 40-hex permalink SHAs skip the ref lookup. A `/blob/` link whose path is a directory, or a file missing from the repository, is a clean error. Any other GitHub-like link (`issues`, `pull`, `wiki`, `raw.githubusercontent.com`, non-HTTPS) fails with `unsupported GitHub URL (use ...)` instead of the local `file or directory not found`, and a repository root link without `--tree` reports that tree mode is required.
 
 ### Merge mode (`-m`, `--merge`)
 
@@ -143,15 +145,16 @@ Additional merge behavior:
 
 ### Tree mode (`--tree`, `--all-formats`)
 
-`--tree` gathers the selection into one combined Markdown document using Gitingest-like text and code collection: text and source-code files are included, while Hammerdown's binary document formats are not. `--all-formats` extends tree discovery with the supported document formats; unknown binary files remain skipped, and text files containing NUL bytes count as binary too. Tree mode always writes one target: `hammerdowned.md` in the working directory by default, or the file passed with `-m`. It is not a per-file conversion mode. The target starts with the YAML frontmatter metadata block described in the merge mode section, with `mode` set to `tree` or `tree --all-formats`.
+`--tree` gathers the selection into one combined Markdown document, selecting files by content: for every file outside Hammerdown's known formats, discovery checks the first 8 KiB, and the file joins the tree when it has no NUL bytes and decodes as valid UTF-8 -- so text files with unknown or missing extensions (`Dockerfile`, `httpd.conf`) are included, while files with NUL bytes or invalid UTF-8 count as binary. Without `--all-formats` these text and code files form the whole tree; `--all-formats` adds the supported document formats, and unknown binary files remain skipped. Tree mode always writes one target: the file passed with `-m`, or `hammerdowned.md` otherwise. Without `-m`, the target lands in the directory set with `-o`, in the working directory for ordinary CLI runs, or beside the selected folder for file-manager conversions. It is not a per-file conversion mode. The target starts with the YAML frontmatter metadata block described in the merge mode section, with `mode` set to `tree` or `tree --all-formats` and `source` set to the common parent of the inputs.
 
 ```sh
 hammerdown --tree project/
 hammerdown project/ --tree --all-formats
+hammerdown --tree -o out/ project/
 hammerdown --tree -m handbook.md project/
 ```
 
-`--tree` and `--all-formats` may appear before, between, or after resource arguments. `--all-formats` without `--tree` or `--dir-struct` is rejected. Tree mode rejects `-o/--output-dir` and `-w/--overwrite`.
+`--tree` and `--all-formats` may appear before, between, or after resource arguments. `--all-formats` without `--tree` or `--dir-struct` is rejected. Tree mode rejects `-w/--overwrite`.
 
 ### Streaming to stdout (`--stdout`, `--confirm`)
 

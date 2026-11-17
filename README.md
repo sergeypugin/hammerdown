@@ -27,6 +27,7 @@ The PDF pipeline is built on [PyMuPDF](https://pymupdf.readthedocs.io/) and [PyM
 - **Web pages**: `.html`, `.htm`
 - **Google Drive exports**: `.zip` (Google Docs "Web page" export, containing an `.html` file and an optional `images/` folder)
 - **Google Docs/Drive links**: public `docs.google.com` (document, spreadsheets, presentation) and `drive.google.com/file` URLs are downloaded automatically; **Drive folders are not supported**
+- **GitHub links**: `github.com` repository roots, `/tree/` folders, and `/blob/` single files are downloaded and converted automatically; `#fragment` and `?query` suffixes are stripped, trailing slashes are tolerated, and branch names with slashes (such as `tree/feature/x`) resolve like on GitHub
 - **Google Drive downloads**: `.gdoc`, `.gsheets`, `.gslides`, `.gfile` payloads (the HTML files produced when a Google Docs/Drive link is downloaded) convert like web pages
 
 > [!important]
@@ -270,16 +271,29 @@ hammerdown "https://drive.google.com/file/d/...."
 
 The HTML export is downloaded to a temporary staging folder, converted, and then removed. Google Drive **folders** (`.../drive/folders/...`) are not supported because they require Drive API authentication, and private documents (HTTP 401) are reported as errors. Images referenced by Google are left as external links in the Markdown, since Google hosts them on `googleusercontent.com` rather than alongside the HTML.
 
+Convert a GitHub repository, folder, or single file by link (public repositories):
+
+```sh
+hammerdown --tree "https://github.com/OWNER/REPO"
+hammerdown --tree "https://github.com/OWNER/REPO/tree/main/docs"
+hammerdown --tree "https://github.com/OWNER/REPO/tree/feature/login"
+hammerdown "https://github.com/OWNER/REPO/blob/main/README.md"
+```
+
+The repository is resolved to a commit through the GitHub API, downloaded as an archive, and processed like a local folder. A `/tree/` link converts the folder like a local directory (with `--tree`, or as per-file conversion without it), and a `/blob/` link converts that single file. Fragments (`#L42`) and query strings (`?plain=1`) are stripped, trailing slashes are tolerated, and a multi-segment `REF` resolves longest-match-first, so branch names with slashes work: if both `feature` and `feature/login` existed, `tree/feature/login/docs` selects the `feature/login` branch with the `docs` subfolder, matching GitHub's own behavior. Permalink SHAs (`tree/<40-hex>/subpath`) skip the ref lookup entirely. A repository root link (`github.com/OWNER/REPO`) requires `--tree`. The `-i`/`-e` GitWildMatch filters apply to the downloaded layout in every mode.
+
+Other link shapes -- `issues`, `pull`, `wiki`, `raw.githubusercontent.com`, non-HTTPS, or anything else GitHub-like that does not match the forms above -- are rejected with a clear `unsupported GitHub URL` error instead of being treated as local paths. Unauthenticated GitHub API usage is subject to GitHub's per-hour rate limit; each conversion makes one or two API calls before the archive download.
+
 Options:
 
 - `-i`, `--include PATTERN` -- include paths matching a GitWildMatch/pathspec pattern; may be repeated
 - `-e`, `--exclude PATTERN` -- exclude paths matching a GitWildMatch/pathspec pattern; may be repeated
-- `--tree` -- gather a project tree into one Markdown output, using Gitingest-like text and code collection
+- `--tree` -- gather a project tree into one Markdown output, selecting text and code files by content sniffing rather than a fixed extension list
 - `--all-formats` -- in tree mode, also include supported Hammerdown document formats
 - `--include-gitignored` -- do not apply repository `.gitignore` and `.gitingestignore` rules
 - `-w`, `--overwrite` -- overwrite plain-text source files (`.txt`, `.md`, `.log`, `.csv`) in-place instead of creating a copy
 - `-s`, `--skip-existing` -- skip conversion when the target Markdown file already exists; without it, existing `hm_*.md` outputs are overwritten and their complete asset directories are replaced
-- `-o`, `--output-dir DIR` -- save Markdown output and extracted images under DIR, preserving the relative layout of the input tree
+- `-o`, `--output-dir DIR` -- save Markdown output and extracted images under DIR, preserving the relative layout of the input tree; with `--tree`, DIR receives the merged tree document
 - `-m [OUTPUT_MD]`, `--merge [OUTPUT_MD]` -- merge converted documents into the target Markdown file; the next argument is the output, and an omitted target defaults to `hammerdowned.md`
 - `-y`, `--yes` -- overwrite an existing merge or tree target without asking
 - `-n`, `--no` -- keep an existing merge or tree target and exit `0` without converting
@@ -294,7 +308,9 @@ Option names are case-insensitive, including short and long forms, but option va
 
 #### Tree Mode
 
-A tree run without `--all-formats` gathers Gitingest-like text and code-like files. It does not add Hammerdown's binary document formats to the tree. With `--all-formats`, supported Hammerdown documents are included too; unknown binary files are skipped. Tree mode always produces one combined Markdown document: `hammerdowned.md` by default, or the file passed with `-m`. It is not a per-file conversion mode. The output starts with a YAML frontmatter metadata block -- the same one merge mode writes, described below -- recording the tool, version, date, mode, source, inputs, file count, and token estimate, so you can tell a stale target from a fresh one.
+A tree run selects files by content, not by a fixed list of extensions. For every file outside Hammerdown's known formats, discovery checks the first 8 KiB: the file joins the tree when it has no NUL bytes and decodes as valid UTF-8, whatever its extension -- so text files with unknown or missing extensions, like `Dockerfile` or `httpd.conf`, are included, and files with NUL bytes or invalid UTF-8 count as binary. Without `--all-formats`, the tree gathers these text and code-like files. With `--all-formats`, supported Hammerdown documents are included too; unknown binary files are skipped.
+
+Tree mode always produces one combined Markdown document: the file passed with `-m`, or `hammerdowned.md` otherwise. Without `-m`, the target lands in the directory set with `-o`, in the working directory for ordinary CLI runs, or beside the selected folder for file-manager conversions. It is not a per-file conversion mode. The output starts with a YAML frontmatter metadata block -- the same one merge mode writes, described below -- recording the tool, version, date, mode, source (the common parent of the inputs), inputs, file count, and token estimate, so you can tell a stale target from a fresh one.
 
 > [!important]
 > tree mode always writes the same target file (`hammerdowned.md` unless `-m` sets one) and replaces it on every run, frontmatter included, so the metadata always reflects the latest run. If you need Markdown copies for long-term storage, use ordinary per-file conversion instead
@@ -302,6 +318,7 @@ A tree run without `--all-formats` gathers Gitingest-like text and code-like fil
 ```sh
 hammerdown --tree project/
 hammerdown project/ --tree --all-formats
+hammerdown --tree -o out/ project/
 ```
 
 `--tree` and `--all-formats` may appear before, between, or after resource arguments. These forms are equivalent:
